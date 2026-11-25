@@ -6,7 +6,7 @@
   "version": "*",
   "manifestVersion": 2,
   "requiresCustomScript": false,
-  "supportedHosts": ["SharePointWebPart", "SharePointFullPage", "TeamsPersonalApp", "TeamsTab"],
+  "supportedHosts": ["SharePointWebPart", "SharePointFullPage", "TeamsTab"],
   "supportsThemeVariants": true,
   "supportsFullBleed": true,
   "preconfiguredEntries": [
@@ -23,7 +23,7 @@
         "subtitle": "Power Platform Center of Excellence",
         "environmentUrl": "",
         "pageSize": 25,
-        "maxRecords": 5000,
+        "maxRecords": 20000,
         "showKpis": true,
         "density": "comfortable",
         "showDefaultEnvironment": true,

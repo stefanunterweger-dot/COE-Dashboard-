@@ -43,6 +43,12 @@ export function buildDefaultEnvironmentTables(
 
   const apps = baseTable(tables, 'admin_app');
   const flows = baseTable(tables, 'admin_flow');
+  // Links: Umgebungs-ID des Default Environments ist „Default-<Tenant-ID>“ – im Inventar steht ggf. nur die GUID.
+  const linkId = encodeURIComponent(environmentLinkId(env));
+  const fixLinks = (links: ITableConfig['links']): ITableConfig['links'] => (links || []).map(l => ({
+    ...l,
+    url: l.url.replace(/\{admin_(app|flow)environmentid\}/g, linkId)
+  }));
 
   const appsTable: ITableConfig = {
     ...apps,
@@ -50,6 +56,8 @@ export function buildDefaultEnvironmentTables(
     title: 'Apps',
     showInKpis: false,
     filter: validId ? combineFilters(apps.filter, `_admin_appenvironment_value eq ${envId}`) : apps.filter,
+    strictFilter: true,
+    links: fixLinks(apps.links),
     columns: withoutEnvironmentColumn(apps.columns),
     unavailable: notResolvable
   };
@@ -60,6 +68,8 @@ export function buildDefaultEnvironmentTables(
     title: 'Flows',
     showInKpis: false,
     filter: validId ? combineFilters(flows.filter, `_admin_flowenvironment_value eq ${envId}`) : flows.filter,
+    strictFilter: true,
+    links: fixLinks(flows.links),
     columns: withoutEnvironmentColumn(flows.columns),
     unavailable: notResolvable
   };

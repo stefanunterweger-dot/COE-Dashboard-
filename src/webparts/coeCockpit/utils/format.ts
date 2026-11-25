@@ -50,11 +50,17 @@ export function formatNumber(n: number): string {
   return numberFmt.format(n);
 }
 
-export function formatCount(n: number | undefined): string {
+/** Anzahl; mit atLeast = true als „mindestens“ (z. B. „50.000+“). */
+export function formatCount(n: number | undefined, atLeast?: boolean): string {
   if (n === undefined) {
     return '–';
   }
-  return n >= 5000 ? '5.000+' : formatNumber(n);
+  return formatNumber(n) + (atLeast ? '+' : '');
+}
+
+/** Nur sichere Links (https) zulassen – verhindert z. B. javascript:-Links aus Link-Vorlagen. */
+export function isSafeLink(url: string | undefined): boolean {
+  return !!url && /^https:\/\//i.test(url.trim());
 }
 
 export function relativeTime(d: Date): string {
@@ -171,7 +177,11 @@ export function combineFilters(a?: string, b?: string): string | undefined {
 
 /** CSV mit Semikolon (Excel, deutschsprachig) und BOM. */
 export function toCsv(records: IRecord[], columns: IColumnConfig[]): string {
-  const esc = (s: string): string => (/[";\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s);
+  const esc = (raw: string): string => {
+    // Werte, die Excel als Formel ausführen würde (=, +, -, @), mit ' entschärfen
+    const s = /^[=+\-@\t\r]/.test(raw) && isNaN(Number(raw.replace(',', '.'))) ? `'${raw}` : raw;
+    return /[";\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+  };
   const lines: string[] = [columns.map(c => esc(c.label)).join(';')];
   records.forEach(r => {
     lines.push(columns.map(c => {

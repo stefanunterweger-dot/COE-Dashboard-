@@ -9,7 +9,7 @@ import { Icon } from '@fluentui/react/lib/Icon';
 import styles from './CoeCockpit.module.scss';
 import { IRecord, ITableConfig } from '../models/ITableConfig';
 import { DataverseService, IAttributeMeta, IEntityMeta } from '../services/DataverseService';
-import { displayValue, fillTemplate, FORMATTED, hashColor, hostOf } from '../utils/format';
+import { displayValue, fillTemplate, FORMATTED, hashColor, hostOf, isSafeLink } from '../utils/format';
 import { CellValue, Pill, resolveTone } from './Cells';
 
 export interface IRecordPanelProps {
@@ -36,28 +36,53 @@ export const RecordPanel: React.FC<IRecordPanelProps> = props => {
   const [hideEmpty, setHideEmpty] = React.useState<boolean>(true);
 
   const id = record && meta ? String(record[meta.primaryId] || '') : '';
+  /** Datensatz, dessen Felder geladen sind bzw. gerade geladen werden. */
+  const fullFor = React.useRef<string>('');
 
   React.useEffect(() => {
     setTab('overview');
     setFull({ status: 'idle' });
     setQuery('');
+    fullFor.current = '';
   }, [id]);
 
+  // „Alle Felder“ laden. Der Ladestatus darf hier keine Abhängigkeit sein:
+  // sonst bricht das Setzen auf „loading“ die eigene Anfrage sofort wieder ab.
   React.useEffect(() => {
-    if (tab !== 'all' || full.status !== 'idle' || !service || !table || !id) {
+    if (tab !== 'all' || !service || !table || !id) {
       return;
     }
+    const key = `${table.logicalName}|${id}`;
+    if (fullFor.current === key) {
+      return;
+    }
+    fullFor.current = key;
     let cancelled = false;
+    let done = false;
     setFull({ status: 'loading' });
     Promise.all([
       service.getRecord(table.logicalName, id),
       service.getAttributes(table.logicalName).catch(() => [] as IAttributeMeta[])
     ]).then(
-      ([rec, attrs]) => { if (!cancelled) { setFull({ status: 'ready', record: rec, attributes: attrs }); } },
-      (e: Error) => { if (!cancelled) { setFull({ status: 'error', error: e.message }); } }
+      ([rec, attrs]) => {
+        done = true;
+        if (!cancelled) { setFull({ status: 'ready', record: rec, attributes: attrs }); }
+      },
+      (e: Error) => {
+        done = true;
+        if (!cancelled) {
+          fullFor.current = ''; // beim nächsten Öffnen von „Alle Felder“ erneut versuchen
+          setFull({ status: 'error', error: e.message });
+        }
+      }
     );
-    return () => { cancelled = true; };
-  }, [tab, full.status, service, table, id]);
+    return () => {
+      cancelled = true;
+      if (!done) {
+        fullFor.current = '';
+      }
+    };
+  }, [tab, service, table, id]);
 
   if (!record || !table) {
     return null;
@@ -70,7 +95,7 @@ export const RecordPanel: React.FC<IRecordPanelProps> = props => {
   const links: { label: string; href: string }[] = [];
   (table.links || []).forEach(l => {
     const href = fillTemplate(l.url, record);
-    if (href) {
+    if (href && isSafeLink(href)) {
       links.push({ label: l.label, href });
     }
   });

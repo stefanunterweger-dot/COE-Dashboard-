@@ -9,7 +9,10 @@ export interface IKpiState {
   status: 'loading' | 'ready' | 'error';
   loadKey: string;
   total?: number;
+  /** Zählgrenze von Dataverse erreicht – es sind mindestens so viele. */
+  totalAtLeast?: boolean;
   highlight?: number;
+  highlightAtLeast?: boolean;
 }
 
 export interface IKpiStripProps {
@@ -44,12 +47,12 @@ export const KpiStrip: React.FC<IKpiStripProps> = ({ tables, kpis, activeKey, on
             </div>
             {loading
               ? <span className={`${styles.skeleton} ${styles.skeletonValue}`} />
-              : <span className={styles.kpiValue}>{k.status === 'error' ? '–' : formatCount(k.total)}</span>}
+              : <span className={styles.kpiValue}>{k.status === 'error' ? '–' : formatCount(k.total, k.totalAtLeast)}</span>}
             <div className={`${styles.kpiFoot} ${toneClass(t.kpi && t.kpi.tone)}`}>
               {!loading && hasHighlight && k.highlight !== undefined && (
                 <>
                   <span className={styles.dot} />
-                  <span><span className={styles.kpiFootValue}>{formatCount(k.highlight)}</span> {t.kpi && t.kpi.highlightLabel}</span>
+                  <span><span className={styles.kpiFootValue}>{formatCount(k.highlight, k.highlightAtLeast)}</span> {t.kpi && t.kpi.highlightLabel}</span>
                 </>
               )}
               {!loading && (!hasHighlight || k.highlight === undefined) && (

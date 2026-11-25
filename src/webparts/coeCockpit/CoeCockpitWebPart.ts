@@ -67,7 +67,7 @@ export default class CoeCockpitWebPart extends BaseClientSideWebPart<ICoeCockpit
       environmentUrl: (this.properties.environmentUrl || '').trim(),
       tables: this.properties.tables || [],
       pageSize: this.properties.pageSize || 25,
-      maxRecords: this.properties.maxRecords || 5000,
+      maxRecords: this.properties.maxRecords || 20000,
       showKpis: this.properties.showKpis !== false,
       density: this.properties.density || 'comfortable',
       showDefaultEnvironment: this.properties.showDefaultEnvironment !== false,
@@ -272,9 +272,9 @@ export default class CoeCockpitWebPart extends BaseClientSideWebPart<ICoeCockpit
                 }),
                 PropertyPaneSlider('maxRecords', {
                   label: strings.MaxRecordsLabel,
-                  min: 500,
-                  max: 20000,
-                  step: 500,
+                  min: 1000,
+                  max: 50000,
+                  step: 1000,
                   showValue: true
                 })
               ]

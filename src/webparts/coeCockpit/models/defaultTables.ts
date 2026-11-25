@@ -15,7 +15,8 @@ export function getDefaultTables(): ITableConfig[] {
       filter: 'admin_appdeleted ne true',
       showInKpis: true,
       defaultSort: { field: 'admin_appmodifiedon', desc: true },
-      kpi: { highlightLabel: 'verwaist', highlightFilter: "admin_appisorphaned eq 'Orphaned'", tone: 'warning' },
+      // CoE-Versionen schreiben „Orphaned“ oder „Orphan“ – beide zählen.
+      kpi: { highlightLabel: 'verwaist', highlightFilter: "admin_appisorphaned eq 'Orphaned' or admin_appisorphaned eq 'Orphan'", tone: 'warning' },
       columns: [
         { field: 'admin_displayname', label: 'App', type: 'title' },
         { field: '_admin_appowner_value', label: 'Besitzer', type: 'person' },
@@ -25,7 +26,7 @@ export function getDefaultTables(): ITableConfig[] {
           field: 'admin_appisorphaned',
           label: 'Besitzerstatus',
           type: 'status',
-          statusMap: { 'Orphaned': 'warning', 'Not Orphaned': 'success' }
+          statusMap: { 'Orphaned': 'warning', 'Orphan': 'warning', 'Not Orphaned': 'success', 'Not Orphan': 'success' }
         },
         { field: 'admin_applastlaunchedon', label: 'Zuletzt gestartet', type: 'date' },
         { field: 'admin_appmodifiedon', label: 'Geändert', type: 'date' },
@@ -62,7 +63,7 @@ export function getDefaultTables(): ITableConfig[] {
           field: 'admin_flowisorphaned',
           label: 'Besitzerstatus',
           type: 'status',
-          statusMap: { 'Orphaned': 'warning', 'Not Orphaned': 'success' }
+          statusMap: { 'Orphaned': 'warning', 'Orphan': 'warning', 'Not Orphaned': 'success', 'Not Orphan': 'success' }
         },
         { field: 'admin_flowmodifiedon', label: 'Geändert', type: 'date' },
         { field: 'admin_flowid', label: 'Flow-ID', type: 'text', hidden: true },

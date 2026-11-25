@@ -12,7 +12,7 @@ import { IReadonlyTheme } from '@microsoft/sp-component-base';
 import styles from './CoeCockpit.module.scss';
 import { IColumnConfig, IRecord, ISortConfig, ITableConfig } from '../models/ITableConfig';
 import {
-  DataverseError, DataverseService, environmentLinkId, findDefaultEnvironment, IEntityMeta, IEnvironmentInfo, normalizeDataverseUrl
+  DataverseError, DataverseService, environmentLinkId, findDefaultEnvironment, ICountResult, IEntityMeta, IEnvironmentInfo, normalizeDataverseUrl
 } from '../services/DataverseService';
 import { buildDefaultEnvironmentTables, DEFAULT_ENV_PREFIX, isDefaultEnvKey } from '../models/defaultEnvironment';
 import {
@@ -58,6 +58,8 @@ interface ITableState {
   status: 'loading' | 'ready' | 'error';
   loadKey: string;
   records: IRecord[];
+  /** true = Zwischenstand: weitere Seiten werden noch geladen. */
+  partial?: boolean;
   meta?: IEntityMeta;
   warnings: string[];
   truncated?: boolean;
@@ -102,6 +104,7 @@ function writeHidden(storageKey: string, value: { [tableKey: string]: string[] }
 }
 
 const PAGE_SIZES = [10, 25, 50, 100];
+const COLLATOR = new Intl.Collator('de', { numeric: true, sensitivity: 'base' });
 
 const CoeCockpit: React.FC<ICoeCockpitProps> = props => {
   const { tables, theme, isEditMode, showKpis, maxRecords } = props;
@@ -114,6 +117,9 @@ const CoeCockpit: React.FC<ICoeCockpitProps> = props => {
   );
 
   const servicesRef = React.useRef<{ [url: string]: DataverseService }>({});
+  /** Zuletzt angeforderter Ladeschlüssel je Tabelle (verhindert veraltete Ergebnisse). */
+  const requestedRef = React.useRef<{ [tableKey: string]: string }>({});
+  const mountedRef = React.useRef<boolean>(true);
   const [activeKey, setActiveKey] = React.useState<string | undefined>(tables.length ? tables[0].key : undefined);
   const [lastDefaultKey, setLastDefaultKey] = React.useState<string>(`${DEFAULT_ENV_PREFIX}apps`);
   const [defaultEnv, setDefaultEnv] = React.useState<IDefaultEnvState>({ status: 'idle' });
@@ -197,7 +203,9 @@ const CoeCockpit: React.FC<ICoeCockpitProps> = props => {
     if (!activeTable && tables.length && !waitingForDefault) {
       setActiveKey(tables[0].key);
     }
-  }, [tablesSig, props.showDefaultEnvironment]);
+    // activeTable/defaultSig gehören dazu: z. B. wird beim Ausschalten von „Default Environment“
+    // der aktive Reiter erst im nächsten Render ungültig.
+  }, [tablesSig, props.showDefaultEnvironment, defaultSig, !!activeTable]);
 
   React.useEffect(() => {
     if (activeKey && isDefaultEnvKey(activeKey)) {
@@ -223,17 +231,28 @@ const CoeCockpit: React.FC<ICoeCockpitProps> = props => {
     const key = activeTable.key;
     const loadKey = activeLoadKey;
     const existing = data[key];
-    if (existing && existing.loadKey === loadKey) {
+    // Läuft die Anfrage noch (z. B. nach kurzem Reiterwechsel), wird ihr Ergebnis abgewartet.
+    if (existing && existing.loadKey === loadKey && (existing.status !== 'loading' || requestedRef.current[key] === loadKey)) {
       return;
     }
-    let cancelled = false;
+    // Nicht beim Reiterwechsel abbrechen: Das Ergebnis wird übernommen, solange es die
+    // zuletzt angeforderte Version dieser Tabelle ist.
+    requestedRef.current[key] = loadKey;
+    const isCurrent = (): boolean => mountedRef.current && requestedRef.current[key] === loadKey;
     setData(prev => ({
       ...prev,
       [key]: { status: 'loading', loadKey, records: prev[key] ? prev[key].records : [], warnings: [] }
     }));
-    svc.getRecords(activeTable, maxRecords).then(
+    svc.getRecords(activeTable, maxRecords, (partialRecords, meta) => {
+      if (isCurrent()) {
+        setData(prev => ({
+          ...prev,
+          [key]: { status: 'loading', partial: true, loadKey, records: partialRecords, meta, warnings: [] }
+        }));
+      }
+    }).then(
       res => {
-        if (!cancelled) {
+        if (isCurrent()) {
           setData(prev => ({
             ...prev,
             [key]: { status: 'ready', loadKey, records: res.records, meta: res.meta, warnings: res.warnings, truncated: res.truncated, loadedAt: new Date() }
@@ -241,7 +260,7 @@ const CoeCockpit: React.FC<ICoeCockpitProps> = props => {
         }
       },
       (e: unknown) => {
-        if (!cancelled) {
+        if (isCurrent()) {
           setData(prev => ({
             ...prev,
             [key]: { status: 'error', loadKey, records: [], warnings: [], error: e instanceof Error ? e.message : String(e), errorHint: errorHint(e, activeTable), loadedAt: new Date() }
@@ -249,8 +268,12 @@ const CoeCockpit: React.FC<ICoeCockpitProps> = props => {
         }
       }
     );
-    return () => { cancelled = true; };
   }, [service, activeKey, activeLoadKey]);
+
+  React.useEffect(() => {
+    mountedRef.current = true;
+    return () => { mountedRef.current = false; };
+  }, []);
 
   // Kennzahlen laden
   React.useEffect(() => {
@@ -262,14 +285,22 @@ const CoeCockpit: React.FC<ICoeCockpitProps> = props => {
     tables.filter(t => t.showInKpis !== false && !!t.logicalName).forEach(t => {
       setKpis(prev => ({ ...prev, [t.key]: { status: 'loading', loadKey: lk } }));
       const highlightFilter = t.kpi && t.kpi.highlightFilter ? t.kpi.highlightFilter : undefined;
-      const totalP = service.getCountWithBase(t);
-      const highlightP: Promise<number | undefined> = highlightFilter
-        ? service.getCountWithBase(t, highlightFilter).catch(() => undefined)
+      const svc = serviceFor(t) || service; // Tabellen mit eigener Umgebungs-URL dort zählen
+      const totalP = svc.getCountWithBase(t);
+      const highlightP: Promise<ICountResult | undefined> = highlightFilter
+        ? svc.getCountWithBase(t, highlightFilter).catch(() => undefined)
         : Promise.resolve(undefined);
       Promise.all([totalP, highlightP]).then(
         ([total, highlight]) => {
           if (!cancelled) {
-            setKpis(prev => ({ ...prev, [t.key]: { status: 'ready', loadKey: lk, total, highlight } }));
+            setKpis(prev => ({
+              ...prev,
+              [t.key]: {
+                status: 'ready', loadKey: lk,
+                total: total.value, totalAtLeast: total.atLeast,
+                highlight: highlight ? highlight.value : undefined, highlightAtLeast: highlight ? highlight.atLeast : undefined
+              }
+            }));
           }
         },
         () => {
@@ -297,7 +328,7 @@ const CoeCockpit: React.FC<ICoeCockpitProps> = props => {
       }
       setKpis(prev => ({ ...prev, [t.key]: { status: 'loading', loadKey: lk } }));
       svc.getCountWithBase(t).then(
-        total => { if (!cancelled) { setKpis(prev => ({ ...prev, [t.key]: { status: 'ready', loadKey: lk, total } })); } },
+        total => { if (!cancelled) { setKpis(prev => ({ ...prev, [t.key]: { status: 'ready', loadKey: lk, total: total.value, totalAtLeast: total.atLeast } })); } },
         () => { if (!cancelled) { setKpis(prev => ({ ...prev, [t.key]: { status: 'error', loadKey: lk } })); } }
       );
     });
@@ -306,7 +337,12 @@ const CoeCockpit: React.FC<ICoeCockpitProps> = props => {
 
   const state: ITableState | undefined = activeTable ? data[activeTable.key] : undefined;
   const records = state ? state.records : [];
-  const loading = !!service && !!activeTable && !activeTable.unavailable && (!state || state.status === 'loading');
+  const loading = !!service && !!activeTable && !activeTable.unavailable && (!state || (state.status === 'loading' && !state.partial));
+  /** Erste Seiten sind da, weitere werden noch geladen (große Tabellen). */
+  const partial = !!state && state.status === 'loading' && !!state.partial;
+  /** Exakte Gesamtzahl laut Dataverse (falls bekannt) – für Fortschritt und Hinweis bei Begrenzung. */
+  const activeKpi = activeTable ? kpis[activeTable.key] : undefined;
+  const serverTotal = activeKpi && activeKpi.status === 'ready' && activeKpi.loadKey.indexOf(mainKey) === 0 ? activeKpi : undefined;
 
   const hiddenSet = React.useMemo(() => {
     const set: { [f: string]: boolean } = {};
@@ -328,6 +364,16 @@ const CoeCockpit: React.FC<ICoeCockpitProps> = props => {
   const activeFilterFields = Object.keys(filters).filter(f => isFilterActive(filters[f]) && !!columnByField[f]);
 
   /** Suche + alle Spaltenfilter, optional ohne den Filter einer Spalte (für deren Werteliste). */
+  const columnsSig = allColumns.map(c => c.field + c.type).join('|');
+  /** Kleingeschriebener Suchtext je Datensatz – einmal pro Datenstand statt bei jedem Tastendruck. */
+  const searchIndex = React.useMemo(() => {
+    const map = new Map<IRecord, string>();
+    records.forEach(r => {
+      map.set(r, allColumns.map(c => displayValue(r, c.field)).join('\u0001').toLowerCase());
+    });
+    return map;
+  }, [records, columnsSig]);
+
   const applyFilters = (rows: IRecord[], exceptField?: string): IRecord[] => {
     const q = search.trim().toLowerCase();
     const fields = activeFilterFields.filter(f => f !== exceptField);
@@ -340,12 +386,10 @@ const CoeCockpit: React.FC<ICoeCockpitProps> = props => {
       if (!q) {
         return true;
       }
-      for (let i = 0; i < allColumns.length; i++) {
-        if (displayValue(r, allColumns[i].field).toLowerCase().indexOf(q) >= 0) {
-          return true;
-        }
-      }
-      return false;
+      const text = searchIndex.get(r);
+      return text !== undefined
+        ? text.indexOf(q) >= 0
+        : allColumns.some(c => displayValue(r, c.field).toLowerCase().indexOf(q) >= 0);
     });
   };
 
@@ -354,17 +398,18 @@ const CoeCockpit: React.FC<ICoeCockpitProps> = props => {
     const sortCol = sort ? allColumns.filter(c => c.field === sort.field)[0] : undefined;
     if (sort && sortCol) {
       const dir = sort.desc ? -1 : 1;
-      rows = rows.slice().sort((a, b) => {
-        const va = sortValue(a, sortCol);
-        const vb = sortValue(b, sortCol);
-        if (typeof va === 'number' && typeof vb === 'number') {
-          return (va - vb) * dir;
+      // Schlüssel einmal berechnen (statt in jedem Vergleich) – wichtig bei zehntausenden Einträgen.
+      const keyed = rows.map(r => ({ r, v: sortValue(r, sortCol) }));
+      keyed.sort((a, b) => {
+        if (typeof a.v === 'number' && typeof b.v === 'number') {
+          return (a.v - b.v) * dir;
         }
-        return String(va).localeCompare(String(vb), 'de') * dir;
+        return COLLATOR.compare(String(a.v), String(b.v)) * dir;
       });
+      rows = keyed.map(k => k.r);
     }
     return rows;
-  }, [records, search, filters, sort, allColumns.map(c => c.field + c.type).join('|')]);
+  }, [records, searchIndex, search, filters, sort, columnsSig]);
 
   const pageCount = Math.max(1, Math.ceil(filtered.length / pageSize));
   const safePage = Math.min(page, pageCount - 1);
@@ -421,13 +466,13 @@ const CoeCockpit: React.FC<ICoeCockpitProps> = props => {
   }));
 
   const countFor = (t: ITableConfig): string | undefined => {
+    const k = kpis[t.key];
+    if (k && k.status === 'ready' && k.total !== undefined) {
+      return formatCount(k.total, k.totalAtLeast);
+    }
     const d = data[t.key];
     if (d && d.status === 'ready' && d.loadKey === keyFor(t)) {
       return formatNumber(d.records.length) + (d.truncated ? '+' : '');
-    }
-    const k = kpis[t.key];
-    if (k && k.status === 'ready' && k.total !== undefined) {
-      return k.total >= 5000 ? '5.000+' : formatNumber(k.total);
     }
     return undefined;
   };
@@ -571,7 +616,7 @@ const CoeCockpit: React.FC<ICoeCockpitProps> = props => {
                     <span className={styles.envStatLabel}>{t.title}</span>
                     {!k || k.status === 'loading'
                       ? <span className={styles.skeleton} style={{ width: 48, height: 18, marginTop: 3 }} />
-                      : <span className={styles.envStatValue}>{k.status === 'error' || k.total === undefined ? '–' : formatCount(k.total)}</span>}
+                      : <span className={styles.envStatValue}>{k.status === 'error' || k.total === undefined ? '–' : formatCount(k.total, k.totalAtLeast)}</span>}
                   </span>
                 </button>
               );
@@ -650,7 +695,11 @@ const CoeCockpit: React.FC<ICoeCockpitProps> = props => {
           )}
           <span className={styles.grow} />
           <span className={styles.resultInfo}>
-            {loading ? 'Wird geladen …' : `${formatNumber(filtered.length)} von ${formatNumber(records.length)}${state && state.truncated ? '+' : ''}`}
+            {loading
+              ? 'Wird geladen …'
+              : partial
+                ? `Lädt … ${formatNumber(records.length)}${serverTotal && serverTotal.total !== undefined ? ` von ${formatCount(Math.min(serverTotal.total, maxRecords), serverTotal.totalAtLeast && serverTotal.total < maxRecords)}` : ''}`
+                : `${formatNumber(filtered.length)} von ${formatNumber(records.length)}${state && state.truncated ? '+' : ''}`}
           </span>
           <TooltipHost content={compact ? 'Normale Zeilenhöhe' : 'Kompakte Zeilenhöhe'}>
             <IconButton iconProps={{ iconName: compact ? 'DoubleChevronDown' : 'DoubleChevronUp' }} ariaLabel="Zeilenhöhe" onClick={() => setCompact(!compact)} />
@@ -667,7 +716,10 @@ const CoeCockpit: React.FC<ICoeCockpitProps> = props => {
           <div className={styles.notices}>
             {state.truncated && (
               <MessageBar messageBarType={MessageBarType.info} isMultiline={false}>
-                Es werden die ersten {formatNumber(maxRecords)} Einträge angezeigt. Das Limit lässt sich in den Webpart-Eigenschaften erhöhen.
+                Geladen sind die ersten {formatNumber(records.length)}
+                {serverTotal && serverTotal.total !== undefined ? ` von ${formatCount(serverTotal.total, serverTotal.totalAtLeast)}` : ''} Einträgen
+                {activeTable.defaultSort ? ' (nach der Standardsortierung)' : ''}. Suche und Spaltenfilter berücksichtigen nur diese Einträge.
+                Das Limit lässt sich in den Webpart-Eigenschaften erhöhen (bis {formatNumber(50000)}).
               </MessageBar>
             )}
             {state.warnings.length > 0 && (

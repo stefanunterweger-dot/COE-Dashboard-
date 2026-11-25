@@ -4,6 +4,23 @@ import { combineFilters, displayValue, templateFields } from '../utils/format';
 
 const API_PATH = '/api/data/v9.2/';
 const MAX_PAGE = 5000;
+/** $count=true zählt in Dataverse höchstens bis hierher. */
+const ODATA_COUNT_LIMIT = 5000;
+/** Aggregat-Abfragen ($apply) zählen höchstens bis hierher (AggregateQueryRecordLimit). */
+const AGGREGATE_LIMIT = 50000;
+
+type CountMode = 'count' | 'distinct' | 'odata';
+
+export interface ICountResult {
+  value: number;
+  /** true = es sind mindestens so viele (Zählgrenze von Dataverse erreicht). */
+  atLeast: boolean;
+}
+
+function isAggregateLimit(e: unknown): boolean {
+  const msg = e instanceof Error ? e.message : String(e);
+  return /AggregateQueryRecordLimit|maximum record limit|0x8004E023/i.test(msg);
+}
 
 export interface IEntityMeta {
   logicalName: string;
@@ -110,6 +127,7 @@ export class DataverseService {
   private _meta: { [logicalName: string]: Promise<IEntityMeta> } = {};
   private _attributes: { [logicalName: string]: Promise<IAttributeMeta[]> } = {};
   private _environments: Promise<IEnvironmentInfo[]> | undefined;
+  private _countMode: CountMode | undefined;
 
   constructor(factory: AadHttpClientFactory, environmentUrl: string) {
     this._factory = factory;
@@ -164,7 +182,11 @@ export class DataverseService {
    * Lädt Datensätze einer konfigurierten Tabelle.
    * Nicht vorhandene Spalten werden automatisch entfernt und als Warnung gemeldet.
    */
-  public async getRecords(table: ITableConfig, maxRecords: number): Promise<IRecordResult> {
+  public async getRecords(
+    table: ITableConfig,
+    maxRecords: number,
+    onProgress?: (records: IRecord[], meta: IEntityMeta) => void
+  ): Promise<IRecordResult> {
     const meta = await this.getEntityMeta(table.logicalName);
     let fields = collectFields(table, meta);
     let filter = table.filter && table.filter.trim() ? table.filter.trim() : undefined;
@@ -173,7 +195,8 @@ export class DataverseService {
     for (let attempt = 0; attempt < 20; attempt++) {
       try {
         const sortField = table.defaultSort && fields.indexOf(table.defaultSort.field) >= 0 ? table.defaultSort : undefined;
-        const page = await this._fetchAll(meta.entitySetName, fields, filter, sortField, maxRecords);
+        const page = await this._fetchAll(meta.entitySetName, fields, filter, sortField, maxRecords,
+          onProgress ? (records: IRecord[]) => onProgress(records, meta) : undefined);
         return { records: page.records, meta, warnings, truncated: page.truncated };
       } catch (e) {
         const missing = missingProperty(e);
@@ -181,6 +204,10 @@ export class DataverseService {
           fields = fields.filter(f => f !== missing);
           warnings.push(`Spalte „${missing}“ gibt es in dieser Tabelle nicht und wurde übersprungen.`);
           continue;
+        }
+        if (missing && filter && filter.indexOf(missing) >= 0 && table.strictFilter) {
+          // Filter begrenzt den Bereich (z. B. auf das Default Environment) – nie stillschweigend weglassen.
+          throw new DataverseError(`Der Filter verwendet die unbekannte Spalte „${missing}“: ${filter}`, 400);
         }
         if (missing && filter && filter.indexOf(missing) >= 0) {
           warnings.push(`Der Filter verwendet die unbekannte Spalte „${missing}“ und wurde ignoriert.`);
@@ -223,18 +250,60 @@ export class DataverseService {
     return this._environments;
   }
 
-  /** Anzahl der Datensätze (Dataverse zählt bis maximal 5.000). */
-  public async getCount(logicalName: string, filter?: string): Promise<number> {
+  /**
+   * Exakte Anzahl der Datensätze.
+   * 1. OData-Aggregation ($apply=…/aggregate) – zählt exakt bis 50.000 (Dataverse-Grenze für Aggregate).
+   * 2. Rückfall auf $count=true – Dataverse zählt damit nur bis 5.000.
+   * Welche Variante die Umgebung unterstützt, wird beim ersten Aufruf ermittelt und gemerkt.
+   */
+  public async getCount(logicalName: string, filter?: string): Promise<ICountResult> {
     const meta = await this.getEntityMeta(logicalName);
+    const prefix = filter ? `filter(${filter})/` : '';
+    const variants: { mode: CountMode; apply: string }[] = [
+      { mode: 'count', apply: `${prefix}aggregate($count as total)` },
+      { mode: 'distinct', apply: `${prefix}aggregate(${meta.primaryId} with countdistinct as total)` }
+    ];
+    let firstError: unknown;
+    for (const v of variants) {
+      if (this._countMode && this._countMode !== v.mode) {
+        continue;
+      }
+      try {
+        const res = await this._get<{ value: { total?: number | string }[] }>(
+          `${meta.entitySetName}?$apply=${encodeURIComponent(v.apply)}`
+        );
+        const total = res.value && res.value.length ? Number(res.value[0].total) : 0;
+        if (!isNaN(total)) {
+          this._countMode = v.mode;
+          return { value: total, atLeast: false };
+        }
+      } catch (e) {
+        if (isAggregateLimit(e)) {
+          return { value: AGGREGATE_LIMIT, atLeast: true };
+        }
+        if (this._countMode) {
+          throw e; // Variante funktioniert grundsätzlich – Fehler liegt an der Abfrage (z. B. Filter)
+        }
+        firstError = firstError || e;
+      }
+    }
     let q = `${meta.entitySetName}?$select=${meta.primaryId}&$count=true`;
     if (filter) {
       q += `&$filter=${encodeURIComponent(filter)}`;
     }
-    const page = await this._get<IODataPage>(q, 1);
-    return typeof page['@odata.count'] === 'number' ? page['@odata.count'] : page.value.length;
+    try {
+      const page = await this._get<IODataPage>(q, 1);
+      const n = typeof page['@odata.count'] === 'number' ? page['@odata.count'] : page.value.length;
+      if (!this._countMode && firstError !== undefined) {
+        this._countMode = 'odata'; // Aggregation wird nicht unterstützt
+      }
+      return { value: n, atLeast: n >= ODATA_COUNT_LIMIT };
+    } catch (e) {
+      throw firstError !== undefined && !missingProperty(e) ? firstError : e;
+    }
   }
 
-  public getCountWithBase(table: ITableConfig, extraFilter?: string): Promise<number> {
+  public getCountWithBase(table: ITableConfig, extraFilter?: string): Promise<ICountResult> {
     return this.getCount(table.logicalName, combineFilters(table.filter, extraFilter));
   }
 
@@ -253,7 +322,8 @@ export class DataverseService {
     fields: string[],
     filter: string | undefined,
     sort: { field: string; desc: boolean } | undefined,
-    maxRecords: number
+    maxRecords: number,
+    onProgress?: (records: IRecord[]) => void
   ): Promise<{ records: IRecord[]; truncated: boolean }> {
     let url: string | undefined = `${entitySet}?$select=${fields.join(',')}`;
     if (filter) {
@@ -268,6 +338,9 @@ export class DataverseService {
       const page: IODataPage = await this._get<IODataPage>(url, pageSize);
       records = records.concat(page.value);
       url = page['@odata.nextLink'];
+      if (onProgress && url && records.length < maxRecords) {
+        onProgress(records); // Zwischenstand anzeigen, während weitere Seiten geladen werden
+      }
     }
     const truncated = !!url || records.length > maxRecords;
     return { records: records.slice(0, maxRecords), truncated };
@@ -285,7 +358,8 @@ export class DataverseService {
   private async _get<T>(pathOrUrl: string, maxPageSize?: number): Promise<T> {
     const client = await this._getClient();
     const url = /^https:\/\//i.test(pathOrUrl) ? pathOrUrl : this.baseUrl + API_PATH + pathOrUrl;
-    const prefer = ['odata.include-annotations="*"'];
+    // Nur formatierte Werte anfordern – bei großen Tabellen deutlich kleinere Antworten als mit "*".
+    const prefer = ['odata.include-annotations="OData.Community.Display.V1.FormattedValue"'];
     if (maxPageSize) {
       prefer.push(`odata.maxpagesize=${maxPageSize}`);
     }

@@ -63,6 +63,8 @@ export interface ITableConfig {
   links?: ILinkConfig[];
   /** Optional: Tabelle aus einer anderen Dataverse-Umgebung lesen (Standard: CoE-Umgebung). */
   environmentUrl?: string;
+  /** Intern: Filter darf nie weggelassen werden (begrenzt den Bereich, z. B. auf das Default Environment). */
+  strictFilter?: boolean;
   /** Intern: Grund, warum die Tabelle nicht geladen werden kann (wird statt der Daten angezeigt). */
   unavailable?: string;
 }
