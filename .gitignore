@@ -1,0 +1,33 @@
+# Logs
+logs
+*.log
+npm-debug.log*
+
+# Dependencies
+node_modules
+
+# Build
+dist
+lib
+lib-amd
+lib-commonjs
+lib-esm
+release
+solution
+temp
+*.sppkg
+.heft
+
+# Coverage
+coverage
+
+# OS / Editor
+.DS_Store
+Thumbs.db
+.idea
+.vscode/*
+!.vscode/extensions.json
+
+# Generated typings
+*.scss.ts
+*.scss.d.ts

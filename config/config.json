@@ -1,0 +1,18 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/spfx-build/config.2.0.schema.json",
+  "version": "2.0",
+  "bundles": {
+    "coe-cockpit-web-part": {
+      "components": [
+        {
+          "entrypoint": "./lib/webparts/coeCockpit/CoeCockpitWebPart.js",
+          "manifest": "./src/webparts/coeCockpit/CoeCockpitWebPart.manifest.json"
+        }
+      ]
+    }
+  },
+  "externals": {},
+  "localizedResources": {
+    "CoeCockpitWebPartStrings": "lib/webparts/coeCockpit/loc/{locale}.js"
+  }
+}

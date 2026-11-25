@@ -1,0 +1,31 @@
+define([], function () {
+  return {
+    PropertyPaneDescription: "CoE Cockpit – Daten aus dem Power Platform Center of Excellence (Dataverse).",
+    ConnectionGroupName: "Verbindung",
+    EnvironmentUrlLabel: "URL der CoE-Umgebung",
+    EnvironmentUrlDescription: "Dataverse-URL der Umgebung mit dem CoE Starter Kit, z. B. https://contoso-coe.crm4.dynamics.com",
+    EnvironmentUrlError: "Bitte eine gültige Dataverse-URL eingeben (https://<name>.crm<n>.dynamics.com).",
+    DisplayGroupName: "Darstellung",
+    TitleLabel: "Titel",
+    SubtitleLabel: "Untertitel",
+    ShowKpisLabel: "Kennzahlen anzeigen",
+    DensityLabel: "Zeilenhöhe",
+    DensityComfortable: "Normal",
+    DensityCompact: "Kompakt",
+    PageSizeLabel: "Einträge pro Seite",
+    MaxRecordsLabel: "Maximale Anzahl geladener Einträge pro Tabelle",
+    TablesGroupName: "Tabellen",
+    OpenEditorLabel: "Tabellen-Editor öffnen",
+    TablesSummary: "{0} Tabellen konfiguriert",
+    DefaultEnvGroupName: "Default Environment",
+    DefaultEnvShowLabel: "Bereich „Default Environment“ anzeigen",
+    DefaultEnvLabel: "Default Environment",
+    DefaultEnvAuto: "Automatisch erkennen (Umgebungstyp „Default“)",
+    DefaultEnvNeedsUrl: "Zuerst die URL der CoE-Umgebung eintragen – danach werden die Umgebungen hier zur Auswahl geladen.",
+    DefaultEnvLoading: "Umgebungen werden aus dem CoE-Inventar geladen …",
+    DefaultEnvLoadError: "Umgebungen konnten nicht geladen werden:",
+    DefaultEnvCount: "{0} Umgebungen aus dem CoE-Inventar verfügbar.",
+    DefaultEnvDataverseLabel: "Dataverse-URL des Default Environments (optional)",
+    DefaultEnvDataverseDescription: "Wird für die Solutions benötigt. Leer lassen, um die URL aus dem CoE-Inventar zu verwenden."
+  };
+});

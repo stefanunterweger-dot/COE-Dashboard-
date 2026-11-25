@@ -1,0 +1,21 @@
+{
+  "@microsoft/generator-sharepoint": {
+    "plusBeta": false,
+    "isCreatingSolution": true,
+    "nodeVersion": "22.14.0",
+    "sdksVersions": {
+      "@microsoft/microsoft-graph-client": "3.0.2",
+      "@microsoft/teams-js": "2.24.0"
+    },
+    "version": "1.21.1",
+    "libraryName": "coe-cockpit",
+    "libraryId": "7c3e9a52-4b1d-4f6e-9a2c-1e8d5b0f3a71",
+    "environment": "spo",
+    "packageManager": "npm",
+    "solutionName": "coe-cockpit",
+    "solutionShortDescription": "CoE Cockpit – Center of Excellence Daten aus Dataverse",
+    "skipFeatureDeployment": true,
+    "isDomainIsolated": false,
+    "componentType": "webpart"
+  }
+}

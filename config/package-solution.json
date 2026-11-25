@@ -1,0 +1,46 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/spfx-build/package-solution.schema.json",
+  "solution": {
+    "name": "coe-cockpit-client-side-solution",
+    "id": "7c3e9a52-4b1d-4f6e-9a2c-1e8d5b0f3a71",
+    "version": "1.0.0.0",
+    "includeClientSideAssets": true,
+    "skipFeatureDeployment": true,
+    "isDomainIsolated": false,
+    "webApiPermissionRequests": [
+      {
+        "resource": "Dynamics CRM",
+        "scope": "user_impersonation"
+      }
+    ],
+    "developer": {
+      "name": "Power Platform Administration",
+      "websiteUrl": "",
+      "privacyUrl": "",
+      "termsOfUseUrl": "",
+      "mpnId": "Undefined-1.21.1"
+    },
+    "metadata": {
+      "shortDescription": {
+        "default": "CoE Cockpit – Center of Excellence Daten aus Dataverse"
+      },
+      "longDescription": {
+        "default": "Zeigt Apps, Flows, Environments, Maker und beliebige weitere Tabellen des CoE Starter Kits direkt in SharePoint an."
+      },
+      "screenshotPaths": [],
+      "videoUrl": "",
+      "categories": []
+    },
+    "features": [
+      {
+        "title": "CoE Cockpit",
+        "description": "CoE Cockpit Webpart",
+        "id": "b2f4c6d8-1a3e-4c5b-8d7f-9e0a2b4c6d81",
+        "version": "1.0.0.0"
+      }
+    ]
+  },
+  "paths": {
+    "zippedPackage": "solution/coe-cockpit.sppkg"
+  }
+}

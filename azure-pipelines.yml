@@ -1,0 +1,32 @@
+# CoE Cockpit – Build der .sppkg in Azure DevOps
+# Ergebnis: Pipeline-Artefakt "sppkg" mit coe-cockpit.sppkg (für den App Catalog)
+
+trigger:
+  branches:
+    include:
+      - main
+
+pool:
+  vmImage: ubuntu-latest
+
+steps:
+  - task: NodeTool@0
+    displayName: 'Node.js 22 installieren'
+    inputs:
+      versionSpec: '22.x'
+
+  - script: npm install
+    displayName: 'Pakete installieren'
+
+  - script: npx gulp bundle --ship
+    displayName: 'Bundle (Produktion)'
+
+  - script: npx gulp package-solution --ship
+    displayName: 'Paket erstellen (.sppkg)'
+
+  - task: PublishPipelineArtifact@1
+    displayName: 'sppkg veröffentlichen'
+    inputs:
+      targetPath: 'sharepoint/solution/coe-cockpit.sppkg'
+      artifact: 'sppkg'
+      publishLocation: 'pipeline'

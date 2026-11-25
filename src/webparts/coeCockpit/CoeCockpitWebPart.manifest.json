@@ -1,0 +1,35 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/spfx/client-side-web-part-manifest.schema.json",
+  "id": "e5a1c3b7-2d4f-4a6e-8b9c-0d1e2f3a4b5c",
+  "alias": "CoeCockpitWebPart",
+  "componentType": "WebPart",
+  "version": "*",
+  "manifestVersion": 2,
+  "requiresCustomScript": false,
+  "supportedHosts": ["SharePointWebPart", "SharePointFullPage", "TeamsPersonalApp", "TeamsTab"],
+  "supportsThemeVariants": true,
+  "supportsFullBleed": true,
+  "preconfiguredEntries": [
+    {
+      "groupId": "5c03119e-3074-46fd-976b-c60198311f70",
+      "group": { "default": "Advanced" },
+      "title": { "default": "CoE Cockpit" },
+      "description": {
+        "default": "Power Platform Center of Excellence: Apps, Flows, Environments, Maker und weitere Dataverse-Tabellen."
+      },
+      "officeFabricIconFontName": "Org",
+      "properties": {
+        "title": "CoE Cockpit",
+        "subtitle": "Power Platform Center of Excellence",
+        "environmentUrl": "",
+        "pageSize": 25,
+        "maxRecords": 5000,
+        "showKpis": true,
+        "density": "comfortable",
+        "showDefaultEnvironment": true,
+        "defaultEnvironmentId": "",
+        "defaultEnvironmentDataverseUrl": ""
+      }
+    }
+  ]
+}
