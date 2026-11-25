@@ -1,5 +1,5 @@
 import { AadHttpClient, AadHttpClientFactory, HttpClientResponse } from '@microsoft/sp-http';
-import { ITableConfig, IRecord } from '../models/ITableConfig';
+import { IRecord, IRelatedConfig, ITableConfig } from '../models/ITableConfig';
 import { combineFilters, displayValue, templateFields } from '../utils/format';
 
 const API_PATH = '/api/data/v9.2/';
@@ -86,6 +86,11 @@ export interface IEnvironmentInfo {
   type: string;
   /** Dataverse-URL der Umgebung (falls vorhanden). */
   dataverseUrl?: string;
+}
+
+/** Typ eines CoE-Environments (Production, Sandbox, Developer, Default …) – „Environment Sku“ bzw. älter „Environment Type“. */
+export function environmentType(r: IRecord): string {
+  return displayValue(r, 'admin_environmentsku') || displayValue(r, 'admin_environmenttype');
 }
 
 /** Ergänzt https:// und entfernt den abschließenden Schrägstrich. */
@@ -258,7 +263,9 @@ export class DataverseService {
         defaultSort: { field: 'admin_displayname', desc: false },
         columns: [
           { field: 'admin_displayname', label: 'Name', type: 'title' },
-          { field: 'admin_environmenttype', label: 'Typ', type: 'choice' },
+          // Typ: in aktuellen CoE-Versionen „Environment Sku“, in älteren „Environment Type“
+          { field: 'admin_environmentsku', label: 'Typ', type: 'choice' },
+          { field: 'admin_environmenttype', label: 'Typ (alt)', type: 'choice' },
           { field: 'admin_environmentcdsinstanceurl', label: 'Dataverse-URL', type: 'url' },
           { field: 'admin_environmentdeleted', label: 'Gelöscht', type: 'boolean' }
         ]
@@ -268,7 +275,7 @@ export class DataverseService {
         .map(r => ({
           id: String(r[res.meta.primaryId] || ''),
           name: displayValue(r, 'admin_displayname') || String(r[res.meta.primaryId] || ''),
-          type: displayValue(r, 'admin_environmenttype'),
+          type: environmentType(r),
           dataverseUrl: normalizeDataverseUrl(displayValue(r, 'admin_environmentcdsinstanceurl'))
         })));
       this._environments = p;
@@ -361,6 +368,42 @@ export class DataverseService {
     const rec = await this.getRecords(table, AGGREGATE_LIMIT);
     rec.records.forEach(r => { out[keyOf(r)] = (out[keyOf(r)] || 0) + (sumField ? Number(r[sumField] || 0) : 1); });
     return out;
+  }
+
+  /**
+   * Verknüpfte Datensätze eines Datensatzes (Reiter in der Detailansicht).
+   * 1:N über eine Lookup-Spalte der verknüpften Tabelle, N:N über die Navigationseigenschaft der Beziehung.
+   */
+  public async getRelated(parentLogicalName: string, parentId: string, rel: IRelatedConfig, maxRecords: number): Promise<IRecordResult> {
+    if (rel.lookupField) {
+      return this.getRecords({
+        key: `_rel_${rel.key}`, title: rel.title, logicalName: rel.logicalName, icon: 'Table', strictFilter: true,
+        filter: combineFilters(rel.filter, `${rel.lookupField} eq ${parentId}`),
+        columns: rel.columns
+      }, maxRecords);
+    }
+    if (!rel.navigationProperty) {
+      throw new DataverseError(`Für „${rel.title}“ ist keine Verknüpfung konfiguriert.`, 400);
+    }
+    const [parent, meta] = await Promise.all([this.getEntityMeta(parentLogicalName), this.getEntityMeta(rel.logicalName)]);
+    let fields = collectFields({ key: '_rel', title: rel.title, logicalName: rel.logicalName, icon: 'Table', columns: rel.columns }, meta);
+    const warnings: string[] = [];
+    for (let attempt = 0; attempt < 20; attempt++) {
+      try {
+        const base = `${parent.entitySetName}(${parentId})/${rel.navigationProperty}`;
+        const page = await this._fetchAll(base, fields, rel.filter, undefined, maxRecords);
+        return { records: page.records, meta, warnings, truncated: page.truncated };
+      } catch (e) {
+        const missing = missingProperty(e);
+        if (missing && fields.indexOf(missing) >= 0 && missing !== meta.primaryId) {
+          fields = fields.filter(f => f !== missing);
+          warnings.push(`Spalte „${missing}“ gibt es in dieser Tabelle nicht und wurde übersprungen.`);
+          continue;
+        }
+        throw e;
+      }
+    }
+    throw new DataverseError('Die verknüpften Datensätze konnten nicht geladen werden.', 400);
   }
 
   public getCountWithBase(table: ITableConfig, extraFilter?: string): Promise<ICountResult> {

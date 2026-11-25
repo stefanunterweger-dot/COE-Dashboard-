@@ -1607,3 +1607,166 @@
   color: var(--coe-danger);
   background: var(--coe-danger-bg);
 }
+
+// ---------- Seitenleiste (wie die CoE Admin View) ----------
+.layout {
+  display: grid;
+  grid-template-columns: 232px minmax(0, 1fr);
+  border-top: 1px solid var(--coe-border);
+}
+
+.layoutMain {
+  min-width: 0;
+}
+
+.sideNav {
+  padding: 12px 8px 16px;
+  background: var(--coe-surface);
+  border-right: 1px solid var(--coe-border);
+}
+
+.sideGroup {
+  margin-bottom: 6px;
+}
+
+.sideGroupHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 10px 10px 6px;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--coe-text);
+  background: none;
+  border: 0;
+  border-radius: 6px;
+  cursor: pointer;
+
+  i {
+    font-size: 11px;
+    color: var(--coe-text-2);
+  }
+
+  &:hover {
+    background: var(--coe-hover);
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--coe-accent);
+    outline-offset: -2px;
+  }
+}
+
+.sideItem {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-width: 0;
+  padding: 8px 10px;
+  font: inherit;
+  font-size: 14px;
+  text-align: left;
+  color: var(--coe-text);
+  background: none;
+  border: 0;
+  border-radius: 6px;
+  cursor: pointer;
+
+  &:hover {
+    background: var(--coe-hover);
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--coe-accent);
+    outline-offset: -2px;
+  }
+
+  .badge {
+    margin-left: auto;
+  }
+}
+
+.sideItemActive {
+  font-weight: 600;
+  background: var(--coe-bg);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
+
+  &::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 8px;
+    bottom: 8px;
+    width: 3px;
+    border-radius: 3px;
+    background: var(--coe-accent);
+  }
+
+  &:hover {
+    background: var(--coe-bg);
+  }
+}
+
+.sideItemIcon {
+  flex: 0 0 auto;
+  font-size: 16px;
+  color: var(--coe-text-2);
+}
+
+.sideItemText {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.relatedTh {
+  display: block;
+  padding: 8px 10px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--coe-text-2);
+}
+
+// Schmale Abschnitte / Handy: Seitenleiste wird zur waagrechten Leiste
+.root {
+  container-type: inline-size;
+}
+
+@container (max-width: 860px) {
+  .layout {
+    display: block;
+  }
+
+  .sideNav {
+    display: flex;
+    gap: 4px;
+    overflow-x: auto;
+    padding: 8px;
+    border-right: 0;
+    border-bottom: 1px solid var(--coe-border);
+  }
+
+  .sideGroup {
+    display: flex;
+    gap: 4px;
+    margin: 0;
+  }
+
+  .sideGroupHead {
+    display: none;
+  }
+
+  .sideItem {
+    width: auto;
+    white-space: nowrap;
+  }
+
+  .sideItemText {
+    overflow: visible;
+  }
+}

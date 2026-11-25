@@ -1,5 +1,5 @@
 import { IRecord, ITableConfig } from './ITableConfig';
-import { DataverseService, IAttributeMeta, IRecordResult } from '../services/DataverseService';
+import { DataverseService, environmentType, IAttributeMeta, IRecordResult } from '../services/DataverseService';
 import { displayValue } from '../utils/format';
 
 /**
@@ -55,22 +55,33 @@ export function buildDevEnvTable(): ITableConfig {
   };
 }
 
-function findAttribute(attrs: IAttributeMeta[], name: RegExp, label: RegExp, types?: string[]): IAttributeMeta | undefined {
+/** Erste passende Spalte; die Muster werden der Reihe nach geprüft (erst logischer Name, dann Anzeigename). */
+function findAttribute(attrs: IAttributeMeta[], patterns: RegExp[], types?: string[]): IAttributeMeta | undefined {
   const usable = attrs.filter(a => SYSTEM_FIELDS.indexOf(a.logicalName) < 0 && (!types || types.indexOf(a.type) >= 0));
-  return usable.filter(a => name.test(a.logicalName))[0] || usable.filter(a => label.test(a.displayName))[0];
+  for (const p of patterns) {
+    const hit = usable.filter(a => p.test(a.logicalName))[0] || usable.filter(a => p.test(a.displayName))[0];
+    if (hit) {
+      return hit;
+    }
+  }
+  return undefined;
 }
 
 /** Spalte mit dem Managed-Status im CoE-Inventar (Name je nach CoE-Version unterschiedlich). */
 export function detectManagedAttribute(attrs: IAttributeMeta[]): IAttributeMeta | undefined {
-  return findAttribute(attrs, /managed|governance|protectionlevel/i, /managed|verwaltet|governance/i, ['Boolean', 'Picklist', 'String', 'Virtual', 'State', 'Status']);
+  // CoE: „Governance Protection Level“ (Standard = managed, Basic = nicht managed)
+  return findAttribute(attrs, [/protection ?level/i, /ismanaged|managed ?environment/i, /managed|verwaltet/i, /governance/i], ['Boolean', 'Picklist', 'String']);
 }
 
 export function detectStateAttribute(attrs: IAttributeMeta[]): IAttributeMeta | undefined {
-  return findAttribute(attrs, /environmentstate|environmentstatus|_state$|disabled|enabled/i, /zustand|state|status|deaktiviert|disabled/i, ['Boolean', 'Picklist', 'String']);
+  // CoE: „Environment Runtime State“ (Enabled/Disabled), sonst „Environment State“ (Ready …)
+  return findAttribute(attrs, [/runtime ?state/i, /environment ?state/i, /zustand/i, /disabled|enabled/i], ['Boolean', 'Picklist', 'String']);
 }
 
 export function detectCreatorAttribute(attrs: IAttributeMeta[]): IAttributeMeta | undefined {
-  return findAttribute(attrs, /maker|creator|createdby|ersteller/i, /ersteller|erstellt von|created by|maker|creator/i, ['Lookup', 'String', 'Owner', 'Customer']);
+  // CoE: „Environment Maker“ (Lookup auf Maker) bevorzugen
+  return findAttribute(attrs, [/maker|creator|ersteller|erstellt von|created ?by/i], ['Lookup', 'Owner', 'Customer'])
+    || findAttribute(attrs, [/maker|creator|ersteller|erstellt von|created ?by/i], ['String']);
 }
 
 /** Spalten, die für den Managed-Status in Frage kommen (Auswahl in den Webpart-Eigenschaften). */
@@ -79,7 +90,7 @@ export function managedCandidates(attrs: IAttributeMeta[]): IAttributeMeta[] {
 }
 
 function isDeveloper(r: IRecord): boolean {
-  return /developer|entwickler/i.test(displayValue(r, 'admin_environmenttype'));
+  return /developer|entwickler/i.test(environmentType(r));
 }
 
 /** true / false / undefined (unbekannt). */
@@ -140,14 +151,16 @@ export async function loadAffectedEnvironments(service: DataverseService, manage
   const managedAttr = chosen || detectManagedAttribute(attrs);
   const stateAttr = detectStateAttribute(attrs);
   const creatorAttr = detectCreatorAttribute(attrs);
+  // Typ-Spalte: „Environment Sku“ (aktuell) bzw. „Environment Type“ (ältere CoE-Versionen)
+  const typeFields = ['admin_environmentsku', 'admin_environmenttype'].filter(f => attrs.length === 0 || attrs.some(a => a.logicalName === f));
 
   const extra = [managedAttr, stateAttr, creatorAttr].filter(a => !!a).map(a => ({ field: a!.selectName, label: a!.displayName, type: 'text' as const }));
   const query: ITableConfig = {
     key: '_devenv', title: 'Environments', logicalName: ENV_TABLE, icon: 'Globe',
     filter: 'admin_environmentdeleted ne true',
-    columns: buildDevEnvTable().columns.filter(c => c.field.indexOf('coe_') !== 0).concat([
-      { field: 'admin_environmenttype', label: 'Typ', type: 'text' }
-    ]).concat(extra)
+    columns: buildDevEnvTable().columns.filter(c => c.field.indexOf('coe_') !== 0)
+      .concat(typeFields.map(f => ({ field: f, label: 'Typ', type: 'text' as const })))
+      .concat(extra)
   };
   const res = await service.getRecords(query, maxRecords);
   const warnings = res.warnings.slice();

@@ -37,7 +37,25 @@ export interface IKpiConfig {
   highlightLabel?: string;
   /** OData-Filter für die hervorgehobene Zahl. */
   highlightFilter?: string;
+  /** Weitere Filter, die nacheinander probiert werden, falls der erste fehlschlägt (z. B. andere CoE-Version). */
+  highlightFilterAlternatives?: string[];
   tone?: Tone;
+}
+
+/** Verknüpfte Datensätze, die in der Detailansicht als eigener Reiter erscheinen (z. B. „Freigegeben für“). */
+export interface IRelatedConfig {
+  key: string;
+  /** Reiter-Titel in der Detailansicht. */
+  title: string;
+  /** Tabelle der verknüpften Datensätze. */
+  logicalName: string;
+  /** 1:N – Lookup-Spalte der verknüpften Tabelle, die auf den geöffneten Datensatz zeigt (z. B. _admin_app_value). */
+  lookupField?: string;
+  /** N:N – Navigationseigenschaft (Beziehungsname) des geöffneten Datensatzes. */
+  navigationProperty?: string;
+  /** Optionaler zusätzlicher OData-Filter. */
+  filter?: string;
+  columns: IColumnConfig[];
 }
 
 export interface ISortConfig {
@@ -61,6 +79,10 @@ export interface ITableConfig {
   kpi?: IKpiConfig;
   columns: IColumnConfig[];
   links?: ILinkConfig[];
+  /** Bereich in der Navigation, z. B. „Inventar“, „Benutzer“, „Nutzung“. */
+  group?: string;
+  /** Verknüpfte Datensätze (Reiter in der Detailansicht). */
+  related?: IRelatedConfig[];
   /** Optional: Tabelle aus einer anderen Dataverse-Umgebung lesen (Standard: CoE-Umgebung). */
   environmentUrl?: string;
   /** Intern: Daten werden berechnet statt direkt aus einer Tabelle geladen (z. B. „Betroffen ab 15.12.“). */

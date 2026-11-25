@@ -7,9 +7,9 @@ import { Spinner, SpinnerSize } from '@fluentui/react/lib/Spinner';
 import { MessageBar, MessageBarType } from '@fluentui/react/lib/MessageBar';
 import { Icon } from '@fluentui/react/lib/Icon';
 import styles from './CoeCockpit.module.scss';
-import { IRecord, ITableConfig } from '../models/ITableConfig';
+import { IRecord, IRelatedConfig, ITableConfig } from '../models/ITableConfig';
 import { DataverseService, IAttributeMeta, IEntityMeta } from '../services/DataverseService';
-import { displayValue, fillTemplate, FORMATTED, hashColor, hostOf, isSafeLink } from '../utils/format';
+import { displayValue, fillTemplate, FORMATTED, formatNumber, hashColor, hostOf, isSafeLink } from '../utils/format';
 import { CellValue, Pill, resolveTone } from './Cells';
 
 export interface IRecordPanelProps {
@@ -20,6 +20,16 @@ export interface IRecordPanelProps {
   themeVars: React.CSSProperties;
   onDismiss: () => void;
 }
+
+interface IRelatedState {
+  status: 'loading' | 'ready' | 'error';
+  records: IRecord[];
+  warnings: string[];
+  truncated?: boolean;
+  error?: string;
+}
+
+const RELATED_LIMIT = 5000;
 
 interface IFullState {
   status: 'idle' | 'loading' | 'ready' | 'error';
@@ -34,6 +44,7 @@ export const RecordPanel: React.FC<IRecordPanelProps> = props => {
   const [full, setFull] = React.useState<IFullState>({ status: 'idle' });
   const [query, setQuery] = React.useState<string>('');
   const [hideEmpty, setHideEmpty] = React.useState<boolean>(true);
+  const [related, setRelated] = React.useState<{ [key: string]: IRelatedState }>({});
 
   const id = record && meta ? String(record[meta.primaryId] || '') : '';
   /** Datensatz, dessen Felder geladen sind bzw. gerade geladen werden. */
@@ -43,8 +54,28 @@ export const RecordPanel: React.FC<IRecordPanelProps> = props => {
     setTab('overview');
     setFull({ status: 'idle' });
     setQuery('');
+    setRelated({});
     fullFor.current = '';
   }, [id]);
+
+  // Verknüpfte Datensätze des gewählten Reiters laden
+  const activeRelated: IRelatedConfig | undefined = table && tab.indexOf('rel:') === 0
+    ? (table.related || []).filter(r => `rel:${r.key}` === tab)[0]
+    : undefined;
+  React.useEffect(() => {
+    if (!activeRelated || !service || !table || !id || related[activeRelated.key]) {
+      return;
+    }
+    const relKey = activeRelated.key;
+    const forId = id;
+    setRelated(prev => ({ ...prev, [relKey]: { status: 'loading', records: [], warnings: [] } }));
+    service.getRelated(table.logicalName, id, activeRelated, RELATED_LIMIT).then(
+      res => setRelated(prev => (forId !== idRef.current ? prev : { ...prev, [relKey]: { status: 'ready', records: res.records, warnings: res.warnings, truncated: res.truncated } })),
+      (e: Error) => setRelated(prev => (forId !== idRef.current ? prev : { ...prev, [relKey]: { status: 'error', records: [], warnings: [], error: e.message } }))
+    );
+  }, [tab, id, service, table]);
+  const idRef = React.useRef<string>(id);
+  idRef.current = id;
 
   // „Alle Felder“ laden. Der Ladestatus darf hier keine Abhängigkeit sein:
   // sonst bricht das Setzen auf „loading“ die eigene Anfrage sofort wieder ab.
@@ -180,6 +211,52 @@ export const RecordPanel: React.FC<IRecordPanelProps> = props => {
     </>
   );
 
+  const renderRelated = (rel: IRelatedConfig): JSX.Element => {
+    const st = related[rel.key];
+    if (!st || st.status === 'loading') {
+      return <div className={styles.state}><Spinner size={SpinnerSize.medium} label={`Lade ${rel.title} …`} /></div>;
+    }
+    if (st.status === 'error') {
+      return <MessageBar messageBarType={MessageBarType.error} isMultiline={true}>{st.error}</MessageBar>;
+    }
+    const cols = rel.columns.filter(c => !c.hidden);
+    return (
+      <div className={styles.section}>
+        {st.warnings.length > 0 && (
+          <MessageBar messageBarType={MessageBarType.warning} isMultiline={true} styles={{ root: { marginBottom: 8 } }}>
+            {st.warnings.map(w => <div key={w}>{w}</div>)}
+          </MessageBar>
+        )}
+        <p className={styles.hint}>
+          {formatNumber(st.records.length)}{st.truncated ? '+' : ''} {st.records.length === 1 ? 'Eintrag' : 'Einträge'}
+        </p>
+        {st.records.length === 0
+          ? (
+            <div className={styles.state}>
+              <div className={styles.stateIcon}><Icon iconName="Inbox" /></div>
+              <p className={styles.stateTitle}>Keine Einträge</p>
+            </div>
+          )
+          : (
+            <div className={styles.tableWrap}>
+              <table className={`${styles.table} ${styles.compact}`}>
+                <thead>
+                  <tr>{cols.map(c => <th key={c.field} className={styles.th} scope="col"><span className={styles.relatedTh}>{c.label}</span></th>)}</tr>
+                </thead>
+                <tbody>
+                  {st.records.map((r, i) => (
+                    <tr key={i}>
+                      {cols.map(c => <td key={c.field}><CellValue record={r} column={c} /></td>)}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+      </div>
+    );
+  };
+
   const renderAllFields = (): JSX.Element => {
     if (full.status === 'loading' || full.status === 'idle') {
       return <div className={styles.state}><Spinner size={SpinnerSize.medium} label="Lade alle Felder …" /></div>;
@@ -231,7 +308,7 @@ export const RecordPanel: React.FC<IRecordPanelProps> = props => {
       onDismiss={onDismiss}
       isLightDismiss={true}
       type={PanelType.custom}
-      customWidth="600px"
+      customWidth={(table.related || []).length > 0 ? '760px' : '600px'}
       closeButtonAriaLabel="Schließen"
       onRenderHeader={header}
       styles={{
@@ -241,11 +318,22 @@ export const RecordPanel: React.FC<IRecordPanelProps> = props => {
       }}
     >
       <div style={themeVars} className={`${styles.scope} ${styles.panelBody}`}>
-        <Pivot selectedKey={tab} onLinkClick={item => setTab((item && item.props.itemKey) || 'overview')} headersOnly={true}>
+        <Pivot selectedKey={tab} onLinkClick={item => setTab((item && item.props.itemKey) || 'overview')} headersOnly={true} overflowBehavior="menu">
           <PivotItem itemKey="overview" headerText="Übersicht" />
+          {(table.related || []).map(r => {
+            const st = related[r.key];
+            return (
+              <PivotItem
+                key={r.key}
+                itemKey={`rel:${r.key}`}
+                headerText={r.title}
+                itemCount={st && st.status === 'ready' ? `${st.records.length}${st.truncated ? '+' : ''}` : undefined}
+              />
+            );
+          })}
           <PivotItem itemKey="all" headerText="Alle Felder" />
         </Pivot>
-        {tab === 'overview' ? renderOverview() : renderAllFields()}
+        {tab === 'overview' ? renderOverview() : activeRelated ? renderRelated(activeRelated) : renderAllFields()}
       </div>
     </Panel>
   );

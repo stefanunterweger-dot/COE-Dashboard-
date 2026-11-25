@@ -109,6 +109,12 @@ function writeHidden(storageKey: string, value: { [tableKey: string]: string[] }
 }
 
 const PAGE_SIZES = [10, 25, 50, 100];
+/** Bereich für Tabellen ohne eigene Gruppe. */
+const DEFAULT_GROUP = 'Inventar';
+/** Bereich für berechnete Ansichten (Default Environment, Betroffen ab 15.12.). */
+const ANALYSIS_GROUP = 'Auswertungen';
+/** Ab so vielen Einträgen wird statt der Reiterzeile die Seitenleiste verwendet. */
+const MAX_TABS = 7;
 const COLLATOR = new Intl.Collator('de', { numeric: true, sensitivity: 'base' });
 
 const CoeCockpit: React.FC<ICoeCockpitProps> = props => {
@@ -139,6 +145,7 @@ const CoeCockpit: React.FC<ICoeCockpitProps> = props => {
   const [compact, setCompact] = React.useState<boolean>(props.density === 'compact');
   const [selected, setSelected] = React.useState<IRecord | undefined>(undefined);
   const [editorOpen, setEditorOpen] = React.useState<boolean>(false);
+  const [collapsedGroups, setCollapsedGroups] = React.useState<{ [group: string]: boolean }>({});
   const storageKey = `coe-cockpit:${props.instanceId}:hidden`;
   const [hidden, setHidden] = React.useState<{ [tableKey: string]: string[] }>(() => readHidden(storageKey) || {});
 
@@ -299,9 +306,12 @@ const CoeCockpit: React.FC<ICoeCockpitProps> = props => {
       const highlightFilter = t.kpi && t.kpi.highlightFilter ? t.kpi.highlightFilter : undefined;
       const svc = serviceFor(t) || service; // Tabellen mit eigener Umgebungs-URL dort zählen
       const totalP = svc.getCountWithBase(t);
-      const highlightP: Promise<ICountResult | undefined> = highlightFilter
-        ? svc.getCountWithBase(t, highlightFilter).catch(() => undefined)
-        : Promise.resolve(undefined);
+      // Hervorhebung: Filter der Reihe nach probieren (Spaltentyp unterscheidet sich je nach CoE-Version)
+      const highlightFilters = highlightFilter ? [highlightFilter].concat((t.kpi && t.kpi.highlightFilterAlternatives) || []) : [];
+      const tryHighlight = (i: number): Promise<ICountResult | undefined> => (i >= highlightFilters.length
+        ? Promise.resolve(undefined)
+        : svc.getCountWithBase(t, highlightFilters[i]).catch(() => tryHighlight(i + 1)));
+      const highlightP: Promise<ICountResult | undefined> = tryHighlight(0);
       Promise.all([totalP, highlightP]).then(
         ([total, highlight]) => {
           if (!cancelled) {
@@ -861,6 +871,46 @@ const CoeCockpit: React.FC<ICoeCockpitProps> = props => {
     );
   };
 
+  // ---------- Navigation (Reiter bzw. gruppierte Seitenleiste wie in der CoE Admin View) ----------
+  interface INavItem { key: string; title: string; icon: string; group: string; count?: string; active: boolean; danger?: boolean; onClick: () => void }
+  const navItems: INavItem[] = tables.map(t => ({
+    key: t.key, title: t.title, icon: t.icon || 'Table', group: t.group || DEFAULT_GROUP,
+    count: countFor(t), active: t.key === activeKey, onClick: () => setActiveKey(t.key)
+  }));
+  if (props.showDefaultEnvironment) {
+    navItems.push({ key: '_default', title: 'Default Environment', icon: 'Home', group: ANALYSIS_GROUP, active: !!inDefaultView, onClick: () => setActiveKey(lastDefaultKey) });
+  }
+  devTables.forEach(t => navItems.push({
+    key: t.key, title: t.title, icon: 'Warning', group: ANALYSIS_GROUP, count: countFor(t), active: !!inDevView, danger: true, onClick: () => setActiveKey(t.key)
+  }));
+  const navGroups: { name: string; items: INavItem[] }[] = [];
+  navItems.forEach(n => {
+    let g = navGroups.filter(x => x.name === n.group)[0];
+    if (!g) {
+      g = { name: n.group, items: [] };
+      navGroups.push(g);
+    }
+    g.items.push(n);
+  });
+  // Seitenleiste, sobald es mehr Einträge gibt, als in eine Reiterzeile passen (oder Gruppen konfiguriert sind)
+  const useSideNav = navItems.length > MAX_TABS || tables.some(t => !!t.group && t.group !== DEFAULT_GROUP);
+
+  const renderNavItem = (n: INavItem, side: boolean): JSX.Element => (
+    <button
+      key={n.key}
+      type="button"
+      role="tab"
+      aria-selected={n.active}
+      className={side ? `${styles.sideItem} ${n.active ? styles.sideItemActive : ''}` : `${styles.tab} ${n.active ? styles.tabActive : ''}`}
+      onClick={n.onClick}
+      title={n.title}
+    >
+      <Icon iconName={n.icon} className={`${side ? styles.sideItemIcon : styles.tabIcon} ${n.danger ? styles.toneDanger : ''}`} />
+      <span className={side ? styles.sideItemText : undefined}>{n.title}</span>
+      {n.count !== undefined && <span className={`${styles.badge} ${n.danger ? styles.badgeDanger : ''}`}>{n.count}</span>}
+    </button>
+  );
+
   const lastLoaded = state && state.loadedAt;
 
   return (
@@ -899,57 +949,45 @@ const CoeCockpit: React.FC<ICoeCockpitProps> = props => {
           <>
             {showKpis && <KpiStrip tables={tables} kpis={kpis} activeKey={activeKey} onSelect={setActiveKey} />}
 
-            {(tables.length > 0 || props.showDefaultEnvironment) && (
+            {navItems.length > 0 && !useSideNav && (
               <nav className={styles.tabs} role="tablist" aria-label="Tabellen">
-                {tables.map(t => {
-                  const count = countFor(t);
-                  const active = t.key === activeKey;
-                  return (
-                    <button key={t.key} type="button" role="tab" aria-selected={active} className={`${styles.tab} ${active ? styles.tabActive : ''}`} onClick={() => setActiveKey(t.key)}>
-                      <Icon iconName={t.icon || 'Table'} className={styles.tabIcon} />
-                      <span>{t.title}</span>
-                      {count !== undefined && <span className={styles.badge}>{count}</span>}
-                    </button>
-                  );
-                })}
-                {props.showDefaultEnvironment && (
-                  <>
-                    <span className={styles.tabDivider} aria-hidden="true" />
-                    <button
-                      type="button"
-                      role="tab"
-                      aria-selected={inDefaultView}
-                      className={`${styles.tab} ${inDefaultView ? styles.tabActive : ''}`}
-                      onClick={() => setActiveKey(lastDefaultKey)}
-                    >
-                      <Icon iconName="Home" className={styles.tabIcon} />
-                      <span>Default Environment</span>
-                    </button>
-                  </>
-                )}
-                {devTables.map(t => {
-                  const count = countFor(t);
-                  return (
-                    <React.Fragment key={t.key}>
-                      {!props.showDefaultEnvironment && <span className={styles.tabDivider} aria-hidden="true" />}
-                      <button
-                        type="button"
-                        role="tab"
-                        aria-selected={inDevView}
-                        className={`${styles.tab} ${inDevView ? styles.tabActive : ''}`}
-                        onClick={() => setActiveKey(t.key)}
-                      >
-                        <Icon iconName="Warning" className={`${styles.tabIcon} ${styles.toneDanger}`} />
-                        <span>{t.title}</span>
-                        {count !== undefined && <span className={`${styles.badge} ${styles.badgeDanger}`}>{count}</span>}
-                      </button>
-                    </React.Fragment>
-                  );
-                })}
+                {navItems.map((n, i) => (
+                  <React.Fragment key={n.key}>
+                    {i > 0 && n.group !== navItems[i - 1].group && n.group === ANALYSIS_GROUP && <span className={styles.tabDivider} aria-hidden="true" />}
+                    {renderNavItem(n, false)}
+                  </React.Fragment>
+                ))}
               </nav>
             )}
 
-            {inDevView ? renderDevEnvironments() : inDefaultView ? renderDefaultEnvironment() : renderBody()}
+            {useSideNav
+              ? (
+                <div className={styles.layout}>
+                  <nav className={styles.sideNav} role="tablist" aria-label="Tabellen" aria-orientation="vertical">
+                    {navGroups.map(g => {
+                      const isCollapsed = !!collapsedGroups[g.name] && !g.items.some(n => n.active);
+                      return (
+                        <div key={g.name} className={styles.sideGroup}>
+                          <button
+                            type="button"
+                            className={styles.sideGroupHead}
+                            aria-expanded={!isCollapsed}
+                            onClick={() => setCollapsedGroups(prev => ({ ...prev, [g.name]: !isCollapsed }))}
+                          >
+                            <span>{g.name}</span>
+                            <Icon iconName={isCollapsed ? 'ChevronDown' : 'ChevronUp'} />
+                          </button>
+                          {!isCollapsed && g.items.map(n => renderNavItem(n, true))}
+                        </div>
+                      );
+                    })}
+                  </nav>
+                  <div className={styles.layoutMain}>
+                    {inDevView ? renderDevEnvironments() : inDefaultView ? renderDefaultEnvironment() : renderBody()}
+                  </div>
+                </div>
+              )
+              : (inDevView ? renderDevEnvironments() : inDefaultView ? renderDefaultEnvironment() : renderBody())}
           </>
         )}
 

@@ -15,8 +15,13 @@ export function getDefaultTables(): ITableConfig[] {
       filter: 'admin_appdeleted ne true',
       showInKpis: true,
       defaultSort: { field: 'admin_appmodifiedon', desc: true },
-      // CoE-Versionen schreiben „Orphaned“ oder „Orphan“ – beide zählen.
-      kpi: { highlightLabel: 'verwaist', highlightFilter: "admin_appisorphaned eq 'Orphaned' or admin_appisorphaned eq 'Orphan'", tone: 'warning' },
+      // „App is Orphaned“ ist in aktuellen CoE-Versionen ein Ja/Nein-Feld; ältere Versionen schreiben Text.
+      kpi: {
+        highlightLabel: 'verwaist',
+        highlightFilter: 'admin_appisorphaned eq true',
+        highlightFilterAlternatives: ["admin_appisorphaned eq 'Orphaned' or admin_appisorphaned eq 'Orphan'", "admin_appisorphaned eq 'Yes'"],
+        tone: 'warning'
+      },
       columns: [
         { field: 'admin_displayname', label: 'App', type: 'title' },
         { field: '_admin_appowner_value', label: 'Besitzer', type: 'person' },
@@ -26,7 +31,7 @@ export function getDefaultTables(): ITableConfig[] {
           field: 'admin_appisorphaned',
           label: 'Besitzerstatus',
           type: 'status',
-          statusMap: { 'Orphaned': 'warning', 'Orphan': 'warning', 'Not Orphaned': 'success', 'Not Orphan': 'success' }
+          statusMap: { 'Yes': 'warning', 'Ja': 'warning', 'No': 'success', 'Nein': 'success', 'Orphaned': 'warning', 'Orphan': 'warning', 'Not Orphaned': 'success', 'Not Orphan': 'success' }
         },
         { field: 'admin_applastlaunchedon', label: 'Zuletzt gestartet', type: 'date' },
         { field: 'admin_appmodifiedon', label: 'Geändert', type: 'date' },
@@ -63,7 +68,7 @@ export function getDefaultTables(): ITableConfig[] {
           field: 'admin_flowisorphaned',
           label: 'Besitzerstatus',
           type: 'status',
-          statusMap: { 'Orphaned': 'warning', 'Orphan': 'warning', 'Not Orphaned': 'success', 'Not Orphan': 'success' }
+          statusMap: { 'Yes': 'warning', 'Ja': 'warning', 'No': 'success', 'Nein': 'success', 'Orphaned': 'warning', 'Orphan': 'warning', 'Not Orphaned': 'success', 'Not Orphan': 'success' }
         },
         { field: 'admin_flowmodifiedon', label: 'Geändert', type: 'date' },
         { field: 'admin_flowid', label: 'Flow-ID', type: 'text', hidden: true },
@@ -87,7 +92,7 @@ export function getDefaultTables(): ITableConfig[] {
       columns: [
         { field: 'admin_displayname', label: 'Umgebung', type: 'title' },
         {
-          field: 'admin_environmenttype',
+          field: 'admin_environmentsku',
           label: 'Typ',
           type: 'status',
           statusMap: {
