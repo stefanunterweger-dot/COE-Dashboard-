@@ -16,8 +16,22 @@ Apps, Flows, Environments und Maker sind vorkonfiguriert, weitere Tabellen lasse
 | Spaltenfilter | **Jede Spalte** hat einen Filter im Spaltenkopf: Werteliste mit Suche und Anzahl (wie in Excel), bei Datumsspalten Zeiträume (Heute, Letzte 7/30/90 Tage, Älter als 1 Jahr …). Aktive Filter erscheinen als Chips in der Toolbar und lassen sich einzeln entfernen. Filter wirken zusammen, die Werte im Filter passen sich an die übrigen Filter an. |
 | Default Environment | Eigener Reiter mit allen **Apps, Flows und Solutions** im Default Environment. Apps und Flows kommen aus dem CoE-Inventar, Solutions live aus dem Dataverse des Default Environments. Mit Infokopf (Name, Umgebungs-ID, Link ins Admin Center) und Anzahl je Bereich. |
 | Detailansicht | Seitenpanel mit Eigenschaften, Status, Direktlinks (Power Apps, Power Automate, Admin Center, Dataverse) und „Alle Felder“ |
-| Tabellen-Editor | Tabellen hinzufügen, Spalten aus Dataverse auswählen, Darstellung, Filter, Kennzahlen und Links festlegen, JSON-Import/-Export |
+| Tabellen-Editor | Tabellen **aus einer Liste wählen** (Vorlagen aus dem CoE Starter Kit wie Apps, Flows, Environments, Maker, Connectors, Copilots, Desktop Flows, Power Pages – angeboten, wenn es die Tabelle gibt – oder jede andere Tabelle der Umgebung), Spalten aus Dataverse auswählen, Darstellung, Filter, Kennzahlen und Links festlegen, JSON-Import/-Export |
 | Robustheit | Spalten, die es in der eigenen CoE-Version nicht gibt, werden automatisch übersprungen und als Hinweis angezeigt |
+
+## Fertiges Paket & Vorschau
+
+- **`sppkg/coe-cockpit.sppkg`** – fertig gebautes Paket für den App Catalog (siehe „Bereitstellung“).
+- **`preview/coe-cockpit-vorschau.html`** – Vorschau im Browser mit Beispieldaten (über 5.000 Apps/Flows).
+  Verwendet den echten Webpart-Code; nur die Dataverse-API ist simuliert. Neu bauen: `cd preview && npm install && npm run build`.
+
+## Große Tabellen (mehr als 5.000 Einträge)
+
+- Kennzahlen werden per OData-Aggregation **exakt bis 50.000** gezählt (Dataverse-Grenze für Aggregate);
+  darüber wird „50.000+“ angezeigt. Unterstützt eine Umgebung keine Aggregation, wird auf `$count` (max. 5.000) zurückgefallen.
+- Datensätze werden seitenweise (je 5.000) geladen und schon während des Ladens angezeigt.
+- Ladelimit pro Tabelle: Standard 20.000, einstellbar bis 50.000. Ist eine Tabelle größer, zeigt das Webpart einen Hinweis;
+  Suche und Spaltenfilter wirken dann nur auf die geladenen Einträge (nach Standardsortierung, z. B. zuletzt geändert).
 
 ## Build
 
@@ -69,13 +83,12 @@ Benutzer ohne Rechte sehen eine verständliche Fehlermeldung statt Daten.
 | URL der CoE-Umgebung | Dataverse-URL der Umgebung mit dem CoE Starter Kit |
 | Bereich „Default Environment“ anzeigen | Reiter ein-/ausblenden |
 | Default Environment | Auswahlliste mit allen Umgebungen aus dem CoE-Inventar. Standard: **automatisch erkennen** (Umgebungstyp „Default“) |
-| Dataverse-URL des Default Environments | Optional. Wird für die Solutions verwendet; leer = URL aus dem CoE-Inventar |
 | Tabellen | Über den Tabellen-Editor (Button im Eigenschaftenbereich oder „Tabellen verwalten“ im Bearbeitungsmodus) |
 | Titel / Untertitel | Überschrift des Webparts |
 | Kennzahlen anzeigen | Kennzahlen-Leiste ein-/ausblenden |
 | Zeilenhöhe | Normal oder kompakt (Benutzer können zusätzlich selbst umschalten) |
 | Einträge pro Seite | 10, 25, 50 oder 100 |
-| Maximale Anzahl geladener Einträge | 500 – 20.000 pro Tabelle |
+| Maximale Anzahl geladener Einträge | 1.000 – 50.000 pro Tabelle (Standard 20.000) |
 
 ### Tabellen-Konfiguration (JSON)
 

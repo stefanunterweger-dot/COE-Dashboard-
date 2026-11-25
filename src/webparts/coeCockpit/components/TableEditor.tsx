@@ -13,7 +13,9 @@ import { Icon } from '@fluentui/react/lib/Icon';
 import styles from './CoeCockpit.module.scss';
 import { ColumnType, IColumnConfig, ITableConfig, Tone } from '../models/ITableConfig';
 import { getDefaultTables } from '../models/defaultTables';
-import { DataverseService, IAttributeMeta, IEntityMeta } from '../services/DataverseService';
+import { SearchBox } from '@fluentui/react/lib/SearchBox';
+import { DataverseService, IAttributeMeta, IEntityMeta, ITableInfo } from '../services/DataverseService';
+import { getTablePresets, newTableConfig } from '../models/tablePresets';
 
 export interface ITableEditorProps {
   isOpen: boolean;
@@ -22,6 +24,21 @@ export interface ITableEditorProps {
   themeVars: React.CSSProperties;
   onSave: (tables: ITableConfig[]) => void;
   onDismiss: () => void;
+}
+
+interface ICatalogState {
+  status: 'idle' | 'loading' | 'ready' | 'error';
+  tables?: ITableInfo[];
+  error?: string;
+}
+
+interface IPickerItem {
+  logicalName: string;
+  title: string;
+  subtitle: string;
+  icon: string;
+  preset?: ITableConfig;
+  used: boolean;
 }
 
 interface IResolveState {
@@ -123,6 +140,10 @@ export const TableEditor: React.FC<ITableEditorProps> = props => {
   const [jsonError, setJsonError] = React.useState<string>('');
   const [resolve, setResolve] = React.useState<{ [logical: string]: IResolveState }>({});
   const [linkText, setLinkText] = React.useState<string>('');
+  const [catalog, setCatalog] = React.useState<ICatalogState>({ status: 'idle' });
+  /** Tabellenauswahl: 'add' = neue Tabelle, 'change' = Tabelle des aktuellen Eintrags ändern. */
+  const [picker, setPicker] = React.useState<'add' | 'change' | undefined>(undefined);
+  const [pickerQuery, setPickerQuery] = React.useState<string>('');
 
   React.useEffect(() => {
     if (isOpen) {
@@ -130,8 +151,22 @@ export const TableEditor: React.FC<ITableEditorProps> = props => {
       setIndex(0);
       setMode('form');
       setJsonError('');
+      setPicker(tables.length === 0 ? 'add' : undefined);
+      setPickerQuery('');
     }
   }, [isOpen]);
+
+  // Tabellenliste der Umgebung für die Auswahl laden
+  React.useEffect(() => {
+    if (!isOpen || !service || catalog.status === 'loading' || catalog.status === 'ready') {
+      return;
+    }
+    setCatalog({ status: 'loading' });
+    service.getTables().then(
+      list => setCatalog({ status: 'ready', tables: list }),
+      (e: Error) => setCatalog({ status: 'error', error: e.message })
+    );
+  }, [isOpen, service]);
 
   const current: ITableConfig | undefined = draft[index];
 
@@ -178,18 +213,30 @@ export const TableEditor: React.FC<ITableEditorProps> = props => {
     }
   };
 
-  const addTable = (): void => {
-    const t: ITableConfig = {
-      key: `t${Date.now().toString(36)}`,
-      title: 'Neue Tabelle',
-      logicalName: '',
-      icon: 'Table',
-      showInKpis: true,
-      columns: [],
-      links: []
-    };
-    setDraft(prev => prev.concat([t]));
-    setIndex(draft.length);
+  /** Auswahl einer Tabelle (Vorlage oder beliebige Dataverse-Tabelle) übernehmen. */
+  const pickTable = (item: IPickerItem): void => {
+    const base: ITableConfig = item.preset ? clone(item.preset) : newTableConfig(item.logicalName, item.title);
+    if (picker === 'change' && current) {
+      const changed: ITableConfig = {
+        ...base,
+        key: current.key,
+        showInKpis: current.showInKpis
+      };
+      setDraft(prev => prev.map((t, i) => (i === index ? changed : t)));
+      resolveFor(index, item.logicalName, true);
+    } else {
+      const usedKeys = draft.map(t => t.key);
+      let key = base.key;
+      while (usedKeys.indexOf(key) >= 0) {
+        key = `${key}_`;
+      }
+      const target = draft.length;
+      setDraft(prev => prev.concat([{ ...base, key }]));
+      setIndex(target);
+      resolveFor(target, item.logicalName, true);
+    }
+    setPicker(undefined);
+    setPickerQuery('');
   };
 
   const removeTable = (): void => {
@@ -212,24 +259,36 @@ export const TableEditor: React.FC<ITableEditorProps> = props => {
     setIndex(target);
   };
 
-  const resolveTable = (): void => {
-    if (!service || !current || !current.logicalName.trim()) {
+  /**
+   * Lädt die Metadaten einer Tabelle (für die Spaltenauswahl).
+   * prune = Spalten entfernen, die es in dieser Umgebung nicht gibt (beim Hinzufügen einer Vorlage).
+   */
+  const resolveFor = (targetIndex: number, logicalName: string, prune: boolean): void => {
+    if (!service || !logicalName.trim()) {
       return;
     }
-    const logical = current.logicalName.trim().toLowerCase();
+    const logical = logicalName.trim().toLowerCase();
     setResolve(prev => ({ ...prev, [logical]: { status: 'loading' } }));
     Promise.all([service.getEntityMeta(logical), service.getAttributes(logical)]).then(
       ([meta, attributes]) => {
         setResolve(prev => ({ ...prev, [logical]: { status: 'ready', meta, attributes } }));
         setDraft(prev => prev.map((t, i) => {
-          if (i !== index) {
+          if (i !== targetIndex || t.logicalName.trim().toLowerCase() !== logical) {
             return t;
           }
           const patch: Partial<ITableConfig> = { logicalName: logical };
+          if (prune && t.columns.length > 0) {
+            const known: { [f: string]: boolean } = {};
+            attributes.forEach(a => { known[a.selectName] = true; });
+            patch.columns = t.columns.filter(c => known[c.field]);
+            if (t.defaultSort && !known[t.defaultSort.field]) {
+              patch.defaultSort = undefined;
+            }
+          }
           if (!t.title || t.title === 'Neue Tabelle') {
             patch.title = meta.displayName;
           }
-          if (t.columns.length === 0) {
+          if ((patch.columns || t.columns).length === 0) {
             const primary = attributes.filter(a => a.isPrimaryName)[0];
             const created = attributes.filter(a => a.logicalName === 'createdon')[0];
             const modified = attributes.filter(a => a.logicalName === 'modifiedon')[0];
@@ -300,6 +359,124 @@ export const TableEditor: React.FC<ITableEditorProps> = props => {
     updateColumn(ci, patch);
   };
 
+  // Metadaten der gewählten Tabelle automatisch laden (für die Spaltenauswahl)
+  React.useEffect(() => {
+    if (!isOpen || !current || !service) {
+      return;
+    }
+    const logical = current.logicalName.trim().toLowerCase();
+    if (logical && !resolve[logical]) {
+      resolveFor(index, logical, false);
+    }
+  }, [isOpen, index, current ? current.logicalName : '', service]);
+
+  const buildPickerItems = (): { presets: IPickerItem[]; others: IPickerItem[]; total: number } => {
+    const used: { [l: string]: boolean } = {};
+    draft.forEach((t, i) => {
+      if (!(picker === 'change' && i === index)) {
+        used[t.logicalName.trim().toLowerCase()] = true;
+      }
+    });
+    const available: { [l: string]: boolean } | undefined = catalog.tables ? {} : undefined;
+    (catalog.tables || []).forEach(t => { available![t.logicalName] = true; });
+    const q = pickerQuery.trim().toLowerCase();
+    const matches = (i: IPickerItem): boolean =>
+      !q || i.title.toLowerCase().indexOf(q) >= 0 || i.logicalName.toLowerCase().indexOf(q) >= 0;
+
+    const presetNames: { [l: string]: boolean } = {};
+    const presets: IPickerItem[] = [];
+    getTablePresets().forEach(p => {
+      if (presetNames[p.logicalName] || (available && !available[p.logicalName])) {
+        return;
+      }
+      presetNames[p.logicalName] = true;
+      presets.push({ logicalName: p.logicalName, title: p.title, subtitle: `${p.logicalName} · vorkonfiguriert`, icon: p.icon, preset: p, used: !!used[p.logicalName] });
+    });
+    const rank = (t: ITableInfo): number => (/^admin_/.test(t.logicalName) ? 0 : t.isCustom ? 1 : 2);
+    const others = (catalog.tables || [])
+      .filter(t => !presetNames[t.logicalName])
+      .sort((a, b) => rank(a) - rank(b) || a.displayName.localeCompare(b.displayName, 'de'))
+      .map(t => ({
+        logicalName: t.logicalName,
+        title: t.displayName,
+        subtitle: `${t.logicalName}${/^admin_/.test(t.logicalName) ? ' · CoE' : t.isCustom ? ' · benutzerdefiniert' : ''}`,
+        icon: /^admin_/.test(t.logicalName) ? 'Org' : 'Table',
+        used: !!used[t.logicalName]
+      }));
+    return { presets: presets.filter(matches), others: others.filter(matches), total: others.length };
+  };
+
+  const renderPickerItem = (item: IPickerItem): JSX.Element => (
+    <button
+      key={item.logicalName}
+      type="button"
+      className={styles.pickerItem}
+      disabled={item.used}
+      onClick={() => pickTable(item)}
+      title={item.used ? 'Wird bereits angezeigt' : `${item.title} hinzufügen`}
+    >
+      <span className={styles.pickerItemIcon}><Icon iconName={item.icon || 'Table'} /></span>
+      <span className={styles.pickerItemText}>
+        <span className={styles.pickerItemTitle}>{item.title}</span>
+        <span className={styles.pickerItemSub}>{item.subtitle}</span>
+      </span>
+      {item.used ? <span className={styles.pickerUsed}>bereits angezeigt</span> : <Icon iconName="Add" className={styles.pickerAdd} />}
+    </button>
+  );
+
+  const renderPicker = (): JSX.Element => {
+    const { presets, others, total } = buildPickerItems();
+    const LIMIT = 200;
+    return (
+      <div className={styles.picker}>
+        <div className={styles.pickerHead}>
+          <h3 className={styles.sectionTitle} style={{ margin: 0 }}>
+            {picker === 'change' ? 'Andere Tabelle wählen' : 'Tabelle hinzufügen'}
+          </h3>
+          <span className={styles.grow} />
+          {draft.length > 0 && <DefaultButton text="Abbrechen" onClick={() => { setPicker(undefined); setPickerQuery(''); }} />}
+        </div>
+        <SearchBox
+          placeholder="Tabelle suchen (Name oder logischer Name)"
+          value={pickerQuery}
+          onChange={(_e, v) => setPickerQuery(v || '')}
+          styles={{ root: { margin: '12px 0 8px' } }}
+        />
+        {!service && (
+          <MessageBar messageBarType={MessageBarType.warning}>
+            Zuerst die CoE-Umgebung in den Webpart-Eigenschaften auswählen – danach erscheinen hier alle Tabellen.
+          </MessageBar>
+        )}
+        {catalog.status === 'error' && (
+          <MessageBar messageBarType={MessageBarType.warning} isMultiline={true}>
+            Die Tabellenliste konnte nicht geladen werden ({catalog.error}). Die Vorlagen stehen trotzdem zur Auswahl.
+          </MessageBar>
+        )}
+
+        <div className={styles.pickerGroupTitle}>Vorlagen aus dem CoE Starter Kit</div>
+        {presets.length === 0
+          ? <p className={styles.hint}>Keine passende Vorlage.</p>
+          : <div className={styles.pickerList}>{presets.map(renderPickerItem)}</div>}
+
+        <div className={styles.pickerGroupTitle}>
+          Alle Tabellen der Umgebung{catalog.status === 'ready' ? ` (${total})` : ''}
+        </div>
+        {catalog.status === 'loading' && (
+          <span className={styles.resolveInfo}><Spinner size={SpinnerSize.xSmall} /> Tabellen werden geladen …</span>
+        )}
+        {catalog.status === 'ready' && others.length === 0 && <p className={styles.hint}>Keine Tabelle gefunden.</p>}
+        {others.length > 0 && (
+          <div className={`${styles.pickerList} ${styles.pickerScroll}`}>
+            {others.slice(0, LIMIT).map(renderPickerItem)}
+          </div>
+        )}
+        {others.length > LIMIT && (
+          <p className={styles.hint}>{others.length - LIMIT} weitere – Suche verfeinern, um sie zu sehen.</p>
+        )}
+      </div>
+    );
+  };
+
   const footer = (): JSX.Element => (
     <div className={styles.editorFooter}>
       <PrimaryButton text="Speichern" iconProps={{ iconName: 'Save' }} onClick={save} />
@@ -323,8 +500,9 @@ export const TableEditor: React.FC<ITableEditorProps> = props => {
     >
       <div style={themeVars} className={styles.scope}>
         <p className={styles.hint}>
-          Lege fest, welche Dataverse-Tabellen das Cockpit anzeigt. Gib den logischen Tabellennamen ein und klicke auf
-          „Prüfen“ – danach kannst du Spalten bequem aus der Liste wählen. Änderungen werden mit der Seite gespeichert.
+          Lege fest, welche Dataverse-Tabellen das Cockpit anzeigt: Tabelle aus der Liste wählen (Vorlagen aus dem
+          CoE Starter Kit oder jede andere Tabelle der Umgebung), danach Spalten aus der Liste auswählen.
+          Änderungen werden mit der Seite gespeichert.
         </p>
         <Pivot selectedKey={mode} onLinkClick={item => {
           const k = (item && item.props.itemKey) || 'form';
@@ -369,11 +547,13 @@ export const TableEditor: React.FC<ITableEditorProps> = props => {
                 </button>
               ))}
               <div className={styles.editorNavFooter}>
-                <ActionButton iconProps={{ iconName: 'Add' }} text="Tabelle hinzufügen" onClick={addTable} />
+                <ActionButton iconProps={{ iconName: 'Add' }} text="Tabelle hinzufügen" onClick={() => { setPicker('add'); setPickerQuery(''); }} />
               </div>
             </nav>
 
-            {!current && (
+            {picker && renderPicker()}
+
+            {!picker && !current && (
               <div className={styles.state}>
                 <div className={styles.stateIcon}><Icon iconName="Table" /></div>
                 <p className={styles.stateTitle}>Keine Tabellen konfiguriert</p>
@@ -381,7 +561,7 @@ export const TableEditor: React.FC<ITableEditorProps> = props => {
               </div>
             )}
 
-            {current && (
+            {!picker && current && (
               <div>
                 <h3 className={styles.sectionTitle}>Allgemein</h3>
                 <div className={styles.formGrid}>
@@ -389,13 +569,12 @@ export const TableEditor: React.FC<ITableEditorProps> = props => {
                   <div>
                     <div className={styles.inline}>
                       <TextField
-                        label="Logischer Tabellenname"
-                        placeholder="z. B. admin_app"
+                        label="Dataverse-Tabelle"
                         value={current.logicalName}
-                        onChange={(_e, v) => update({ logicalName: v || '' })}
+                        readOnly={true}
                         styles={{ root: { flex: '1 1 auto' } }}
                       />
-                      <DefaultButton text="Prüfen" iconProps={{ iconName: 'CheckMark' }} onClick={resolveTable} disabled={!service || !current.logicalName.trim()} />
+                      <DefaultButton text="Ändern" iconProps={{ iconName: 'Switch' }} onClick={() => { setPicker('change'); setPickerQuery(''); }} />
                     </div>
                     {resolveState && resolveState.status === 'loading' && (
                       <span className={styles.resolveInfo}><Spinner size={SpinnerSize.xSmall} /> Prüfe Tabelle …</span>

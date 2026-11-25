@@ -72,6 +72,12 @@ interface IAttributeDefinition {
   AttributeOf?: string | null;
 }
 
+export interface ITableInfo {
+  logicalName: string;
+  displayName: string;
+  isCustom: boolean;
+}
+
 export interface IEnvironmentInfo {
   /** Primärschlüssel des CoE-Datensatzes (admin_environmentid). */
   id: string;
@@ -128,6 +134,7 @@ export class DataverseService {
   private _attributes: { [logicalName: string]: Promise<IAttributeMeta[]> } = {};
   private _environments: Promise<IEnvironmentInfo[]> | undefined;
   private _countMode: CountMode | undefined;
+  private _tables: Promise<ITableInfo[]> | undefined;
 
   constructor(factory: AadHttpClientFactory, environmentUrl: string) {
     this._factory = factory;
@@ -151,6 +158,25 @@ export class DataverseService {
       p.catch(() => { delete this._meta[key]; });
     }
     return this._meta[key];
+  }
+
+  /** Alle Tabellen der Umgebung, die sich anzeigen lassen (für die Auswahl im Tabellen-Editor). */
+  public getTables(): Promise<ITableInfo[]> {
+    if (!this._tables) {
+      const p = this._get<{ value: (IEntityDefinition & { IsCustomEntity?: boolean; IsValidForAdvancedFind?: boolean; IsIntersect?: boolean; IsPrivate?: boolean })[] }>(
+        'EntityDefinitions?$select=LogicalName,EntitySetName,DisplayName,IsCustomEntity,IsValidForAdvancedFind,IsIntersect,IsPrivate'
+      ).then(res => res.value
+        .filter(d => !!d.EntitySetName && d.IsValidForAdvancedFind !== false && !d.IsIntersect && !d.IsPrivate)
+        .map(d => ({
+          logicalName: d.LogicalName,
+          displayName: labelOf(d.DisplayName) || d.LogicalName,
+          isCustom: !!d.IsCustomEntity
+        }))
+        .sort((x, y) => x.displayName.localeCompare(y.displayName, 'de')));
+      this._tables = p;
+      p.catch(() => { this._tables = undefined; });
+    }
+    return this._tables;
   }
 
   /** Lesbare Spalten einer Tabelle (für den Tabellen-Editor und die Detailansicht). */

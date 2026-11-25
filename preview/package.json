@@ -1,0 +1,17 @@
+{
+  "name": "coe-cockpit-preview",
+  "private": true,
+  "description": "Vorschau des CoE Cockpits mit Beispieldaten (simulierte Dataverse-API, echter Webpart-Code)",
+  "type": "module",
+  "scripts": {
+    "build": "node build.mjs"
+  },
+  "devDependencies": {
+    "@fluentui/react": "8.125.11",
+    "esbuild": "0.28.2",
+    "esbuild-sass-plugin": "3.7.0",
+    "react": "17.0.1",
+    "react-dom": "17.0.1",
+    "sass": "1.108.2"
+  }
+}

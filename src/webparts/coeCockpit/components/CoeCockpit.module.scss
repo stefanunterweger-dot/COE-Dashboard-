@@ -1461,3 +1461,110 @@
   line-height: 17px;
   color: var(--coe-text-2);
 }
+
+// ---------- Tabellenauswahl (Tabellen-Editor) ----------
+.picker {
+  min-width: 0;
+}
+
+.pickerHead {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.pickerGroupTitle {
+  margin: 16px 0 8px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--coe-text-2);
+}
+
+.pickerList {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 8px;
+}
+
+.pickerScroll {
+  max-height: 420px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.pickerItem {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  padding: 10px 12px;
+  text-align: left;
+  font: inherit;
+  color: var(--coe-text);
+  background: var(--coe-bg);
+  border: 1px solid var(--coe-border);
+  border-radius: 8px;
+  cursor: pointer;
+
+  &:hover:not(:disabled) {
+    border-color: var(--coe-accent-border);
+    background: var(--coe-accent-soft);
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--coe-accent);
+    outline-offset: 1px;
+  }
+
+  &:disabled {
+    cursor: default;
+    opacity: 0.6;
+  }
+}
+
+.pickerItemIcon {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  color: var(--coe-accent);
+  background: var(--coe-accent-soft);
+}
+
+.pickerItemText {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.pickerItemTitle {
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pickerItemSub {
+  font-size: 12px;
+  color: var(--coe-text-2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pickerUsed {
+  flex: 0 0 auto;
+  font-size: 11px;
+  color: var(--coe-text-2);
+}
+
+.pickerAdd {
+  flex: 0 0 auto;
+  color: var(--coe-accent);
+}

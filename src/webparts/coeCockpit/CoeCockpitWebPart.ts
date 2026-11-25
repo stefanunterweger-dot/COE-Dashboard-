@@ -176,14 +176,6 @@ export default class CoeCockpitWebPart extends BaseClientSideWebPart<ICoeCockpit
     return strings.DefaultEnvCount.replace('{0}', String(this._envOptions.length));
   }
 
-  private _validateDataverseUrl(value: string): string {
-    if (!value || !value.trim()) {
-      return '';
-    }
-    const normalized = normalizeDataverseUrl(value) || '';
-    return isValidEnvironmentUrl(normalized) ? '' : strings.EnvironmentUrlError;
-  }
-
   private _validateUrl(value: string): string {
     if (!value || !value.trim()) {
       return '';
@@ -225,14 +217,6 @@ export default class CoeCockpitWebPart extends BaseClientSideWebPart<ICoeCockpit
                 }),
                 PropertyPaneLabel('defaultEnvironmentStatus', {
                   text: this._environmentStatusText()
-                }),
-                PropertyPaneTextField('defaultEnvironmentDataverseUrl', {
-                  label: strings.DefaultEnvDataverseLabel,
-                  description: strings.DefaultEnvDataverseDescription,
-                  placeholder: 'https://orgxxxxxxxx.crm4.dynamics.com',
-                  onGetErrorMessage: this._validateDataverseUrl.bind(this),
-                  deferredValidationTime: 600,
-                  disabled: this.properties.showDefaultEnvironment === false
                 })
               ]
             },
