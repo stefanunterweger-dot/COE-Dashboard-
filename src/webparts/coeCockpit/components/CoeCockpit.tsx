@@ -15,6 +15,7 @@ import {
   DataverseError, DataverseService, environmentLinkId, findDefaultEnvironment, ICountResult, IEntityMeta, IEnvironmentInfo, normalizeDataverseUrl
 } from '../services/DataverseService';
 import { buildDefaultEnvironmentTables, DEFAULT_ENV_PREFIX, isDefaultEnvKey } from '../models/defaultEnvironment';
+import { buildDevEnvTable, DEV_ENV_DEADLINES, DEV_ENV_KEY, DEV_FIELDS, loadAffectedEnvironments } from '../models/devEnvironments';
 import {
   displayValue, downloadText, formatCount, formatNumber, formatTime, hostOf, isValidEnvironmentUrl, sortValue, toCsv
 } from '../utils/format';
@@ -44,6 +45,10 @@ export interface ICoeCockpitProps {
   defaultEnvironmentId: string;
   /** Optional: Dataverse-URL des Default Environments (für Solutions), sonst aus dem CoE-Inventar. */
   defaultEnvironmentDataverseUrl: string;
+  /** Reiter „Betroffen ab 15.12.“ (nicht verwaltete Developer-Environments) anzeigen. */
+  showDevEnvironments: boolean;
+  /** Spalte mit dem Managed-Status im CoE-Inventar (leer = automatisch erkennen). */
+  devEnvManagedField: string;
   onTablesChanged: (tables: ITableConfig[]) => void;
   onConfigure: () => void;
 }
@@ -171,12 +176,16 @@ const CoeCockpit: React.FC<ICoeCockpitProps> = props => {
     [tablesSig, defaultEnv, props.defaultEnvironmentDataverseUrl]
   );
   const defaultSig = React.useMemo(() => JSON.stringify(defaultTables), [defaultTables]);
-  const allTables = tables.concat(defaultTables);
+  const devTables = React.useMemo(() => (props.showDevEnvironments ? [buildDevEnvTable()] : []), [props.showDevEnvironments]);
+  const allTables = tables.concat(defaultTables).concat(devTables);
+  const inDevView = props.showDevEnvironments && activeKey === DEV_ENV_KEY;
   const activeTable = allTables.filter(t => t.key === activeKey)[0];
   const inDefaultView = props.showDefaultEnvironment && isDefaultEnvKey(activeKey);
 
   /** Ladeschlüssel je Tabelle – ändert sich, wenn Daten neu geladen werden müssen. */
-  const keyFor = (t: ITableConfig): string => (isDefaultEnvKey(t.key) ? `${mainKey}|${defaultSig}` : mainKey);
+  const keyFor = (t: ITableConfig): string => (isDefaultEnvKey(t.key)
+    ? `${mainKey}|${defaultSig}`
+    : t.key === DEV_ENV_KEY ? `${mainKey}|${props.devEnvManagedField}` : mainKey);
 
   /** Dataverse-Service für eine Tabelle (CoE-Umgebung oder eigene Umgebung der Tabelle). */
   const serviceFor = (t: ITableConfig | undefined): DataverseService | undefined => {
@@ -205,7 +214,7 @@ const CoeCockpit: React.FC<ICoeCockpitProps> = props => {
     }
     // activeTable/defaultSig gehören dazu: z. B. wird beim Ausschalten von „Default Environment“
     // der aktive Reiter erst im nächsten Render ungültig.
-  }, [tablesSig, props.showDefaultEnvironment, defaultSig, !!activeTable]);
+  }, [tablesSig, props.showDefaultEnvironment, props.showDevEnvironments, defaultSig, !!activeTable]);
 
   React.useEffect(() => {
     if (activeKey && isDefaultEnvKey(activeKey)) {
@@ -243,14 +252,17 @@ const CoeCockpit: React.FC<ICoeCockpitProps> = props => {
       ...prev,
       [key]: { status: 'loading', loadKey, records: prev[key] ? prev[key].records : [], warnings: [] }
     }));
-    svc.getRecords(activeTable, maxRecords, (partialRecords, meta) => {
-      if (isCurrent()) {
-        setData(prev => ({
-          ...prev,
-          [key]: { status: 'loading', partial: true, loadKey, records: partialRecords, meta, warnings: [] }
-        }));
-      }
-    }).then(
+    const request = activeTable.key === DEV_ENV_KEY
+      ? loadAffectedEnvironments(svc, props.devEnvManagedField, maxRecords)
+      : svc.getRecords(activeTable, maxRecords, (partialRecords, meta) => {
+        if (isCurrent()) {
+          setData(prev => ({
+            ...prev,
+            [key]: { status: 'loading', partial: true, loadKey, records: partialRecords, meta, warnings: [] }
+          }));
+        }
+      });
+    request.then(
       res => {
         if (isCurrent()) {
           setData(prev => ({
@@ -628,6 +640,74 @@ const CoeCockpit: React.FC<ICoeCockpitProps> = props => {
     );
   };
 
+  /** Reiter „Betroffen ab 15.12.“: Hinweis-Banner mit Frist, Kacheln als Schnellfilter, darunter die Tabelle. */
+  const renderDevEnvironments = (): JSX.Element => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const days = Math.round((DEV_ENV_DEADLINES.block.getTime() - today.getTime()) / 86400000);
+    const deleteDays = Math.round((DEV_ENV_DEADLINES.delete.getTime() - today.getTime()) / 86400000);
+    const countdown = days > 1 ? `noch ${formatNumber(days)} Tage` : days === 1 ? 'noch 1 Tag' : days === 0 ? 'heute'
+      : deleteDays > 0 ? `gesperrt – Löschung in ${formatNumber(deleteDays)} Tagen` : 'Löschung läuft';
+    const devState = data[DEV_ENV_KEY];
+    const ready = !!devState && devState.status === 'ready';
+    const rows = ready ? devState.records : [];
+    const empty = rows.filter(r => r[DEV_FIELDS.apps] === 0 && r[DEV_FIELDS.flows] === 0).length;
+    const disabled = rows.filter(r => r[DEV_FIELDS.state] === 'Deaktiviert').length;
+    const isFilter = (field: string, value: string): boolean => !!filters[field] && !!filters[field].values && filters[field].values!.length === 1 && filters[field].values![0] === value;
+    const emptyActive = isFilter(DEV_FIELDS.apps, '0') && isFilter(DEV_FIELDS.flows, '0');
+    const disabledActive = isFilter(DEV_FIELDS.state, 'Deaktiviert');
+    const allActive = activeFilterFields.length === 0 && !search;
+    const tiles = [
+      { key: 'all', label: 'Betroffen', value: rows.length, icon: 'Warning', active: allActive,
+        onClick: () => { setFilters({}); setSearch(''); setPage(0); } },
+      { key: 'empty', label: 'Leer (keine Apps, keine Flows)', value: empty, icon: 'Inbox', active: emptyActive,
+        onClick: () => { setFilters({ [DEV_FIELDS.apps]: { values: ['0'] }, [DEV_FIELDS.flows]: { values: ['0'] } }); setSearch(''); setPage(0); } },
+      { key: 'disabled', label: 'Deaktiviert', value: disabled, icon: 'Blocked2', active: disabledActive,
+        onClick: () => { setFilters({ [DEV_FIELDS.state]: { values: ['Deaktiviert'] } }); setSearch(''); setPage(0); } }
+    ];
+    return (
+      <>
+        <div className={`${styles.envBanner} ${styles.devBanner}`}>
+          <div className={styles.envBannerInfo}>
+            <div className={`${styles.envBannerIcon} ${styles.devBannerIcon}`}><Icon iconName="Warning" /></div>
+            <div style={{ minWidth: 0, flex: '1 1 auto' }}>
+              <div className={styles.envBannerEyebrow}>Microsoft-Änderung · Developer-Environments</div>
+              <div className={styles.envBannerTitle}>Ab 15.12.2026 werden nicht verwaltete Developer-Environments gesperrt</div>
+              <div className={styles.devBannerText}>
+                Ab 15.01.2027 werden sie gelöscht. Managed Developer-Environments sind nicht betroffen.
+                Ein Environment bleibt erhalten, wenn es auf Managed umgestellt wird – dann braucht aber jeder,
+                der dort Apps nutzt, eine Premium-Lizenz (ab Februar 2027 werden Apps für User ohne Lizenz blockiert).
+              </div>
+            </div>
+            <span className={styles.devCountdown} title="Sperre am 15.12.2026">
+              <Icon iconName="Clock" /> {countdown}
+            </span>
+          </div>
+          <div className={styles.envStats} role="group" aria-label="Schnellfilter">
+            {tiles.map(t => (
+              <button
+                key={t.key}
+                type="button"
+                aria-pressed={t.active}
+                className={`${styles.envStat} ${t.active ? styles.envStatActive : ''}`}
+                onClick={t.onClick}
+              >
+                <span className={styles.envStatIcon}><Icon iconName={t.icon} /></span>
+                <span className={styles.envStatText}>
+                  <span className={styles.envStatLabel}>{t.label}</span>
+                  {ready
+                    ? <span className={styles.envStatValue}>{formatNumber(t.value)}</span>
+                    : <span className={styles.skeleton} style={{ width: 48, height: 18, marginTop: 3 }} />}
+                </span>
+              </button>
+            ))}
+          </div>
+        </div>
+        {renderBody()}
+      </>
+    );
+  };
+
   const renderBody = (): JSX.Element => {
     if (!activeTable) {
       return (
@@ -847,10 +927,29 @@ const CoeCockpit: React.FC<ICoeCockpitProps> = props => {
                     </button>
                   </>
                 )}
+                {devTables.map(t => {
+                  const count = countFor(t);
+                  return (
+                    <React.Fragment key={t.key}>
+                      {!props.showDefaultEnvironment && <span className={styles.tabDivider} aria-hidden="true" />}
+                      <button
+                        type="button"
+                        role="tab"
+                        aria-selected={inDevView}
+                        className={`${styles.tab} ${inDevView ? styles.tabActive : ''}`}
+                        onClick={() => setActiveKey(t.key)}
+                      >
+                        <Icon iconName="Warning" className={`${styles.tabIcon} ${styles.toneDanger}`} />
+                        <span>{t.title}</span>
+                        {count !== undefined && <span className={`${styles.badge} ${styles.badgeDanger}`}>{count}</span>}
+                      </button>
+                    </React.Fragment>
+                  );
+                })}
               </nav>
             )}
 
-            {inDefaultView ? renderDefaultEnvironment() : renderBody()}
+            {inDevView ? renderDevEnvironments() : inDefaultView ? renderDefaultEnvironment() : renderBody()}
           </>
         )}
 

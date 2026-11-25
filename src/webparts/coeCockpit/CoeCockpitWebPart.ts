@@ -21,6 +21,7 @@ import { ITableConfig } from './models/ITableConfig';
 import { getDefaultTables } from './models/defaultTables';
 import { isValidEnvironmentUrl } from './utils/format';
 import { DataverseService, normalizeDataverseUrl } from './services/DataverseService';
+import { detectManagedAttribute, managedCandidates } from './models/devEnvironments';
 
 export interface ICoeCockpitWebPartProps {
   title: string;
@@ -36,6 +37,10 @@ export interface ICoeCockpitWebPartProps {
   defaultEnvironmentId: string;
   /** Optional, sonst aus dem CoE-Inventar. */
   defaultEnvironmentDataverseUrl: string;
+  /** Reiter „Betroffen ab 15.12.“ anzeigen. */
+  showDevEnvironments: boolean;
+  /** Spalte mit dem Managed-Status (leer = automatisch erkennen). */
+  devEnvManagedField: string;
 }
 
 export default class CoeCockpitWebPart extends BaseClientSideWebPart<ICoeCockpitWebPartProps> {
@@ -45,6 +50,8 @@ export default class CoeCockpitWebPart extends BaseClientSideWebPart<ICoeCockpit
   private _envOptions: IPropertyPaneDropdownOption[] | undefined;
   private _envLoadError: string | undefined;
   private _envLoadedFor: string | undefined;
+  private _managedOptions: IPropertyPaneDropdownOption[] | undefined;
+  private _managedDetected: string | undefined;
 
   protected async onInit(): Promise<void> {
     await super.onInit();
@@ -73,6 +80,8 @@ export default class CoeCockpitWebPart extends BaseClientSideWebPart<ICoeCockpit
       showDefaultEnvironment: this.properties.showDefaultEnvironment !== false,
       defaultEnvironmentId: (this.properties.defaultEnvironmentId || '').trim(),
       defaultEnvironmentDataverseUrl: normalizeDataverseUrl(this.properties.defaultEnvironmentDataverseUrl) || '',
+      showDevEnvironments: this.properties.showDevEnvironments !== false,
+      devEnvManagedField: (this.properties.devEnvManagedField || '').trim(),
       theme: this._theme,
       isEditMode: this.displayMode === DisplayMode.Edit,
       editorRequest: this._editorRequest,
@@ -131,7 +140,21 @@ export default class CoeCockpitWebPart extends BaseClientSideWebPart<ICoeCockpit
     this._envLoadedFor = url;
     this._envOptions = undefined;
     this._envLoadError = undefined;
-    new DataverseService(this.context.aadHttpClientFactory, url).getEnvironments().then(
+    this._managedOptions = undefined;
+    const service = new DataverseService(this.context.aadHttpClientFactory, url);
+    service.getAttributes('admin_environment').then(
+      attrs => {
+        if (this._envLoadedFor !== url) {
+          return;
+        }
+        const detected = detectManagedAttribute(attrs);
+        this._managedDetected = detected ? `${detected.displayName} (${detected.selectName})` : undefined;
+        this._managedOptions = managedCandidates(attrs).map(a => ({ key: a.selectName, text: `${a.displayName} (${a.selectName})` }));
+        this.context.propertyPane.refresh();
+      },
+      () => { this._managedOptions = []; this.context.propertyPane.refresh(); }
+    );
+    service.getEnvironments().then(
       envs => {
         if (this._envLoadedFor !== url) {
           return;
@@ -158,6 +181,19 @@ export default class CoeCockpitWebPart extends BaseClientSideWebPart<ICoeCockpit
     const current = (this.properties.defaultEnvironmentId || '').trim();
     (this._envOptions || []).forEach(o => options.push(o));
     if (current && !(this._envOptions || []).some(o => String(o.key).toLowerCase() === current.toLowerCase())) {
+      options.push({ key: current, text: current });
+    }
+    return options;
+  }
+
+  /** Auswahl der Managed-Spalte: automatisch erkennen oder eine Spalte der CoE-Environment-Tabelle. */
+  private _managedFieldOptions(): IPropertyPaneDropdownOption[] {
+    const options: IPropertyPaneDropdownOption[] = [
+      { key: '', text: this._managedDetected ? `Automatisch: ${this._managedDetected}` : 'Automatisch erkennen' }
+    ];
+    (this._managedOptions || []).forEach(o => options.push(o));
+    const current = (this.properties.devEnvManagedField || '').trim();
+    if (current && !(this._managedOptions || []).some(o => o.key === current)) {
       options.push({ key: current, text: current });
     }
     return options;
@@ -217,6 +253,30 @@ export default class CoeCockpitWebPart extends BaseClientSideWebPart<ICoeCockpit
                 }),
                 PropertyPaneLabel('defaultEnvironmentStatus', {
                   text: this._environmentStatusText()
+                })
+              ]
+            },
+            {
+              groupName: 'Betroffen ab 15.12. (Developer-Environments)',
+              groupFields: [
+                PropertyPaneToggle('showDevEnvironments', {
+                  label: 'Reiter „Betroffen ab 15.12.“ anzeigen',
+                  checked: this.properties.showDevEnvironments !== false
+                }),
+                PropertyPaneDropdown('devEnvManagedField', {
+                  label: 'Spalte mit dem Managed-Status',
+                  options: this._managedFieldOptions(),
+                  selectedKey: this.properties.devEnvManagedField || '',
+                  disabled: this.properties.showDevEnvironments === false
+                }),
+                PropertyPaneLabel('devEnvInfo', {
+                  text: !isValidEnvironmentUrl(this.properties.environmentUrl)
+                    ? 'Zuerst die URL der CoE-Umgebung eintragen.'
+                    : !this._managedOptions
+                      ? 'Spalten werden aus dem CoE-Inventar geladen …'
+                      : this._managedDetected
+                        ? 'Angezeigt werden Developer-Environments, die laut dieser Spalte nicht managed sind.'
+                        : 'Keine Managed-Spalte erkannt – ohne Auswahl werden alle Developer-Environments angezeigt.'
                 })
               ]
             },

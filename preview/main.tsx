@@ -49,7 +49,9 @@ const App: React.FC = () => {
     maxRecords: 20000,
     showDefaultEnvironment: true,
     defaultEnvironmentId: '',
-    defaultEnvironmentDataverseUrl: ''
+    defaultEnvironmentDataverseUrl: '',
+    showDevEnvironments: true,
+    devEnvManagedField: ''
   });
   const factory = React.useMemo(() => new AadHttpClientFactory(), []);
   const set = (patch: Partial<typeof p>): void => setP(prev => ({ ...prev, ...patch }));
@@ -81,6 +83,8 @@ const App: React.FC = () => {
           showDefaultEnvironment={p.showDefaultEnvironment}
           defaultEnvironmentId={p.defaultEnvironmentId}
           defaultEnvironmentDataverseUrl={p.defaultEnvironmentDataverseUrl}
+          showDevEnvironments={p.showDevEnvironments}
+          devEnvManagedField={p.devEnvManagedField}
           onTablesChanged={t => setTables(t)}
           onConfigure={() => setPaneOpen(true)}
         />
@@ -105,6 +109,15 @@ const App: React.FC = () => {
           options={[{ key: '', text: 'Automatisch erkennen (Typ „Default“)' }].concat(
             environments.map(e => ({ key: String(e.admin_environmentid), text: `${e.admin_displayname} (${e.admin_environmenttype})` })))}
           onChange={(_e, o) => set({ defaultEnvironmentId: o ? String(o.key) : '' })}
+        />
+        <Label styles={{ root: { marginTop: 16 } }}>Betroffen ab 15.12. (Developer-Environments)</Label>
+        <Toggle label="Reiter „Betroffen ab 15.12.“ anzeigen" checked={p.showDevEnvironments} onChange={(_e, v) => set({ showDevEnvironments: !!v })} />
+        <Dropdown
+          label="Spalte mit dem Managed-Status"
+          selectedKey={p.devEnvManagedField}
+          disabled={!p.showDevEnvironments}
+          options={[{ key: '', text: 'Automatisch: Managed Environment (admin_environmentismanaged)' }, { key: 'admin_environmentismanaged', text: 'Managed Environment (admin_environmentismanaged)' }]}
+          onChange={(_e, o) => set({ devEnvManagedField: o ? String(o.key) : '' })}
         />
         <Label styles={{ root: { marginTop: 16 } }}>Tabellen</Label>
         <PrimaryButton text="Tabellen-Editor öffnen" iconProps={{ iconName: 'Settings' }} onClick={() => { setPaneOpen(false); setEditorRequest(n => n + 1); }} />

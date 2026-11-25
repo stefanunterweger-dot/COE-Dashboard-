@@ -1568,3 +1568,42 @@
   flex: 0 0 auto;
   color: var(--coe-accent);
 }
+
+// ---------- Reiter „Betroffen ab 15.12.“ ----------
+.devBanner {
+  border-color: var(--coe-danger);
+  background: var(--coe-danger-bg);
+}
+
+.devBannerIcon {
+  color: #fff;
+  background: var(--coe-danger);
+}
+
+.devBannerText {
+  margin-top: 4px;
+  max-width: 820px;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--coe-text-2);
+}
+
+.devCountdown {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  align-self: flex-start;
+  padding: 6px 12px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+  color: #fff;
+  background: var(--coe-danger);
+}
+
+.badgeDanger {
+  color: var(--coe-danger);
+  background: var(--coe-danger-bg);
+}

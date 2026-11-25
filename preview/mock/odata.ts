@@ -282,6 +282,17 @@ function handle(url: string, headers: { [k: string]: string }): IMockResponse {
     const apply = q.get('$apply');
     if (apply) {
       // filter(<ausdruck>)/aggregate($count as total) bzw. aggregate(<pk> with countdistinct as total)
+      const gm = /^(?:filter\((.*)\)\/)?groupby\(\(([^)]+)\),aggregate\((.*)\)\)$/.exec(apply);
+      if (gm) {
+        const groupField = gm[2].trim();
+        attrFor(t, groupField);
+        let rows = t.rows;
+        if (gm[1]) { const pred = parseFilter(t, gm[1]); rows = rows.filter(pred); }
+        if (rows.length > 50000) { throw new ODataError(400, 'AggregateQueryRecordLimit exceeded. Cannot perform this operation.'); }
+        const counts: { [k: string]: number } = {};
+        rows.forEach(r => { const k = String(r[groupField] === undefined ? null : r[groupField]); counts[k] = (counts[k] || 0) + 1; });
+        return respond(200, { value: Object.keys(counts).map(k => ({ [groupField]: k === 'null' ? null : k, n: counts[k] })) });
+      }
       const am = /^(?:filter\((.*)\)\/)?aggregate\((.*)\)$/.exec(apply);
       if (!am) { throw new ODataError(400, `Unsupported $apply '${apply}'.`); }
       const agg = /^(\$count|([a-z_]+) with countdistinct) as ([a-z_]+)$/i.exec(am[2].trim());

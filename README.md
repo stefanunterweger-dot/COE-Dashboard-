@@ -15,6 +15,7 @@ Apps, Flows, Environments und Maker sind vorkonfiguriert, weitere Tabellen lasse
 | Tabellenansicht | Volltextsuche, Sortierung, Seitenumbruch, kompakte/normale Zeilenhöhe, Spaltenauswahl, CSV-Export für Excel |
 | Spaltenfilter | **Jede Spalte** hat einen Filter im Spaltenkopf: Werteliste mit Suche und Anzahl (wie in Excel), bei Datumsspalten Zeiträume (Heute, Letzte 7/30/90 Tage, Älter als 1 Jahr …). Aktive Filter erscheinen als Chips in der Toolbar und lassen sich einzeln entfernen. Filter wirken zusammen, die Werte im Filter passen sich an die übrigen Filter an. |
 | Default Environment | Eigener Reiter mit allen **Apps, Flows und Solutions** im Default Environment. Apps und Flows kommen aus dem CoE-Inventar, Solutions live aus dem Dataverse des Default Environments. Mit Infokopf (Name, Umgebungs-ID, Link ins Admin Center) und Anzahl je Bereich. |
+| Betroffen ab 15.12. | Eigener Reiter mit allen **nicht verwalteten Developer-Environments** (Microsoft sperrt sie ab 15.12.2026, Löschung ab 15.01.2027): Name, Ersteller, Zustand, Anzahl Apps und Flows, Region, Erstellt. Hinweis-Banner mit Countdown, Schnellfilter „Leer“ und „Deaktiviert“, Suche, Spaltenfilter und CSV-Export wie in den anderen Reitern. Die Spalten für Managed-Status, Zustand und Ersteller werden im CoE-Inventar automatisch erkannt; die Managed-Spalte lässt sich in den Webpart-Eigenschaften per Auswahl festlegen. Gibt es keine Managed-Spalte, werden alle Developer-Environments angezeigt (mit Hinweis). |
 | Detailansicht | Seitenpanel mit Eigenschaften, Status, Direktlinks (Power Apps, Power Automate, Admin Center, Dataverse) und „Alle Felder“ |
 | Tabellen-Editor | Tabellen **aus einer Liste wählen** (Vorlagen aus dem CoE Starter Kit wie Apps, Flows, Environments, Maker, Connectors, Copilots, Desktop Flows, Power Pages – angeboten, wenn es die Tabelle gibt – oder jede andere Tabelle der Umgebung), Spalten aus Dataverse auswählen, Darstellung, Filter, Kennzahlen und Links festlegen, JSON-Import/-Export |
 | Robustheit | Spalten, die es in der eigenen CoE-Version nicht gibt, werden automatisch übersprungen und als Hinweis angezeigt |
@@ -82,6 +83,8 @@ Benutzer ohne Rechte sehen eine verständliche Fehlermeldung statt Daten.
 |---|---|
 | URL der CoE-Umgebung | Dataverse-URL der Umgebung mit dem CoE Starter Kit |
 | Bereich „Default Environment“ anzeigen | Reiter ein-/ausblenden |
+| Reiter „Betroffen ab 15.12.“ anzeigen | Reiter ein-/ausblenden |
+| Spalte mit dem Managed-Status | Auswahlliste mit den Spalten der CoE-Environment-Tabelle. Standard: **automatisch erkennen** |
 | Default Environment | Auswahlliste mit allen Umgebungen aus dem CoE-Inventar. Standard: **automatisch erkennen** (Umgebungstyp „Default“) |
 | Tabellen | Über den Tabellen-Editor (Button im Eigenschaftenbereich oder „Tabellen verwalten“ im Bearbeitungsmodus) |
 | Titel / Untertitel | Überschrift des Webparts |

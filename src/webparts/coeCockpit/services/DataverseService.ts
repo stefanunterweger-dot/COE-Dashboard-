@@ -10,6 +10,7 @@ const ODATA_COUNT_LIMIT = 5000;
 const AGGREGATE_LIMIT = 50000;
 
 type CountMode = 'count' | 'distinct' | 'odata';
+const FORMATTED_VALUE = '@OData.Community.Display.V1.FormattedValue';
 
 export interface ICountResult {
   value: number;
@@ -327,6 +328,39 @@ export class DataverseService {
     } catch (e) {
       throw firstError !== undefined && !missingProperty(e) ? firstError : e;
     }
+  }
+
+  /**
+   * Anzahl (oder Summe) je Wert einer Spalte, z. B. Flows je Environment.
+   * Nutzt OData-Aggregation; wird sie nicht unterstützt oder ist die Datenmenge zu groß,
+   * werden die Datensätze geladen und im Browser gezählt.
+   */
+  public async getGroupedCounts(logicalName: string, groupField: string, filter?: string, sumField?: string): Promise<{ [value: string]: number }> {
+    const meta = await this.getEntityMeta(logicalName);
+    const aggregate = sumField ? `${sumField} with sum as n` : '$count as n';
+    const apply = `${filter ? `filter(${filter})/` : ''}groupby((${groupField}),aggregate(${aggregate}))`;
+    // Lookups nach ID gruppieren (der formatierte Wert wäre der Name), sonst nach Anzeigewert
+    const useRaw = /^_.+_value$/.test(groupField);
+    const keyOf = (r: IRecord): string => String(!useRaw && r[groupField + FORMATTED_VALUE] !== undefined
+      ? r[groupField + FORMATTED_VALUE]
+      : (r[groupField] === null || r[groupField] === undefined ? '' : r[groupField]));
+    const out: { [value: string]: number } = {};
+    try {
+      const res = await this._get<{ value: IRecord[] }>(`${meta.entitySetName}?$apply=${encodeURIComponent(apply)}`);
+      res.value.forEach(r => { out[keyOf(r)] = (out[keyOf(r)] || 0) + Number(r.n || 0); });
+      return out;
+    } catch (e) {
+      if (missingProperty(e)) {
+        throw e;
+      }
+    }
+    const table: ITableConfig = {
+      key: '_grouped', title: logicalName, logicalName, icon: 'Table', filter,
+      columns: [{ field: groupField, label: groupField, type: 'text' }].concat(sumField ? [{ field: sumField, label: sumField, type: 'number' }] : []) as ITableConfig['columns']
+    };
+    const rec = await this.getRecords(table, AGGREGATE_LIMIT);
+    rec.records.forEach(r => { out[keyOf(r)] = (out[keyOf(r)] || 0) + (sumField ? Number(r[sumField] || 0) : 1); });
+    return out;
   }
 
   public getCountWithBase(table: ITableConfig, extraFilter?: string): Promise<ICountResult> {

@@ -92,11 +92,19 @@ while (makers.length < 64) {
     modifiedon: daysAgo(recentish(300))
   });
 }
+['Lena Brunner', 'Michael Fuchs', 'Sarah Gruber', 'David Leitner', 'Julia Moser', 'Florian Pichler', 'Theresa Eder',
+  'Markus Wagner', 'Nina Bauer', 'Patrick Haas', 'Johanna Hofer', 'Christoph Lang', 'Verena Winkler', 'Tobias Steiner', 'Elena Koller',
+  'Bernhard Aigner', 'Hannah Reiter', 'Andreas Mayer', 'Lisa Wimmer', 'Daniel Egger', 'Katharina Huber', 'Stefan Lechner'].forEach(n => {
+  if (!makers.some(m => m.admin_displayname === n)) {
+    const [f, l] = n.split(' ');
+    makers.push({ ...makers[makers.length - 1], admin_makerid: guid(), admin_displayname: n, admin_userprincipalname: `${umlaut(f)}.${umlaut(l)}@contoso.com` });
+  }
+});
 // Ehemalige Mitarbeitende (für verwaiste Apps/Flows)
 const departed = makers.slice(0, 6);
 
 // ---------- Environments ----------
-interface IEnvSeed { name: string; type: string; region: string; host?: string; weight: number; deleted?: boolean; id?: string }
+interface IEnvSeed { name: string; type: string; region: string; host?: string; weight: number; deleted?: boolean; id?: string; managed?: boolean; disabled?: boolean }
 const envSeeds: IEnvSeed[] = [
   { name: 'Contoso (default)', type: 'Default', region: 'europe', host: DEFAULT_HOST, weight: 55, id: TENANT_ID },
   { name: 'CoE', type: 'Production', region: 'europe', host: COE_HOST, weight: 2 },
@@ -112,9 +120,29 @@ const envSeeds: IEnvSeed[] = [
   { name: 'Marketing Kampagnen', type: 'Production', region: 'europe', host: 'contoso-mkt.crm4.dynamics.com', weight: 4 },
   { name: 'Altsystem Migration', type: 'Sandbox', region: 'europe', host: 'contoso-legacy.crm4.dynamics.com', weight: 0, deleted: true }
 ];
+// Developer-Environments einzelner Maker (teils managed, teils deaktiviert, teils leer)
+const DEV_OWNERS = ['Lena Brunner', 'Michael Fuchs', 'Sarah Gruber', 'David Leitner', 'Julia Moser', 'Florian Pichler', 'Theresa Eder',
+  'Markus Wagner', 'Nina Bauer', 'Patrick Haas', 'Johanna Hofer', 'Christoph Lang', 'Verena Winkler', 'Tobias Steiner', 'Elena Koller',
+  'Bernhard Aigner', 'Hannah Reiter', 'Andreas Mayer', 'Lisa Wimmer', 'Daniel Egger', 'Katharina Huber', 'Stefan Lechner'];
+DEV_OWNERS.forEach((owner, i) => {
+  const r = rnd();
+  envSeeds.push({
+    name: `Dev – ${owner}`,
+    type: 'Developer',
+    region: 'europe',
+    host: `orgdev${(i + 11).toString(16)}${Math.floor(rnd() * 1e6).toString(16)}.crm4.dynamics.com`,
+    weight: r < 0.2 ? 0 : r < 0.6 ? 1 : 3,
+    managed: i % 3 === 0,
+    disabled: i % 7 === 4
+  });
+});
 const REGION_LABEL: { [k: string]: string } = { europe: 'Europe', unitedstates: 'United States' };
 const environments = envSeeds.map(e => ({
   admin_environmentid: e.id || guid(),
+  admin_environmentismanaged: e.type === 'Developer' ? !!e.managed : ['Production', 'Default'].indexOf(e.type) >= 0,
+  _admin_environmentmaker_value: (e.type === 'Developer'
+    ? makers.filter(m => `Dev – ${m.admin_displayname}` === e.name)[0] || pick(makers)
+    : pick(makers)).admin_makerid as string,
   admin_displayname: e.name,
   admin_environmenttype: e.type,
   admin_environmentregion: REGION_LABEL[e.region],
@@ -122,7 +150,7 @@ const environments = envSeeds.map(e => ({
   admin_environmentcreatedon: daysAgo(e.type === 'Default' ? 1650 : int(40, 1200)),
   admin_environmentdeleted: !!e.deleted,
   admin_environmentsku: e.type === 'Default' ? 'Default' : e.type,
-  admin_environmentstate: e.deleted ? 'Deleted' : 'Ready',
+  admin_environmentstate: e.deleted ? 'Deleted' : e.disabled ? 'Disabled' : 'Ready',
   createdon: daysAgo(int(200, 600)),
   modifiedon: daysAgo(recentish(60))
 }));
@@ -325,7 +353,8 @@ export const DATABASES: IDatabase[] = [
         A('admin_environmenttype', 'String', 'Umgebungstyp'), A('admin_environmentregion', 'String', 'Region'),
         A('admin_environmentcdsinstanceurl', 'String', 'Dataverse-Instanz-URL'), A('admin_environmentcreatedon', 'DateTime', 'Umgebung erstellt am'),
         A('admin_environmentdeleted', 'Boolean', 'Umgebung gelöscht'), A('admin_environmentsku', 'String', 'SKU'),
-        A('admin_environmentstate', 'String', 'Status'), ...common
+        A('admin_environmentstate', 'String', 'Status'),
+        A('admin_environmentismanaged', 'Boolean', 'Managed Environment'), A('admin_environmentmaker', 'Lookup', 'Environment-Ersteller', 'admin_maker'), ...common
       ],
       rows: environments
     },

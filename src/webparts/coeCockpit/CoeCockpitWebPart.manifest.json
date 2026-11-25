@@ -28,7 +28,9 @@
         "density": "comfortable",
         "showDefaultEnvironment": true,
         "defaultEnvironmentId": "",
-        "defaultEnvironmentDataverseUrl": ""
+        "defaultEnvironmentDataverseUrl": "",
+        "showDevEnvironments": true,
+        "devEnvManagedField": ""
       }
     }
   ]
