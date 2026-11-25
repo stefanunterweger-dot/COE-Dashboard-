@@ -31,3 +31,6 @@ Thumbs.db
 # Generated typings
 *.scss.ts
 *.scss.d.ts
+
+# Fertiges Paket zum Herunterladen (bewusst eingecheckt)
+!sppkg/*.sppkg
