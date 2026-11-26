@@ -7,11 +7,11 @@ import { ProgressIndicator } from '@fluentui/react/lib/ProgressIndicator';
 import { Icon } from '@fluentui/react/lib/Icon';
 import styles from './CoeCockpit.module.scss';
 import { IRecord } from '../models/ITableConfig';
-import { buildDevEnvMail, IMailDraft, INotifySettings, mailtoUrl } from '../models/notification';
+import { buildDevEnvMail, emlDraft, IMailDraft, INotifySettings } from '../models/notification';
 import { MAIL_TIMING, MailError, MailService, NOT_APPROVED_HINT } from '../services/MailService';
 import { describeEntry, INotifyLogMap, NotifyMethod } from '../services/NotifyLogService';
 import { displayValue, formatNumber } from '../utils/format';
-import { copyRich, launch } from './NotifyDialog';
+import { download, safeFileName } from './NotifyDialog';
 
 /**
  * Serienversand: jedes ausgewählte Environment bekommt eine eigene E-Mail an seine Maker.
@@ -158,11 +158,11 @@ export const BulkNotifyPanel: React.FC<IBulkNotifyPanelProps> = props => {
   };
 
   const openInOutlook = (it: IItem): void => {
-    copyRich(it.draft.html, it.draft.body).then(ok => {
-      launch(mailtoUrl(it.draft.to, it.draft.cc, it.draft.subject, ok ? '' : it.draft.body));
-      setStatus(prev => ({ ...prev, [it.id]: { s: 'opened' } }));
-      setStepNote(ok ? 'Outlook wird geöffnet – in den Mailtext klicken, Strg+V, senden. Danach „Als versendet markieren“.' : 'Outlook wird mit der Textfassung geöffnet (Zwischenablage gesperrt). Danach „Als versendet markieren“.');
-    }, () => setStepNote('Kopieren nicht möglich.'));
+    // Fertige Mail als Outlook-Entwurf (.eml) – öffnen, dann zeigt Outlook sie mit allem an
+    download(`${safeFileName(`Benachrichtigung ${it.name}`)}.eml`,
+      emlDraft({ to: it.draft.to, cc: it.draft.cc, subject: it.draft.subject, body: it.draft.body, html: it.draft.html }), 'message/rfc822');
+    setStatus(prev => ({ ...prev, [it.id]: { s: 'opened' } }));
+    setStepNote('Mail heruntergeladen – Datei öffnen, in Outlook Absender prüfen und senden. Danach „Als versendet markieren“.');
   };
 
   /** Nach dem Senden in Outlook: im Protokoll vermerken und zum nächsten. */
@@ -305,7 +305,7 @@ export const BulkNotifyPanel: React.FC<IBulkNotifyPanelProps> = props => {
         )}
         {mode === 'steps' && (
           <MessageBar messageBarType={stepNote ? MessageBarType.success : MessageBarType.info} isMultiline={true}>
-            {stepNote || '„In Outlook öffnen“ trägt Empfänger und Betreff ein, die formatierte Mail liegt in der Zwischenablage: in den Mailtext klicken, Strg+V, senden – dann „Weiter“.'}
+            {stepNote || '„In Outlook öffnen“ lädt die fertige Mail herunter: Datei öffnen, in Outlook Absender prüfen und senden – dann „Als versendet markieren“.'}
           </MessageBar>
         )}
 

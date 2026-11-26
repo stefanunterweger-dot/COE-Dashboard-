@@ -115,7 +115,7 @@ export function launch(url: string): void {
 }
 
 /** Datei herunterladen (der Browser bietet „Öffnen“ an → Outlook). */
-function download(name: string, content: string, type: string): void {
+export function download(name: string, content: string, type: string): void {
   const url = URL.createObjectURL(new Blob([content], { type }));
   const a = document.createElement('a');
   a.href = url;
@@ -252,9 +252,9 @@ export const NotifyDialog: React.FC<INotifyDialogProps> = props => {
           />
         </div>
         <div className={styles.notifySteps}>
-          <span><b>1</b> „In Outlook öffnen“ – Empfänger und Betreff sind schon eingetragen.</span>
-          <span><b>2</b> In den Mailtext klicken und <b>Strg+V</b> – die formatierte Mail wird eingefügt.</span>
-          <span><b>3</b> Prüfen und senden.</span>
+          <span><b>1</b> „In Outlook öffnen“ lädt die fertige Mail als Datei herunter.</span>
+          <span><b>2</b> Datei öffnen – Outlook zeigt die Mail mit Empfängern, Betreff und Text.</span>
+          <span><b>3</b> Absender prüfen, senden, dann hier „Als versendet markieren“.</span>
         </div>
         {tooManyRecipients && (
           <MessageBar messageBarType={MessageBarType.warning} isMultiline={true}>
@@ -275,7 +275,12 @@ export const NotifyDialog: React.FC<INotifyDialogProps> = props => {
         {logError && <MessageBar messageBarType={MessageBarType.error} isMultiline={true}>{logError}</MessageBar>}
         {done === 'pasted' && <MessageBar messageBarType={MessageBarType.success}>Outlook wird geöffnet – die formatierte Mail liegt in der Zwischenablage: in den Text klicken und Strg+V.</MessageBar>}
         {done === 'plain' && <MessageBar messageBarType={MessageBarType.info}>Die Zwischenablage ist gesperrt – Outlook wurde mit der Textfassung geöffnet. Für die formatierte Fassung den Outlook-Entwurf verwenden.</MessageBar>}
-        {done === 'eml' && <MessageBar messageBarType={MessageBarType.success}>Entwurf heruntergeladen – Datei öffnen, sie erscheint in Outlook als neue Mail mit allem.</MessageBar>}
+        {done === 'eml' && (
+          <MessageBar messageBarType={MessageBarType.success} isMultiline={true}>
+            Mail heruntergeladen: „{fileName}“. Die Datei öffnen (im Browser bei den Downloads) – Outlook zeigt sie als neue Mail mit allem.
+            Vor dem Senden das Absender-Konto („Von“) prüfen.
+          </MessageBar>
+        )}
         {done === 'addresses' && <MessageBar messageBarType={MessageBarType.success}>{draft.to.length} Adressen kopiert.</MessageBar>}
         {done === 'copyFailed' && <MessageBar messageBarType={MessageBarType.error}>Kopieren nicht möglich – bitte den Outlook-Entwurf (.eml) verwenden.</MessageBar>}
         {done === 'sent' && <MessageBar messageBarType={MessageBarType.success}>Gesendet – die Mail liegt in deinen „Gesendeten Elementen“.</MessageBar>}
@@ -315,19 +320,25 @@ export const NotifyDialog: React.FC<INotifyDialogProps> = props => {
         </DialogFooter>
       ) : (
       <DialogFooter>
-        <PrimaryButton text="In Outlook öffnen" iconProps={{ iconName: 'Mail' }} disabled={noRecipients} onClick={openOutlook} />
-        {props.mailService && (
-          <DefaultButton text="Direkt senden" iconProps={{ iconName: 'Send' }} disabled={noRecipients || done === 'sent'} onClick={() => { setConfirmSend(true); setSendError(''); }} />
-        )}
-        <DefaultButton
-          text="Als Outlook-Entwurf (.eml)"
-          iconProps={{ iconName: 'Download' }}
+        <PrimaryButton
+          text="In Outlook öffnen"
+          iconProps={{ iconName: 'OutlookLogo' }}
           disabled={noRecipients}
-          title="Fertige Mail mit Empfängern, Betreff und formatiertem Text – öffnet sich in Outlook als Entwurf"
+          title="Lädt die fertige Mail (Empfänger, Betreff, formatierter Text) als Datei herunter – öffnen, dann erscheint sie in Outlook"
           onClick={() => {
             download(fileName, emlDraft({ to: draft.to, cc: draft.cc, subject, body: draft.body, html: draft.html }), 'message/rfc822');
             setDone('eml');
           }}
+        />
+        {props.mailService && (
+          <DefaultButton text="Direkt senden" iconProps={{ iconName: 'Send' }} disabled={noRecipients || done === 'sent'} onClick={() => { setConfirmSend(true); setSendError(''); }} />
+        )}
+        <DefaultButton
+          text="Über Zwischenablage"
+          iconProps={{ iconName: 'Copy' }}
+          disabled={noRecipients}
+          title="Öffnet Outlook mit Empfängern und Betreff; der formatierte Text liegt in der Zwischenablage (Strg+V)"
+          onClick={openOutlook}
         />
         {tooManyRecipients && (
           <DefaultButton

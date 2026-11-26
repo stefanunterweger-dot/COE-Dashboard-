@@ -202,77 +202,105 @@ function plainText(c: IContent): string {
   return lines.join('\r\n');
 }
 
-/** Formatierte Mail – Tabellen und Inline-Styles, damit Outlook (Word-Engine) sie sauber darstellt. */
+/**
+ * Formatierte Mail, „Outlook-fest“: Outlook (klassisch) stellt HTML mit der Word-Engine dar und ignoriert
+ * dabei vieles (div-Formate, Abstände von Absätzen, runde Ecken, Linkfarben). Deshalb nur Tabellen,
+ * Zellen-Innenabstände, eigene Abstandszeilen, Farben direkt am Text (span + font) und keine runden Elemente.
+ */
 function htmlMail(c: IContent, accent: string): string {
   const t = texts(c);
   const on = onColor(accent);
   /** Farbe für Links und Akzente auf weißem Grund (helle Akzentfarben → Standardblau). */
   const ink = on === '#ffffff' ? accent : '#0f6cbd';
-  const font = "font-family:'Segoe UI',Calibri,Arial,sans-serif;";
-  const muted = '#605e5c';
-  const border = '#e1dfdd';
-  const toneColor = { danger: '#c50f1f', warning: '#b35c00', neutral: '#605e5c' }[c.assess.tone];
-  const toneBg = { danger: '#fdf3f4', warning: '#fff8f0', neutral: '#f3f2f1' }[c.assess.tone];
-  const p = (html: string, extra?: string): string => `<p style="margin:0 0 12px;${font}font-size:14px;line-height:1.5;color:#1f1f1f;${extra || ''}">${html}</p>`;
-  const h = (text: string): string => `<p style="margin:22px 0 8px;${font}font-size:15px;font-weight:600;color:#1f1f1f;">${esc(text)}</p>`;
+  const FONT = "'Segoe UI', Calibri, Arial, sans-serif";
+  const TEXT = '#242424';
+  const MUTED = '#616161';
+  const BORDER = '#e0e0e0';
+  const toneColor = { danger: '#c50f1f', warning: '#8a4b00', neutral: '#616161' }[c.assess.tone];
+
+  /** Text mit fester Schrift, Größe und Farbe – span (CSS) und font (für Word) zugleich. */
+  const tx = (html: string, o: { size?: number; color?: string; bold?: boolean; spacing?: number } = {}): string => {
+    const size = o.size || 14;
+    const color = o.color || TEXT;
+    const inner = o.bold ? `<b>${html}</b>` : html;
+    return `<span style="font-family:${FONT};font-size:${size}px;line-height:${Math.round(size * 1.45)}px;color:${color};` +
+      `${o.bold ? 'font-weight:bold;' : ''}${o.spacing ? `letter-spacing:${o.spacing}px;` : ''}"><font face="Segoe UI, Calibri, Arial, sans-serif" color="${color}">${inner}</font></span>`;
+  };
+  const link = (href: string, label: string, color: string, bold?: boolean): string =>
+    `<a href="${esc(href)}" style="color:${color};text-decoration:underline;">${tx(esc(label), { color, bold })}</a>`;
+  const space = (h: number): string =>
+    `<tr><td height="${h}" style="height:${h}px;font-size:1px;line-height:1px;mso-line-height-rule:exactly;">&nbsp;</td></tr>`;
+  /** Inhaltszeile mit seitlichem Abstand. */
+  const block = (html: string): string => `<tr><td style="padding:0 28px;">${html}</td></tr>`;
+  const table = (rows: string, extra?: string): string =>
+    `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;${extra || ''}">${rows}</table>`;
   const button = (href: string, label: string): string =>
-    `<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:12px 0 4px;border-collapse:collapse;"><tr>` +
-    `<td bgcolor="${accent}" style="background:${accent};padding:10px 18px;border-radius:6px;">` +
-    `<a href="${esc(href)}" style="${font}font-size:14px;font-weight:600;color:${on};text-decoration:none;">${esc(label)} &#8594;</a></td></tr></table>`;
+    `<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;"><tr>` +
+    `<td bgcolor="${accent}" style="background-color:${accent};padding:11px 22px;">` +
+    `<a href="${esc(href)}" style="color:${on};text-decoration:none;">${tx(`${esc(label)}&nbsp;&#8594;`, { color: on, bold: true })}</a>` +
+    `</td></tr></table>`;
   const dateCell = (label: string, value: string, color: string, bg: string): string =>
-    `<td width="33%" valign="top" bgcolor="${bg}" style="background:${bg};border-left:4px solid ${color};padding:10px 12px;">` +
-    `<div style="${font}font-size:12px;color:${muted};">${esc(label)}</div>` +
-    `<div style="${font}font-size:18px;font-weight:700;color:${color};">${esc(value)}</div></td>`;
-  const row = (label: string, valueHtml: string, last?: boolean): string =>
-    `<tr><td width="34%" style="${font}font-size:13px;color:${muted};padding:8px 12px;${last ? '' : `border-bottom:1px solid ${border};`}">${esc(label)}</td>` +
-    `<td style="${font}font-size:14px;color:#1f1f1f;padding:8px 12px;${last ? '' : `border-bottom:1px solid ${border};`}">${valueHtml}</td></tr>`;
+    `<td width="32%" valign="top" bgcolor="${bg}" style="background-color:${bg};border-left:4px solid ${color};padding:10px 14px;">` +
+    `${tx(esc(label), { size: 12, color: MUTED })}<br>${tx(esc(value), { size: 18, color, bold: true })}</td>`;
+  const gap = '<td width="2%" style="font-size:1px;line-height:1px;">&nbsp;</td>';
+  const fact = (label: string, valueHtml: string, last?: boolean): string => {
+    const line = last ? '' : `border-bottom:1px solid ${BORDER};`;
+    return `<tr><td width="34%" valign="top" style="padding:9px 14px;${line}">${tx(esc(label), { size: 13, color: MUTED })}</td>` +
+      `<td valign="top" style="padding:9px 14px;${line}">${valueHtml}</td></tr>`;
+  };
   const option = (n: string, text: string): string =>
-    `<tr><td width="34" valign="top" style="padding:6px 0;">` +
-    `<table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr><td width="26" height="26" align="center" bgcolor="${accent}" style="background:${accent};border-radius:13px;${font}font-size:13px;font-weight:700;color:${on};">${n}</td></tr></table></td>` +
-    `<td valign="top" style="padding:8px 0 6px 8px;${font}font-size:14px;line-height:1.45;color:#1f1f1f;">${esc(text)}</td></tr>`;
+    `<tr><td width="30" valign="top" style="padding:0 0 10px 0;">${tx(`${n}.`, { size: 16, color: ink, bold: true })}</td>` +
+    `<td valign="top" style="padding:1px 0 10px 0;">${tx(esc(text))}</td></tr>`;
+  const heading = (text: string): string => block(tx(esc(text), { size: 16, bold: true }));
+  const intro = `${esc(t.intro)} ${esc(t.change)}`
+    .replace(esc(c.block), `<b>${esc(c.block)}</b>`).replace(esc(c.del), `<b>${esc(c.del)}</b>`);
 
   return [
-    `<div style="${font}font-size:14px;color:#1f1f1f;">`,
-    `<table role="presentation" width="640" cellpadding="0" cellspacing="0" border="0" style="width:640px;border-collapse:collapse;">`,
-    // Kopf
-    `<tr><td bgcolor="${accent}" style="background:${accent};padding:18px 24px;">`,
-    `<div style="${font}font-size:12px;letter-spacing:1px;text-transform:uppercase;color:${on};">Power Platform · Handlungsbedarf</div>`,
-    `<div style="${font}font-size:21px;font-weight:700;color:${on};margin-top:4px;">${esc(c.suspended ? `Developer-Environment „${c.env}“ wird gelöscht` : `Developer-Environment „${c.env}“ wird am ${c.block} gesperrt`)}</div>`,
+    `<table role="presentation" width="640" cellpadding="0" cellspacing="0" border="0" style="width:640px;border-collapse:collapse;border:1px solid ${BORDER};background-color:#ffffff;">`,
+    // Kopfbalken
+    `<tr><td bgcolor="${accent}" style="background-color:${accent};padding:20px 28px 22px 28px;">`,
+    tx('POWER PLATFORM &middot; HANDLUNGSBEDARF', { size: 12, color: on, spacing: 1 }),
+    '<br>',
+    tx(esc(c.suspended ? `Developer-Environment „${c.env}“ wird gelöscht` : `Developer-Environment „${c.env}“ wird am ${c.block} gesperrt`), { size: 20, color: on, bold: true }),
     `</td></tr>`,
-    // Inhalt
-    `<tr><td style="padding:22px 24px 24px;border:1px solid ${border};border-top:0;">`,
-    p(esc(t.greeting)),
-    p(`${esc(t.intro)} ${esc(t.change).replace(esc(c.block), `<b>${esc(c.block)}</b>`).replace(esc(c.del), `<b>${esc(c.del)}</b>`)}`),
+    space(24),
+    block(tx(esc(t.greeting))),
+    space(12),
+    block(tx(intro)),
+    space(20),
     // Fristen
-    `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse:separate;border-spacing:6px 0;margin:6px -6px 4px;"><tr>`,
-    dateCell('Rückmeldung bis', c.replyBy, ink, '#f5f5f5'),
-    dateCell('Sperre ab', c.block, '#b35c00', '#fff8f0'),
-    dateCell('Löschung ab', c.del, '#c50f1f', '#fdf3f4'),
-    `</tr></table>`,
+    block(table(`<tr>${dateCell('Rückmeldung bis', c.replyBy, ink, '#f5f5f5')}${gap}${dateCell('Sperre ab', c.block, '#8a4b00', '#fff8f0')}${gap}${dateCell('Löschung ab', c.del, '#c50f1f', '#fdf3f4')}</tr>`)),
+    space(26),
     // Environment
-    h(t.yourEnv),
-    `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;border:1px solid ${border};">`,
-    row('Name', `<a href="${esc(c.makerUrl)}" style="color:${ink};font-weight:600;text-decoration:none;">${esc(c.env)}</a>`),
-    row('Apps / Flows', `${esc(c.apps)} Apps · ${esc(c.flows)} Flows`),
-    row('Letzte Aktivität', esc(c.last)),
-    row('Einschätzung', `<span style="background:${toneBg};color:${toneColor};font-weight:600;padding:2px 8px;">${esc(c.assess.text)}</span>`, true),
-    `</table>`,
-    button(c.makerUrl, t.open),
+    heading(t.yourEnv),
+    space(10),
+    block(table([
+      fact('Name', link(c.makerUrl, c.env, ink, true)),
+      fact('Apps / Flows', tx(`${esc(c.apps)} Apps &middot; ${esc(c.flows)} Flows`)),
+      fact('Letzte Aktivität', tx(esc(c.last))),
+      fact('Einschätzung', tx(esc(c.assess.text), { color: toneColor, bold: true }), true)
+    ].join(''), `border:1px solid ${BORDER};`)),
+    space(16),
+    block(button(c.makerUrl, t.open)),
+    space(28),
     // Rückmeldung
-    h(t.replyTitle),
-    p(esc(t.replyAsk), 'margin-bottom:4px;'),
-    `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;">`,
-    t.options.map(o => option(o[0], o[1])).join(''),
-    `</table>`,
-    c.feedback ? button(c.feedback, t.formButton) : '',
-    p(esc(t.notResponsible), `color:${muted};margin-top:8px;`),
-    `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;margin:8px 0 16px;"><tr>`,
-    `<td bgcolor="#f3f2f1" style="background:#f3f2f1;padding:10px 14px;${font}font-size:13px;color:#323130;">${esc(t.noReply)}</td>`,
-    `</tr></table>`,
-    p(`${esc(t.backup)} <a href="${EXPORT_GUIDE_URL}" style="color:${ink};">Anleitung von Microsoft</a>`),
-    p(`Offizielle Ankündigung von Microsoft: <a href="${esc(c.infoUrl)}" style="color:${ink};">Deprecation of unmanaged developer environments (Microsoft Learn)</a>`),
-    p(`${esc(t.closing)}<br>${esc(c.signature)}`, 'margin:18px 0 0;'),
-    `</td></tr></table></div>`
+    heading(t.replyTitle),
+    space(8),
+    block(tx(esc(t.replyAsk))),
+    space(12),
+    block(table(t.options.map(o => option(o[0], o[1])).join(''))),
+    c.feedback ? space(4) + block(button(c.feedback, t.formButton)) + space(14) : '',
+    block(tx(esc(t.notResponsible), { color: MUTED })),
+    space(16),
+    block(table(`<tr><td bgcolor="#f5f5f5" style="background-color:#f5f5f5;border-left:4px solid #8a8886;padding:12px 16px;">${tx(esc(t.noReply), { size: 13, color: '#424242' })}</td></tr>`)),
+    space(20),
+    block(`${tx(esc(t.backup))} ${link(EXPORT_GUIDE_URL, 'Anleitung von Microsoft', ink)}`),
+    space(8),
+    block(`${tx('Offizielle Ankündigung von Microsoft:')} ${link(c.infoUrl, 'Deprecation of unmanaged developer environments (Microsoft Learn)', ink)}`),
+    space(24),
+    block(`${tx(esc(t.closing))}<br>${tx(esc(c.signature), { bold: true })}`),
+    space(28),
+    `</table>`
   ].join('');
 }
 
