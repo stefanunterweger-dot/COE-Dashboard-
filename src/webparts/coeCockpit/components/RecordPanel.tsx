@@ -38,6 +38,8 @@ interface IRelatedState {
 }
 
 const RELATED_LIMIT = 5000;
+/** So viele Zeilen werden in einem Reiter der Detailansicht angezeigt (Rest: Hinweis). */
+const RELATED_RENDER = 200;
 
 interface IFullState {
   status: 'idle' | 'loading' | 'ready' | 'error';
@@ -237,6 +239,7 @@ export const RecordPanel: React.FC<IRecordPanelProps> = props => {
         )}
         <p className={styles.hint}>
           {formatNumber(st.records.length)}{st.truncated ? '+' : ''} {st.records.length === 1 ? 'Eintrag' : 'Einträge'}
+          {st.records.length > RELATED_RENDER ? ` – angezeigt werden die ersten ${formatNumber(RELATED_RENDER)}` : ''}
         </p>
         {st.records.length === 0
           ? (
@@ -252,7 +255,7 @@ export const RecordPanel: React.FC<IRecordPanelProps> = props => {
                   <tr>{cols.map(c => <th key={c.field} className={styles.th} scope="col"><span className={styles.relatedTh}>{c.label}</span></th>)}</tr>
                 </thead>
                 <tbody>
-                  {st.records.map((r, i) => {
+                  {st.records.slice(0, RELATED_RENDER).map((r, i) => {
                     const relId = st.primaryId ? String(r[st.primaryId] || '') : '';
                     const clickable = !!relId && !!props.onOpenRelated && !!props.canOpen && props.canOpen(rel.logicalName);
                     const openIt = (): void => { if (clickable) { props.onOpenRelated!(rel.logicalName, relId); } };
