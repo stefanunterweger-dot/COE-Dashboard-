@@ -1,4 +1,5 @@
 import { IRecord, ITableConfig } from './ITableConfig';
+import { getDefaultTables } from './defaultTables';
 import { DataverseService, environmentType, IAttributeMeta, IRecordResult } from '../services/DataverseService';
 import { displayValue, rawValue } from '../utils/format';
 
@@ -17,7 +18,9 @@ export const DEV_ENV_DEADLINES = {
 
 /** Berechnete Spalten (nicht in Dataverse). */
 export const DEV_FIELDS = {
-  creator: 'coe_creator',
+  makers: 'coe_makers',
+  makerCount: 'coe_makercount',
+  admins: 'coe_sysadmins',
   state: 'coe_state',
   managed: 'coe_managed',
   apps: 'coe_apps',
@@ -50,7 +53,9 @@ export function buildDevEnvTable(): ITableConfig {
     defaultSort: { field: 'admin_displayname', desc: false },
     columns: [
       { field: 'admin_displayname', label: 'Environment', type: 'title' },
-      { field: DEV_FIELDS.creator, label: 'Ersteller', type: 'person' },
+      { field: DEV_FIELDS.makers, label: 'Maker', type: 'list' },
+      { field: DEV_FIELDS.makerCount, label: 'Anzahl Maker', type: 'number', hidden: true },
+      { field: DEV_FIELDS.admins, label: 'System-Administratoren', type: 'list' },
       {
         field: DEV_FIELDS.recommendation, label: 'Empfehlung', type: 'status',
         statusMap: { [RECOMMENDATION.inUse]: 'danger', [RECOMMENDATION.inactive]: 'warning', [RECOMMENDATION.empty]: 'neutral', [RECOMMENDATION.disabled]: 'neutral' }
@@ -67,7 +72,9 @@ export function buildDevEnvTable(): ITableConfig {
     ],
     links: [
       { label: 'Im Power Platform Admin Center öffnen', url: 'https://admin.powerplatform.microsoft.com/environments/{admin_environmentid}/hub' }
-    ]
+    ],
+    // Reiter der Detailansicht wie in der Admin View (Apps, Flows, Bots, … des Environments)
+    related: (getDefaultTables().filter(t => t.logicalName === ENV_TABLE)[0] || { related: [] }).related
   };
 }
 
@@ -94,11 +101,6 @@ export function detectStateAttribute(attrs: IAttributeMeta[]): IAttributeMeta | 
   return findAttribute(attrs, [/runtime ?state/i, /environment ?state/i, /zustand/i, /disabled|enabled/i], ['Boolean', 'Picklist', 'String']);
 }
 
-export function detectCreatorAttribute(attrs: IAttributeMeta[]): IAttributeMeta | undefined {
-  // CoE: „Environment Maker“ (Lookup auf Maker) bevorzugen
-  return findAttribute(attrs, [/maker|creator|ersteller|erstellt von|created ?by/i], ['Lookup', 'Owner', 'Customer'])
-    || findAttribute(attrs, [/maker|creator|ersteller|erstellt von|created ?by/i], ['String']);
-}
 
 /** Spalten, die für den Managed-Status in Frage kommen (Auswahl in den Webpart-Eigenschaften). */
 export function managedCandidates(attrs: IAttributeMeta[]): IAttributeMeta[] {
@@ -172,6 +174,93 @@ async function lastActivityPerEnvironment(service: DataverseService, envIds: str
   return out;
 }
 
+/** Ressourcen-Tabellen mit Environment- und Besitzer-Spalte (wie die Admin View). */
+const MAKER_SOURCES: { table: string; envField: string; ownerField: string; baseFilter: string }[] = [
+  { table: 'admin_app', envField: '_admin_appenvironment_value', ownerField: '_admin_appowner_value', baseFilter: 'admin_appdeleted ne true' },
+  { table: 'admin_flow', envField: '_admin_flowenvironment_value', ownerField: '_admin_derivedowner_value', baseFilter: 'admin_flowdeleted ne true' },
+  { table: 'admin_pva', envField: '_admin_pvaenvironment_value', ownerField: '_admin_pvaowner_value', baseFilter: 'admin_pvadeleted ne true' },
+  { table: 'admin_rpa', envField: '_admin_desktopflowenvironment_value', ownerField: '_admin_rpaowner_value', baseFilter: 'statecode eq 0' }
+];
+
+/**
+ * Maker je Environment: alle Besitzer von Apps, Flows, Bots und Desktop Flows,
+ * sortiert nach Anzahl ihrer Ressourcen. „SYSTEM“ wird ausgeblendet.
+ */
+async function makersPerEnvironment(service: DataverseService, envIds: string[]): Promise<{ [envId: string]: { name: string; count: number }[] }> {
+  const perEnv: { [envId: string]: { [makerId: string]: number } } = {};
+  for (let i = 0; i < envIds.length; i += BATCH) {
+    const ids = envIds.slice(i, i + BATCH);
+    const results = await Promise.all(MAKER_SOURCES.map(src => service
+      .getGroupedPairs(src.table, src.envField, src.ownerField, `(${src.baseFilter}) and (${ids.map(id => `${src.envField} eq ${id}`).join(' or ')})`)
+      .catch(() => [] as { a: string; b: string; n: number }[])));
+    results.forEach(pairs => pairs.forEach(p => {
+      if (!p.a || !p.b) {
+        return;
+      }
+      perEnv[p.a] = perEnv[p.a] || {};
+      perEnv[p.a][p.b] = (perEnv[p.a][p.b] || 0) + p.n;
+    }));
+  }
+  // Namen der Maker nachladen
+  const makerIds: string[] = [];
+  Object.keys(perEnv).forEach(e => Object.keys(perEnv[e]).forEach(m => { if (makerIds.indexOf(m) < 0) { makerIds.push(m); } }));
+  const names: { [makerId: string]: string } = {};
+  for (let i = 0; i < makerIds.length; i += BATCH) {
+    const part = makerIds.slice(i, i + BATCH);
+    const res = await service.getRecords({
+      key: '_makers', title: 'Maker', logicalName: 'admin_maker', icon: 'People', strictFilter: true,
+      filter: part.map(id => `admin_makerid eq ${id}`).join(' or '),
+      columns: [{ field: 'admin_displayname', label: 'Name', type: 'text' }]
+    }, part.length).catch(() => undefined);
+    (res ? res.records : []).forEach(r => { names[String(r.admin_makerid || '').toLowerCase()] = displayValue(r, 'admin_displayname'); });
+  }
+  const out: { [envId: string]: { name: string; count: number }[] } = {};
+  Object.keys(perEnv).forEach(e => {
+    out[e] = Object.keys(perEnv[e])
+      .map(m => ({ name: names[m] || '', count: perEnv[e][m] }))
+      .filter(m => !!m.name && !/^#?\s*system$/i.test(m.name.trim()))
+      .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name, 'de'));
+  });
+  return out;
+}
+
+/** Rollenvorlage „System Administrator“ (in allen Dataverse-Umgebungen gleich). */
+const SYSADMIN_TEMPLATE = '627090ff-40a3-4053-8790-584edc5be201';
+const APP_USER_TYPE = 597910002;
+
+/**
+ * System-Administratoren je Environment aus der CoE-Tabelle „Environment Security Role Permission“.
+ * Ohne „SYSTEM“ und App-Benutzer; doppelte Namen (z. B. direkt + über Gruppe) nur einmal.
+ */
+async function sysAdminsPerEnvironment(service: DataverseService, envIds: string[]): Promise<{ [envId: string]: string[] }> {
+  const out: { [envId: string]: string[] } = {};
+  for (let i = 0; i < envIds.length; i += BATCH) {
+    const ids = envIds.slice(i, i + BATCH);
+    const res = await service.getRecords({
+      key: '_sysadmins', title: 'Sicherheitsrollen', logicalName: 'admin_environmentsecurityrolepermission', icon: 'Shield', strictFilter: true,
+      filter: `(admin_securityroletemplateid eq '${SYSADMIN_TEMPLATE}' or admin_securityrolename eq 'System Administrator') and (${ids.map(id => `_admin_environment_value eq ${id}`).join(' or ')})`,
+      columns: [
+        { field: '_admin_environment_value', label: 'Environment', type: 'text' },
+        { field: 'admin_name', label: 'Benutzer', type: 'text' },
+        { field: 'admin_usertype', label: 'Typ', type: 'text' }
+      ]
+    }, 50000);
+    res.records.forEach(r => {
+      const env = String(r._admin_environment_value || '').toLowerCase();
+      const name = String(r.admin_name || '').trim();
+      if (!env || !name || /^#?\s*system$/i.test(name) || Number(r.admin_usertype) === APP_USER_TYPE) {
+        return;
+      }
+      out[env] = out[env] || [];
+      if (out[env].indexOf(name) < 0) {
+        out[env].push(name);
+      }
+    });
+  }
+  Object.keys(out).forEach(e => out[e].sort((a, b) => a.localeCompare(b, 'de')));
+  return out;
+}
+
 async function countPerEnvironment(service: DataverseService, table: string, envField: string, deletedField: string, envIds: string[]): Promise<{ [envId: string]: number }> {
   const out: { [envId: string]: number } = {};
   for (let i = 0; i < envIds.length; i += BATCH) {
@@ -193,11 +282,10 @@ export async function loadAffectedEnvironments(service: DataverseService, manage
   const chosen = managedField ? attrs.filter(a => a.selectName === managedField || a.logicalName === managedField)[0] : undefined;
   const managedAttr = chosen || detectManagedAttribute(attrs);
   const stateAttr = detectStateAttribute(attrs);
-  const creatorAttr = detectCreatorAttribute(attrs);
   // Typ-Spalte: „Environment Sku“ (aktuell) bzw. „Environment Type“ (ältere CoE-Versionen)
   const typeFields = ['admin_environmentsku', 'admin_environmenttype'].filter(f => attrs.length === 0 || attrs.some(a => a.logicalName === f));
 
-  const extra = [managedAttr, stateAttr, creatorAttr].filter(a => !!a).map(a => ({ field: a!.selectName, label: a!.displayName, type: 'text' as const }));
+  const extra = [managedAttr, stateAttr].filter(a => !!a).map(a => ({ field: a!.selectName, label: a!.displayName, type: 'text' as const }));
   const query: ITableConfig = {
     key: '_devenv', title: 'Environments', logicalName: ENV_TABLE, icon: 'Globe',
     filter: 'admin_environmentdeleted ne true',
@@ -227,6 +315,20 @@ export async function loadAffectedEnvironments(service: DataverseService, manage
     }),
     lastActivityPerEnvironment(service, ids).catch(() => ({} as { [envId: string]: string }))
   ]);
+  const [makers, admins] = await Promise.all([
+    makersPerEnvironment(service, ids).catch((e: Error) => {
+      warnings.push(`Maker konnten nicht ermittelt werden: ${e.message}`);
+      return {} as { [envId: string]: { name: string; count: number }[] };
+    }),
+    sysAdminsPerEnvironment(service, ids).catch((e: Error) => {
+      warnings.push(`System-Administratoren konnten nicht ermittelt werden: ${e.message}`);
+      return undefined;
+    })
+  ]);
+  if (admins && ids.length && Object.keys(admins).length === 0) {
+    warnings.push('Das CoE liefert keine System-Administratoren. Dafür in der CoE-Tabelle „Tenant Security Roles“ bei „System Administrator“ ' +
+      '„Track SR“ aktivieren und den Flow „Admin | Sync Template v4 (Security Roles)“ einschalten.');
+  }
   const inactiveBefore = new Date(Date.now() - INACTIVE_DAYS * 86400000).toISOString();
 
   const records = affected.map(r => {
@@ -245,7 +347,9 @@ export async function loadAffectedEnvironments(service: DataverseService, manage
       ...r,
       [DEV_FIELDS.recommendation]: recommendation,
       [DEV_FIELDS.lastActivity]: last || null,
-      [DEV_FIELDS.creator]: creatorAttr ? displayValue(r, creatorAttr.selectName) : '',
+      [DEV_FIELDS.makers]: (makers[id] || []).map(m => m.name).join(', '),
+      [DEV_FIELDS.makerCount]: (makers[id] || []).length,
+      [DEV_FIELDS.admins]: admins ? (admins[id] || []).join(', ') : '',
       [DEV_FIELDS.state]: state,
       [DEV_FIELDS.managed]: managed === undefined ? 'Unbekannt' : managed ? 'Ja' : 'Nein',
       [DEV_FIELDS.apps]: appCount,

@@ -9,7 +9,9 @@ export type ColumnType =
   | 'boolean'
   | 'choice'
   | 'status'
-  | 'url';
+  | 'url'
+  /** Mehrere Werte, durch „, “ getrennt (z. B. alle Maker eines Environments) */
+  | 'list';
 
 /** Farbton für Status-Pillen und Kennzahlen. */
 export type Tone = 'success' | 'warning' | 'danger' | 'info' | 'neutral' | 'accent';

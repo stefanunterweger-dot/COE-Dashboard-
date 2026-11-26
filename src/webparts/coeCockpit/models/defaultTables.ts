@@ -382,7 +382,8 @@ export function getDefaultTables(): ITableConfig[] {
       logicalName: 'admin_maker',
       icon: 'People',
       group: GROUP_USERS,
-      filter: 'statecode eq 0',
+      // Technisches Konto „SYSTEM“ (Besitzer von System-Apps) ist kein Maker
+      filter: "statecode eq 0 and admin_displayname ne 'SYSTEM'",
       showInKpis: true,
       defaultSort: { field: 'admin_displayname', desc: false },
       columns: [

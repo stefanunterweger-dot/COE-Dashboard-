@@ -392,9 +392,22 @@ const aiModels = Array.from({ length: 28 }, () => {
   const env = envPick(); const owner = pick(humans);
   return { ...COMMON(), admin_aibuildermodelid: guid(), admin_name: `${pick(['Rechnungen', 'Lieferscheine', 'Bewerbungen', 'Formulare'])} – ${pick(['Dokumentverarbeitung', 'Klassifizierung', 'Texterkennung'])}`, _admin_aicreator_value: owner.admin_makerid, _admin_aienvironment_value: env.admin_environmentid, admin_aitemplate: pick(['DocumentScanning', 'TextClassification', 'ObjectDetection', 'Prediction']), admin_aistatus: pick(['Published', 'Trained', 'Draft']), admin_ailastused: daysAgo(recentish(300)), admin_aideleted: false };
 });
+const ROLE_TEMPLATES: { [role: string]: string } = {
+  'System Administrator': '627090ff-40a3-4053-8790-584edc5be201', 'System Customizer': '119f245c-3cc8-4b62-b31c-d1a046ced15d',
+  'Environment Maker': 'd5e2ae5a-1e4e-4ad8-a9c3-9c9a1c5a0f00', 'Basic User': 'b9b5a2f3-7a1e-4ad5-9c43-1ab3ed4f0bb2', 'Power Platform Admin SR': '0f3cbd2c-5a9e-4c2b-8f1e-3c8d6e2a9b11'
+};
 const securityRoles = Array.from({ length: 420 }, () => {
   const env = environments[int(0, environments.length - 1)]; const u = pick(humans); const viaGroup = chance(0.3);
-  return { ...COMMON(), admin_environmentsecurityrolepermissionid: guid(), admin_name: u.admin_displayname, admin_securityrolename: pick(['System Administrator', 'System Customizer', 'Environment Maker', 'Basic User', 'Power Platform Admin SR']), _admin_environment_value: env.admin_environmentid, admin_assignedvia: viaGroup ? 'Team' : 'Direkt', admin_groupname: viaGroup ? pick(ppPrincipals).admin_displayname : null, admin_businessunitname: `org-${String(env.admin_displayname).toLowerCase().replace(/[^a-z]/g, '').slice(0, 10)}`, admin_usertype: u.admin_userisguest ? 597910001 : 597910000, admin_useridentityprovider: 'Entra ID' };
+  const role = pick(['System Administrator', 'System Customizer', 'Environment Maker', 'Basic User', 'Power Platform Admin SR']);
+  return { ...COMMON(), admin_environmentsecurityrolepermissionid: guid(), admin_name: u.admin_displayname, admin_securityrolename: role, admin_securityroletemplateid: ROLE_TEMPLATES[role], _admin_environment_value: env.admin_environmentid, admin_assignedvia: viaGroup ? 'Team' : 'Direkt', admin_groupname: viaGroup ? pick(ppPrincipals).admin_displayname : null, admin_businessunitname: `org-${String(env.admin_displayname).toLowerCase().replace(/[^a-z]/g, '').slice(0, 10)}`, admin_usertype: u.admin_userisguest ? 597910001 : 597910000, admin_useridentityprovider: 'Entra ID' };
+});
+// Jedes Environment: SYSTEM und ein App-Benutzer als System Administrator (werden im Cockpit ausgeblendet)
+environments.forEach(env => {
+  [['SYSTEM', 597910000], ['# CoE Sync App', 597910002]].forEach(([name, type]) => securityRoles.push({
+    ...COMMON(), admin_environmentsecurityrolepermissionid: guid(), admin_name: name, admin_securityrolename: 'System Administrator',
+    admin_securityroletemplateid: ROLE_TEMPLATES['System Administrator'], _admin_environment_value: env.admin_environmentid,
+    admin_assignedvia: 'Direkt', admin_groupname: null, admin_businessunitname: 'org', admin_usertype: type, admin_useridentityprovider: 'Entra ID'
+  }));
 });
 const connIdentities = Array.from({ length: 260 }, () => {
   const env = envPick(); const c = pick(connectors); const u = pick(ppUsers.filter(p => p.admin_type === 'User')); const cross = chance(0.05);
@@ -543,7 +556,7 @@ export const DATABASES: IDatabase[] = [
       LK('admin_flow', 'Flow', 'admin_flow'), ENV_LK('admin_environment'), A('admin_resourcetype', 'String', 'Resource Type'), A('admin_rolename', 'String', 'Role Name')
     ], userRoles),
     table('admin_environmentsecurityrolepermission', 'admin_environmentsecurityrolepermissions', 'Security Role Permission', 'admin_environmentsecurityrolepermissionid', 'admin_name', [
-      A('admin_name', 'String', 'User Name'), A('admin_securityrolename', 'String', 'Security Role Name'), ENV_LK('admin_environment'),
+      A('admin_name', 'String', 'User Name'), A('admin_securityrolename', 'String', 'Security Role Name'), A('admin_securityroletemplateid', 'String', 'Security Role Template ID'), ENV_LK('admin_environment'),
       A('admin_assignedvia', 'String', 'Assigned Via'), A('admin_groupname', 'String', 'Group Name'), A('admin_businessunitname', 'String', 'Business Unit Name'),
       A('admin_usertype', 'Picklist', 'User Type', undefined, { 597910000: 'Member', 597910001: 'Guest', 597910002: 'App User', 597910003: 'Unknown', 597910004: 'Microsoft Account' }),
       A('admin_useridentityprovider', 'String', 'User Identity Provider')

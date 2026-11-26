@@ -64,12 +64,23 @@ function matchesDate(value: unknown, preset: DatePreset): boolean {
   }
 }
 
+/** Einzelwerte einer Listen-Spalte („A, B, C“ → [A, B, C]). */
+export function listItems(text: string): string[] {
+  return text ? text.split(', ').map(s => s.trim()).filter(s => !!s) : [];
+}
+
 export function matchesFilter(record: IRecord, column: IColumnConfig, filter: IColumnFilter): boolean {
   if (filter.date) {
     return matchesDate(record[column.field], filter.date);
   }
   if (filter.values && filter.values.length > 0) {
-    return filter.values.indexOf(displayValue(record, column.field)) >= 0;
+    const text = displayValue(record, column.field);
+    if (column.type === 'list') {
+      // Treffer, wenn einer der gewählten Werte in der Liste vorkommt (bzw. leer gewählt und Liste leer)
+      const items = listItems(text);
+      return items.length === 0 ? filter.values.indexOf('') >= 0 : items.some(i => filter.values!.indexOf(i) >= 0);
+    }
+    return filter.values.indexOf(text) >= 0;
   }
   return true;
 }
@@ -79,6 +90,12 @@ export function buildOptions(records: IRecord[], column: IColumnConfig): IFilter
   const counts: { [v: string]: number } = {};
   records.forEach(r => {
     const v = displayValue(r, column.field);
+    if (column.type === 'list') {
+      // jede Person/jeder Wert einzeln (Anzahl = Zeilen, in denen er vorkommt)
+      const items = listItems(v);
+      (items.length ? items : ['']).forEach(i => { counts[i] = (counts[i] || 0) + 1; });
+      return;
+    }
     counts[v] = (counts[v] || 0) + 1;
   });
   return Object.keys(counts)

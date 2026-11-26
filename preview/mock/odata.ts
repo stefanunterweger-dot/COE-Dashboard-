@@ -285,6 +285,25 @@ function handle(url: string, headers: { [k: string]: string }): IMockResponse {
     if (apply) {
       // filter(<ausdruck>)/aggregate($count as total) bzw. aggregate(<pk> with countdistinct as total)
       const gm = /^(?:filter\((.*)\)\/)?groupby\(\(([^)]+)\),aggregate\((.*)\)\)$/.exec(apply);
+      if (gm && gm[2].indexOf(',') >= 0) {
+        // groupby über mehrere Spalten (z. B. Environment + Besitzer)
+        const fields = gm[2].split(',').map(f => f.trim());
+        fields.forEach(f => attrFor(t, f));
+        let rows = t.rows;
+        if (gm[1]) { const pred = parseFilter(t, gm[1]); rows = rows.filter(pred); }
+        const counts: { [k: string]: { vals: unknown[]; n: number } } = {};
+        rows.forEach(r => {
+          const vals = fields.map(f => (r[f] === undefined ? null : r[f]));
+          const k = JSON.stringify(vals);
+          counts[k] = counts[k] || { vals, n: 0 };
+          counts[k].n++;
+        });
+        return respond(200, { value: Object.keys(counts).map(k => {
+          const row: Record<string, unknown> = { n: counts[k].n };
+          fields.forEach((f, i) => { row[f] = counts[k].vals[i]; });
+          return row;
+        }) });
+      }
       if (gm) {
         const groupField = gm[2].trim();
         attrFor(t, groupField);

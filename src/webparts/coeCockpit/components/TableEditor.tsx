@@ -58,7 +58,8 @@ const TYPE_OPTIONS: IDropdownOption[] = [
   { key: 'date', text: 'Datum' },
   { key: 'datetime', text: 'Datum & Uhrzeit' },
   { key: 'number', text: 'Zahl' },
-  { key: 'url', text: 'Link' }
+  { key: 'url', text: 'Link' },
+  { key: 'list', text: 'Liste (mehrere Werte, „, “ getrennt)' }
 ];
 
 const TONE_OPTIONS: IDropdownOption[] = [

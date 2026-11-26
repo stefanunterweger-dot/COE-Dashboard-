@@ -339,6 +339,35 @@ export class DataverseService {
   }
 
   /**
+   * Anzahl je Wertepaar zweier Spalten, z. B. Apps je Environment und Besitzer.
+   * Per OData-Aggregation; Rückfall: Datensätze laden und im Browser zählen.
+   */
+  public async getGroupedPairs(logicalName: string, fieldA: string, fieldB: string, filter?: string): Promise<{ a: string; b: string; n: number }[]> {
+    const meta = await this.getEntityMeta(logicalName);
+    const apply = `${filter ? `filter(${filter})/` : ''}groupby((${fieldA},${fieldB}),aggregate($count as n))`;
+    const norm = (v: unknown): string => String(v === null || v === undefined ? '' : v).toLowerCase();
+    try {
+      const res = await this._get<{ value: IRecord[] }>(`${meta.entitySetName}?$apply=${encodeURIComponent(apply)}`);
+      return res.value.map(r => ({ a: norm(r[fieldA]), b: norm(r[fieldB]), n: Number(r.n || 0) }));
+    } catch (e) {
+      if (missingProperty(e)) {
+        throw e;
+      }
+    }
+    const rec = await this.getRecords({
+      key: '_pairs', title: logicalName, logicalName, icon: 'Table', filter, strictFilter: true,
+      columns: [{ field: fieldA, label: fieldA, type: 'text' }, { field: fieldB, label: fieldB, type: 'text' }]
+    }, AGGREGATE_LIMIT);
+    const counts: { [key: string]: { a: string; b: string; n: number } } = {};
+    rec.records.forEach(r => {
+      const k = `${norm(r[fieldA])}|${norm(r[fieldB])}`;
+      counts[k] = counts[k] || { a: norm(r[fieldA]), b: norm(r[fieldB]), n: 0 };
+      counts[k].n++;
+    });
+    return Object.keys(counts).map(k => counts[k]);
+  }
+
+  /**
    * Größter Wert (z. B. jüngstes Datum) je Wert einer Spalte, z. B. letzte Aktivität je Environment.
    * Per OData-Aggregation; Rückfall: Datensätze laden und im Browser auswerten.
    */

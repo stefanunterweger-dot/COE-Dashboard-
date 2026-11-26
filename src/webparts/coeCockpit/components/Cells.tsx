@@ -120,6 +120,22 @@ export const CellValue: React.FC<ICellValueProps> = ({ record, column, expanded 
     }
     case 'number':
       return text ? <span className={styles.numeric}>{text}</span> : <EmptyValue />;
+    case 'list': {
+      const items = text ? text.split(', ').filter(s => !!s) : [];
+      if (!items.length) {
+        return <EmptyValue />;
+      }
+      if (expanded) {
+        return <span>{items.join(', ')}</span>;
+      }
+      const shown = items.slice(0, 2);
+      return (
+        <span className={styles.listCell} title={items.join('\n')}>
+          <span className={styles.ellipsis}>{shown.join(', ')}</span>
+          {items.length > shown.length && <span className={styles.listMore}>+{items.length - shown.length}</span>}
+        </span>
+      );
+    }
     default:
       return text ? <span title={text}>{text}</span> : <EmptyValue />;
   }

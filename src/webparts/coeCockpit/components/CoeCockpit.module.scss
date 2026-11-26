@@ -2633,3 +2633,23 @@ li:last-child > .govItem {
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.16);
 }
+
+// Listen-Spalte (z. B. Maker)
+.listCell {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.listMore {
+  flex: 0 0 auto;
+  padding: 1px 7px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--coe-text-2);
+  background: var(--coe-hover);
+  border: 1px solid var(--coe-border);
+  border-radius: 999px;
+}
