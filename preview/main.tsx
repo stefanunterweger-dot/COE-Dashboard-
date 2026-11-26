@@ -65,8 +65,17 @@ const App: React.FC = () => {
     showDevEnvironments: true,
     devEnvManagedField: '',
     showSecurity: true,
-    pipelinesHostUrl: `https://${PIPELINES_HOST}`
+    pipelinesHostUrl: `https://${PIPELINES_HOST}`,
+    notifyTone: 'sie' as 'sie' | 'du',
+    notifyReplyDays: 14,
+    notifyFeedbackUrl: '',
+    notifyCc: 'powerplatform@contoso.com',
+    notifySignature: ''
   });
+  const notify = React.useMemo(() => ({
+    formal: p.notifyTone !== 'du', replyDays: p.notifyReplyDays, infoUrl: 'https://learn.microsoft.com/de-de/power-platform/important-changes-coming',
+    feedbackUrl: p.notifyFeedbackUrl, cc: p.notifyCc, signature: p.notifySignature
+  }), [p.notifyTone, p.notifyReplyDays, p.notifyFeedbackUrl, p.notifyCc, p.notifySignature]);
   const [noAdmin, setNoAdmin] = React.useState<boolean>(false);
   (window as unknown as { __coeDenyHosts?: string[] }).__coeDenyHosts = noAdmin ? [DEFAULT_HOST, PIPELINES_HOST] : [];
   const factory = React.useMemo(() => new AadHttpClientFactory(), []);
@@ -107,6 +116,7 @@ const App: React.FC = () => {
           devEnvManagedField={p.devEnvManagedField}
           showSecurity={p.showSecurity}
           pipelinesHostUrl={p.pipelinesHostUrl}
+          notify={notify}
           onTablesChanged={t => setTables(t)}
           onConfigure={() => setPaneOpen(true)}
         />
@@ -141,6 +151,14 @@ const App: React.FC = () => {
           options={[{ key: '', text: 'Automatisch: Governance Protection Level (admin_governanceprotectionlevel)' }, { key: 'admin_governanceprotectionlevel', text: 'Governance Protection Level (admin_governanceprotectionlevel)' }]}
           onChange={(_e, o) => set({ devEnvManagedField: o ? String(o.key) : '' })}
         />
+        <Label styles={{ root: { marginTop: 16 } }}>E-Mail an Maker (Betroffen ab 15.12.)</Label>
+        <Dropdown label="Anrede" selectedKey={p.notifyTone} options={[{ key: 'sie', text: 'Sie' }, { key: 'du', text: 'Du' }]}
+          onChange={(_e, o) => set({ notifyTone: (o ? o.key : 'sie') as 'sie' | 'du' })} />
+        <Dropdown label="Frist für die Rückmeldung" selectedKey={p.notifyReplyDays} options={[7, 10, 14, 21].map(n => ({ key: n, text: `${n} Tage` }))}
+          onChange={(_e, o) => set({ notifyReplyDays: o ? Number(o.key) : 14 })} />
+        <TextField label="Formular für die Rückmeldung (optional)" value={p.notifyFeedbackUrl} onChange={(_e, v) => set({ notifyFeedbackUrl: v || '' })} />
+        <TextField label="CC (optional)" value={p.notifyCc} onChange={(_e, v) => set({ notifyCc: v || '' })} />
+        <TextField label="Grußzeile" placeholder="Ihr Power-Platform-Team" value={p.notifySignature} onChange={(_e, v) => set({ notifySignature: v || '' })} />
         <Label styles={{ root: { marginTop: 16 } }}>Sicherheit &amp; ALM-Pipelines</Label>
         <Toggle label="Ansicht „Sicherheit & Freigaben“ anzeigen" checked={p.showSecurity} onChange={(_e, v) => set({ showSecurity: !!v })} />
         <Dropdown

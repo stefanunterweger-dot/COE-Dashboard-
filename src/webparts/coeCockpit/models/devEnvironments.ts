@@ -1,7 +1,7 @@
 import { IRecord, ITableConfig } from './ITableConfig';
 import { getDefaultTables } from './defaultTables';
 import { DataverseService, environmentType, IAttributeMeta, IRecordResult } from '../services/DataverseService';
-import { displayValue, rawValue } from '../utils/format';
+import { displayValue, isMailAddress, rawValue } from '../utils/format';
 
 /**
  * Reiter „Betroffen ab 15.12.“: nicht verwaltete (unmanaged) Developer-Environments.
@@ -20,6 +20,10 @@ export const DEV_ENV_DEADLINES = {
 export const DEV_FIELDS = {
   makers: 'coe_makers',
   makerCount: 'coe_makercount',
+  /** E-Mail-Adressen der Maker (für die Benachrichtigung). */
+  makerEmails: 'coe_makeremails',
+  /** Maker ohne E-Mail-Adresse im CoE. */
+  makersNoMail: 'coe_makersnomail',
   admins: 'coe_sysadmins',
   state: 'coe_state',
   managed: 'coe_managed',
@@ -55,6 +59,7 @@ export function buildDevEnvTable(): ITableConfig {
       { field: 'admin_displayname', label: 'Environment', type: 'title' },
       { field: DEV_FIELDS.makers, label: 'Maker', type: 'list' },
       { field: DEV_FIELDS.makerCount, label: 'Anzahl Maker', type: 'number', hidden: true },
+      { field: DEV_FIELDS.makerEmails, label: 'Maker (E-Mail)', type: 'list', hidden: true },
       { field: DEV_FIELDS.admins, label: 'System-Administratoren', type: 'list' },
       {
         field: DEV_FIELDS.recommendation, label: 'Empfehlung', type: 'status',
@@ -186,7 +191,19 @@ const MAKER_SOURCES: { table: string; envField: string; ownerField: string; base
  * Maker je Environment: alle Besitzer von Apps, Flows, Bots und Desktop Flows,
  * sortiert nach Anzahl ihrer Ressourcen. „SYSTEM“ wird ausgeblendet.
  */
-async function makersPerEnvironment(service: DataverseService, envIds: string[]): Promise<{ [envId: string]: { name: string; count: number }[] }> {
+/** Gültige, zustellbare Adresse (Gäste-UPNs mit #EXT# sind keine Postfächer). */
+export function mailAddress(r: IRecord): string {
+  const candidates = [displayValue(r, 'admin_useremail'), displayValue(r, 'admin_userprincipalname')].map(x => x.trim());
+  return candidates.filter(isMailAddress)[0] || '';
+}
+
+/** Kein Mensch: „SYSTEM“ und Anwendungsbenutzer (in Dataverse mit „#“ vor dem Namen, z. B. „# CatalogServiceEur“). */
+export function isServiceAccount(name: string): boolean {
+  const n = name.trim();
+  return /^#/.test(n) || /^system$/i.test(n);
+}
+
+async function makersPerEnvironment(service: DataverseService, envIds: string[]): Promise<{ [envId: string]: { name: string; email: string; count: number }[] }> {
   const perEnv: { [envId: string]: { [makerId: string]: number } } = {};
   for (let i = 0; i < envIds.length; i += BATCH) {
     const ids = envIds.slice(i, i + BATCH);
@@ -205,20 +222,29 @@ async function makersPerEnvironment(service: DataverseService, envIds: string[])
   const makerIds: string[] = [];
   Object.keys(perEnv).forEach(e => Object.keys(perEnv[e]).forEach(m => { if (makerIds.indexOf(m) < 0) { makerIds.push(m); } }));
   const names: { [makerId: string]: string } = {};
+  const emails: { [makerId: string]: string } = {};
   for (let i = 0; i < makerIds.length; i += BATCH) {
     const part = makerIds.slice(i, i + BATCH);
     const res = await service.getRecords({
       key: '_makers', title: 'Maker', logicalName: 'admin_maker', icon: 'People', strictFilter: true,
       filter: part.map(id => `admin_makerid eq ${id}`).join(' or '),
-      columns: [{ field: 'admin_displayname', label: 'Name', type: 'text' }]
+      columns: [
+        { field: 'admin_displayname', label: 'Name', type: 'text' },
+        { field: 'admin_useremail', label: 'E-Mail', type: 'text' },
+        { field: 'admin_userprincipalname', label: 'UPN', type: 'text' }
+      ]
     }, part.length).catch(() => undefined);
-    (res ? res.records : []).forEach(r => { names[String(r.admin_makerid || '').toLowerCase()] = displayValue(r, 'admin_displayname'); });
+    (res ? res.records : []).forEach(r => {
+      const id = String(r.admin_makerid || '').toLowerCase();
+      names[id] = displayValue(r, 'admin_displayname');
+      emails[id] = mailAddress(r);
+    });
   }
-  const out: { [envId: string]: { name: string; count: number }[] } = {};
+  const out: { [envId: string]: { name: string; email: string; count: number }[] } = {};
   Object.keys(perEnv).forEach(e => {
     out[e] = Object.keys(perEnv[e])
-      .map(m => ({ name: names[m] || '', count: perEnv[e][m] }))
-      .filter(m => !!m.name && !/^#?\s*system$/i.test(m.name.trim()))
+      .map(m => ({ name: names[m] || '', email: emails[m] || '', count: perEnv[e][m] }))
+      .filter(m => !!m.name && !isServiceAccount(m.name))
       .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name, 'de'));
   });
   return out;
@@ -230,7 +256,7 @@ const APP_USER_TYPE = 597910002;
 
 /**
  * System-Administratoren je Environment aus der CoE-Tabelle „Environment Security Role Permission“.
- * Ohne „SYSTEM“ und App-Benutzer; doppelte Namen (z. B. direkt + über Gruppe) nur einmal.
+ * Ohne „SYSTEM“ und App-Benutzer (Typ „App User“ oder Name mit „#“); doppelte Namen (z. B. direkt + über Gruppe) nur einmal.
  */
 async function sysAdminsPerEnvironment(service: DataverseService, envIds: string[]): Promise<{ [envId: string]: string[] }> {
   const out: { [envId: string]: string[] } = {};
@@ -248,7 +274,7 @@ async function sysAdminsPerEnvironment(service: DataverseService, envIds: string
     res.records.forEach(r => {
       const env = String(r._admin_environment_value || '').toLowerCase();
       const name = String(r.admin_name || '').trim();
-      if (!env || !name || /^#?\s*system$/i.test(name) || Number(r.admin_usertype) === APP_USER_TYPE) {
+      if (!env || !name || isServiceAccount(name) || Number(r.admin_usertype) === APP_USER_TYPE) {
         return;
       }
       out[env] = out[env] || [];
@@ -318,7 +344,7 @@ export async function loadAffectedEnvironments(service: DataverseService, manage
   const [makers, admins] = await Promise.all([
     makersPerEnvironment(service, ids).catch((e: Error) => {
       warnings.push(`Maker konnten nicht ermittelt werden: ${e.message}`);
-      return {} as { [envId: string]: { name: string; count: number }[] };
+      return {} as { [envId: string]: { name: string; email: string; count: number }[] };
     }),
     sysAdminsPerEnvironment(service, ids).catch((e: Error) => {
       warnings.push(`System-Administratoren konnten nicht ermittelt werden: ${e.message}`);
@@ -349,6 +375,8 @@ export async function loadAffectedEnvironments(service: DataverseService, manage
       [DEV_FIELDS.lastActivity]: last || null,
       [DEV_FIELDS.makers]: (makers[id] || []).map(m => m.name).join(', '),
       [DEV_FIELDS.makerCount]: (makers[id] || []).length,
+      [DEV_FIELDS.makerEmails]: (makers[id] || []).map(m => m.email).filter(x => !!x).join(', '),
+      [DEV_FIELDS.makersNoMail]: (makers[id] || []).filter(m => !m.email).map(m => m.name).join(', '),
       [DEV_FIELDS.admins]: admins ? (admins[id] || []).join(', ') : '',
       [DEV_FIELDS.state]: state,
       [DEV_FIELDS.managed]: managed === undefined ? 'Unbekannt' : managed ? 'Ja' : 'Nein',

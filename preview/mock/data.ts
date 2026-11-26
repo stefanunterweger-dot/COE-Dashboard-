@@ -507,6 +507,17 @@ connectors.forEach(c => {
   c.admin_customconnectorhostishttp = c.admin_displayname === 'Contoso Lager-API';
 });
 
+// Anwendungsbenutzer wie bei euch: „# …“ als System Administrator, aber nicht als App-Benutzer markiert
+environments.forEach(env => {
+  ['# CatalogServiceEur', '# CCADataAnalyticsML'].forEach(name => securityRoles.push({
+    ...COMMON(), admin_environmentsecurityrolepermissionid: guid(), admin_name: name, admin_securityrolename: 'System Administrator',
+    admin_securityroletemplateid: ROLE_TEMPLATES['System Administrator'], _admin_environment_value: env.admin_environmentid,
+    admin_assignedvia: 'Direkt', admin_groupname: null, admin_businessunitname: 'org', admin_usertype: 597910000, admin_useridentityprovider: 'Entra ID'
+  }));
+});
+// Gäste ohne Postfach-Adresse im CoE (nur UPN mit #EXT#) – werden in der E-Mail als „ohne Adresse“ gemeldet
+makers.filter(m => m.admin_userisguest).forEach(m => { m.admin_useremail = null; });
+
 // ---------- Power Platform Pipelines (eigenes Host-Environment) ----------
 const sysUsers = humans.slice(6, 14).map(m => ({ systemuserid: guid(), fullname: m.admin_displayname, ...COMMON() }));
 const ENV_ROLE: { [v: number]: string } = { 200000000: 'Entwicklungsumgebung', 200000001: 'Zielumgebung' };

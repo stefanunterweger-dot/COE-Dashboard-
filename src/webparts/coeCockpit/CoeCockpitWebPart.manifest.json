@@ -33,7 +33,13 @@
         "showOverview": true,
         "devEnvManagedField": "",
         "showSecurity": true,
-        "pipelinesHostUrl": ""
+        "pipelinesHostUrl": "",
+        "notifyTone": "sie",
+        "notifyReplyDays": 14,
+        "notifyInfoUrl": "https://learn.microsoft.com/de-de/power-platform/important-changes-coming",
+        "notifyFeedbackUrl": "",
+        "notifyCc": "",
+        "notifySignature": ""
       }
     }
   ]

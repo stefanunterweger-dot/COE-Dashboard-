@@ -79,7 +79,8 @@ export const SecurityView: React.FC<ISecurityProps> = props => {
     // Ohne SYSTEM und App-Benutzer (wie im Reiter „Betroffen ab 15.12.“); ältere CoE-Versionen ohne Benutzertyp → einfacher Filter
     const sysAdmin = `(admin_securityroletemplateid eq '${SYSADMIN_TEMPLATE}' or admin_securityrolename eq 'System Administrator')`;
     const adminFilters = [
-      `${sysAdmin} and admin_name ne 'SYSTEM' and (admin_usertype ne 597910002 or admin_usertype eq null)`,
+      `${sysAdmin} and admin_name ne 'SYSTEM' and not startswith(admin_name,'#') and (admin_usertype ne 597910002 or admin_usertype eq null)`,
+      `${sysAdmin} and admin_name ne 'SYSTEM' and not startswith(admin_name,'#')`,
       `${sysAdmin} and admin_name ne 'SYSTEM'`
     ];
     const groupedAdmins = (i: number): Promise<{ [value: string]: number }> =>

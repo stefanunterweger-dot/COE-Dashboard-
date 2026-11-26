@@ -21,6 +21,8 @@ import { buildPipelineTables, GROUP_ALM, PIPELINE_KEY_PREFIX } from '../models/p
 import { OverviewView } from './OverviewView';
 import { SECURITY_KEY, SecurityView } from './SecurityView';
 import { GlobalSearch } from './GlobalSearch';
+import { copyText, NotifyDialog } from './NotifyDialog';
+import { INotifySettings } from '../models/notification';
 import { copyCurrentLink, IViewState, readViewState, writeViewState } from '../utils/deepLink';
 import {
   displayValue, downloadText, formatCount, formatNumber, formatTime, hostOf, isValidEnvironmentUrl, sortValue, toCsv
@@ -61,6 +63,8 @@ export interface ICoeCockpitProps {
   showSecurity: boolean;
   /** Dataverse-URL des Pipelines-Host-Environments (leer = ALM-Pipelines ausblenden). */
   pipelinesHostUrl: string;
+  /** Vorlage für die E-Mail an die Maker betroffener Developer-Environments. */
+  notify: INotifySettings;
   onTablesChanged: (tables: ITableConfig[]) => void;
   onConfigure: () => void;
 }
@@ -212,6 +216,9 @@ const CoeCockpit: React.FC<ICoeCockpitProps> = props => {
   const [panelStack, setPanelStack] = React.useState<{ table: ITableConfig; record: IRecord; meta?: IEntityMeta }[]>([]);
   const panel = panelStack.length ? panelStack[panelStack.length - 1] : undefined;
   const [editorOpen, setEditorOpen] = React.useState<boolean>(false);
+  /** Environment, für das die E-Mail an die Maker vorbereitet wird. */
+  const [notifyRecord, setNotifyRecord] = React.useState<IRecord | undefined>(undefined);
+  const [addressesCopied, setAddressesCopied] = React.useState<string>('');
   const [collapsedGroups, setCollapsedGroups] = React.useState<{ [group: string]: boolean }>({});
   const storageKey = `coe-cockpit:${props.instanceId}:hidden`;
   const [hidden, setHidden] = React.useState<{ [tableKey: string]: string[] }>(() => readHidden(storageKey) || {});
@@ -983,6 +990,10 @@ const CoeCockpit: React.FC<ICoeCockpitProps> = props => {
       active: isFilter(DEV_FIELDS.recommendation, rec) && activeFilterFields.length === 1,
       onClick: () => { setFilters({ [DEV_FIELDS.recommendation]: { values: [rec] } }); setSearch(''); setPage(0); }
     });
+    // Adressen der Maker aller aktuell gefilterten Environments (ohne Doppelte)
+    const mailTargets: string[] = [];
+    (ready ? filtered : []).forEach(r => String(r[DEV_FIELDS.makerEmails] || '').split(',').map(x => x.trim()).filter(x => !!x)
+      .forEach(a => { if (mailTargets.indexOf(a) < 0) { mailTargets.push(a); } }));
     const tiles = [
       { key: 'all', label: 'Betroffen', value: rows.length, icon: 'Warning', active: allActive,
         onClick: () => { setFilters({}); setSearch(''); setPage(0); } },
@@ -1008,6 +1019,21 @@ const CoeCockpit: React.FC<ICoeCockpitProps> = props => {
             <span className={styles.devCountdown} title="Sperre am 15.12.2026">
               <Icon iconName="Clock" /> {countdown}
             </span>
+          </div>
+          <div className={styles.devActions}>
+            <span className={styles.devActionsText}>
+              <Icon iconName="Mail" /> Maker verständigen: über das Brief-Symbol in der Zeile – die E-Mail öffnet sich mit allen Infos in deinem Outlook.
+            </span>
+            <DefaultButton
+              text={addressesCopied || `E-Mail-Adressen kopieren (${formatNumber(mailTargets.length)})`}
+              iconProps={{ iconName: addressesCopied ? 'CheckMark' : 'Copy' }}
+              disabled={!ready || mailTargets.length === 0}
+              title="Adressen aller Maker der gefilterten Environments kopieren – z. B. für eine Sammelmail in BCC"
+              onClick={() => copyText(mailTargets.join('; ')).then(ok => {
+                setAddressesCopied(ok ? `${formatNumber(mailTargets.length)} Adressen kopiert` : 'Kopieren nicht möglich');
+                window.setTimeout(() => setAddressesCopied(''), 2500);
+              })}
+            />
           </div>
           <div className={`${styles.envStats} ${styles.devStats}`} role="group" aria-label="Schnellfilter">
             {tiles.map(t => (
@@ -1150,6 +1176,12 @@ const CoeCockpit: React.FC<ICoeCockpitProps> = props => {
           onSetSort={(field, desc) => { setSort({ field, desc }); setPage(0); }}
           onFilterChange={setColumnFilter}
           onOpen={r => activeTable && setPanelStack([{ table: activeTable, record: r, meta: state ? state.meta : undefined }])}
+          rowAction={inDevView ? {
+            icon: 'Mail',
+            label: 'Maker per E-Mail verständigen',
+            isDisabled: r => !r[DEV_FIELDS.makerEmails],
+            onClick: r => setNotifyRecord(r)
+          } : undefined}
         />
 
         {!loading && filtered.length === 0 && (
@@ -1347,6 +1379,19 @@ const CoeCockpit: React.FC<ICoeCockpitProps> = props => {
           onOpenRelated={openRelated}
           onBack={panelStack.length > 1 ? () => setPanelStack(prev => prev.slice(0, prev.length - 1)) : undefined}
           backLabel={panelStack.length > 1 ? panelStack[panelStack.length - 2].table.title : undefined}
+          action={panel && panel.table.key === DEV_ENV_KEY ? {
+            text: 'Maker per E-Mail verständigen',
+            icon: 'Mail',
+            disabled: !panel.record[DEV_FIELDS.makerEmails],
+            onClick: () => setNotifyRecord(panel.record)
+          } : undefined}
+        />
+
+        <NotifyDialog
+          record={notifyRecord}
+          settings={props.notify}
+          themeVars={themeVars}
+          onDismiss={() => setNotifyRecord(undefined)}
         />
 
         <TableEditor

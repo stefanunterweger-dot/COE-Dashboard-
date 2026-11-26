@@ -22,6 +22,7 @@ import { getDefaultTables } from './models/defaultTables';
 import { isValidEnvironmentUrl } from './utils/format';
 import { DataverseService, normalizeDataverseUrl } from './services/DataverseService';
 import { detectManagedAttribute, managedCandidates } from './models/devEnvironments';
+import { DEFAULT_INFO_URL, parseAddresses } from './models/notification';
 
 export interface ICoeCockpitWebPartProps {
   title: string;
@@ -47,6 +48,18 @@ export interface ICoeCockpitWebPartProps {
   showSecurity: boolean;
   /** Dataverse-URL des Pipelines-Host-Environments (leer = ALM-Pipelines ausblenden). */
   pipelinesHostUrl: string;
+  /** E-Mail an Maker: Anrede „sie“ oder „du“. */
+  notifyTone: 'sie' | 'du';
+  /** Frist für die Rückmeldung in Tagen. */
+  notifyReplyDays: number;
+  /** Link zur offiziellen Microsoft-Information. */
+  notifyInfoUrl: string;
+  /** Optional: Formular für die Rückmeldung. */
+  notifyFeedbackUrl: string;
+  /** Optional: CC-Adresse(n). */
+  notifyCc: string;
+  /** Grußzeile. */
+  notifySignature: string;
 }
 
 export default class CoeCockpitWebPart extends BaseClientSideWebPart<ICoeCockpitWebPartProps> {
@@ -92,6 +105,14 @@ export default class CoeCockpitWebPart extends BaseClientSideWebPart<ICoeCockpit
       devEnvManagedField: (this.properties.devEnvManagedField || '').trim(),
       showSecurity: this.properties.showSecurity !== false,
       pipelinesHostUrl: normalizeDataverseUrl(this.properties.pipelinesHostUrl) || '',
+      notify: {
+        formal: this.properties.notifyTone !== 'du',
+        replyDays: this.properties.notifyReplyDays || 14,
+        infoUrl: /^https:\/\//i.test((this.properties.notifyInfoUrl || '').trim()) ? this.properties.notifyInfoUrl.trim() : DEFAULT_INFO_URL,
+        feedbackUrl: /^https:\/\//i.test((this.properties.notifyFeedbackUrl || '').trim()) ? this.properties.notifyFeedbackUrl.trim() : '',
+        cc: (this.properties.notifyCc || '').trim(),
+        signature: (this.properties.notifySignature || '').trim()
+      },
       theme: this._theme,
       isEditMode: this.displayMode === DisplayMode.Edit,
       editorRequest: this._editorRequest,
@@ -303,6 +324,41 @@ export default class CoeCockpitWebPart extends BaseClientSideWebPart<ICoeCockpit
                       : this._managedDetected
                         ? 'Angezeigt werden Developer-Environments, die laut dieser Spalte nicht managed sind.'
                         : 'Keine Managed-Spalte erkannt – ohne Auswahl werden alle Developer-Environments angezeigt.'
+                })
+              ]
+            },
+            {
+              groupName: 'E-Mail an Maker (Betroffen ab 15.12.)',
+              groupFields: [
+                PropertyPaneDropdown('notifyTone', {
+                  label: 'Anrede',
+                  options: [{ key: 'sie', text: 'Sie' }, { key: 'du', text: 'Du' }],
+                  selectedKey: this.properties.notifyTone === 'du' ? 'du' : 'sie'
+                }),
+                PropertyPaneDropdown('notifyReplyDays', {
+                  label: 'Frist für die Rückmeldung',
+                  options: [7, 10, 14, 21].map(n => ({ key: n, text: `${n} Tage` })),
+                  selectedKey: this.properties.notifyReplyDays || 14
+                }),
+                PropertyPaneTextField('notifyInfoUrl', {
+                  label: 'Link zur Microsoft-Information',
+                  description: 'Offizielle Microsoft-Seite zur Änderung (wird in der E-Mail verlinkt).',
+                  placeholder: DEFAULT_INFO_URL,
+                  onGetErrorMessage: (v: string) => (!v || /^https:\/\/\S+$/i.test(v.trim()) ? '' : 'Bitte einen https-Link eintragen.')
+                }),
+                PropertyPaneTextField('notifyFeedbackUrl', {
+                  label: 'Formular für die Rückmeldung (optional)',
+                  description: 'z. B. Microsoft Forms. {environment} im Link wird durch den Namen des Environments ersetzt. Ohne Formular antworten die Maker per E-Mail.',
+                  onGetErrorMessage: (v: string) => (!v || /^https:\/\/\S+$/i.test(v.trim()) ? '' : 'Bitte einen https-Link eintragen.')
+                }),
+                PropertyPaneTextField('notifyCc', {
+                  label: 'CC (optional)',
+                  description: 'z. B. das Postfach des Power-Platform-Teams, damit Rückmeldungen dort ankommen.',
+                  onGetErrorMessage: (v: string) => (!v || parseAddresses(v).length === v.split(/[;,\s]+/).filter(x => !!x).length ? '' : 'Bitte gültige E-Mail-Adressen eintragen (getrennt durch ;).')
+                }),
+                PropertyPaneTextField('notifySignature', {
+                  label: 'Grußzeile',
+                  placeholder: 'Ihr Power-Platform-Team'
                 })
               ]
             },

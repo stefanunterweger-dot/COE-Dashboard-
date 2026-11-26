@@ -232,3 +232,11 @@ export function isValidEnvironmentUrl(url: string | undefined): boolean {
 export function hostOf(url: string): string {
   return url.replace(/^https?:\/\//i, '').replace(/\/.*$/, '');
 }
+
+/**
+ * Einfache Prüfung einer E-Mail-Adresse. Erlaubt nur Zeichen, die in einem mailto-Link nicht maskiert
+ * werden müssen (Gäste-UPNs mit „#EXT#“ sind keine Postfächer und fallen damit heraus).
+ */
+export function isMailAddress(x: string): boolean {
+  return /^[A-Za-z0-9._+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$/.test(x);
+}

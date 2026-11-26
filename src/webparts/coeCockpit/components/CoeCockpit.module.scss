@@ -2872,3 +2872,108 @@ li:last-child > .govItem {
     font-size: 22px;
   }
 }
+
+// =====================================================================
+// E-Mail an Maker (Betroffen ab 15.12.)
+// =====================================================================
+.thAction {
+  width: 48px;
+}
+
+.tdAction {
+  width: 48px;
+  padding-left: 12px;
+  padding-right: 0;
+}
+
+.rowActionButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  font-size: 15px;
+  color: var(--coe-accent);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  cursor: pointer;
+
+  &:hover:not(:disabled),
+  &:focus-visible {
+    background: var(--coe-accent-soft);
+    border-color: var(--coe-accent-border);
+    outline: none;
+  }
+
+  &:disabled {
+    color: var(--coe-text-3);
+    cursor: default;
+    opacity: 0.5;
+  }
+}
+
+.devActions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  padding: 0 18px 12px;
+}
+
+.devActionsText {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--coe-text-2);
+}
+
+.panelAction {
+  margin-top: 10px;
+}
+
+.notify {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  color: var(--coe-text);
+}
+
+.notifyRow {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.notifyLabel {
+  flex: 0 0 32px;
+  padding-top: 4px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--coe-text-2);
+}
+
+.notifyValue {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-width: 0;
+}
+
+.notifyChip {
+  padding: 3px 10px;
+  font-size: 13px;
+  border-radius: 999px;
+  background: var(--coe-accent-soft);
+  border: 1px solid var(--coe-accent-border);
+}
+
+.notifyWarn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--coe-danger);
+}

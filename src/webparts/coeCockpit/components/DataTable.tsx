@@ -21,6 +21,8 @@ export interface IDataTableProps {
   onSetSort: (field: string, desc: boolean) => void;
   onFilterChange: (field: string, filter: IColumnFilter | undefined) => void;
   onOpen: (record: IRecord) => void;
+  /** Optionale Aktion je Zeile (Symbol-Schaltfläche vor dem Pfeil), z. B. „Maker verständigen“. */
+  rowAction?: { icon: string; label: string; isDisabled?: (record: IRecord) => boolean; onClick: (record: IRecord) => void };
 }
 
 const SKELETON_WIDTHS = [72, 55, 64, 40, 80, 48, 60, 52];
@@ -43,6 +45,7 @@ export const DataTable: React.FC<IDataTableProps> = props => {
       <table className={`${styles.table} ${compact ? styles.compact : ''}`}>
         <thead>
           <tr>
+            {props.rowAction && <th className={`${styles.th} ${styles.thAction}`} aria-label={props.rowAction.label} />}
             {columns.map(c => {
               const sorted = !!sort && sort.field === c.field;
               const ariaSort = sorted ? (sort && sort.desc ? 'descending' : 'ascending') : 'none';
@@ -79,6 +82,7 @@ export const DataTable: React.FC<IDataTableProps> = props => {
         <tbody>
           {loading && SKELETON_WIDTHS.map((w, i) => (
             <tr key={`sk${i}`}>
+              {props.rowAction && <td className={styles.td} />}
               {columns.map((c, ci) => (
                 <td key={c.field} className={styles.td}>
                   <span className={styles.skeleton} style={{ width: `${Math.max(30, (w + ci * 13) % 90)}%` }} />
@@ -95,6 +99,25 @@ export const DataTable: React.FC<IDataTableProps> = props => {
               onClick={() => onOpen(r)}
               onKeyDown={e => onRowKey(e, r)}
             >
+              {props.rowAction && (() => {
+                const action = props.rowAction;
+                const disabled = !!action.isDisabled && action.isDisabled(r);
+                return (
+                  <td className={`${styles.td} ${styles.tdAction}`}>
+                    <button
+                      type="button"
+                      className={styles.rowActionButton}
+                      title={disabled ? `${action.label} – keine E-Mail-Adresse vorhanden` : action.label}
+                      aria-label={action.label}
+                      disabled={disabled}
+                      onClick={e => { e.stopPropagation(); action.onClick(r); }}
+                      onKeyDown={e => e.stopPropagation()}
+                    >
+                      <Icon iconName="Mail" />
+                    </button>
+                  </td>
+                );
+              })()}
               {columns.map(c => (
                 <td key={c.field} className={`${styles.td} ${c.type === 'number' ? styles.numeric : ''}`}>
                   <CellValue record={r} column={c} />

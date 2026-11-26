@@ -6,6 +6,7 @@ import { Toggle } from '@fluentui/react/lib/Toggle';
 import { Spinner, SpinnerSize } from '@fluentui/react/lib/Spinner';
 import { MessageBar, MessageBarType } from '@fluentui/react/lib/MessageBar';
 import { Icon } from '@fluentui/react/lib/Icon';
+import { DefaultButton } from '@fluentui/react/lib/Button';
 import styles from './CoeCockpit.module.scss';
 import { IRecord, IRelatedConfig, ITableConfig } from '../models/ITableConfig';
 import { DataverseService, IAttributeMeta, IEntityMeta } from '../services/DataverseService';
@@ -26,6 +27,8 @@ export interface IRecordPanelProps {
   /** Zurück zum vorherigen Datensatz. */
   onBack?: () => void;
   backLabel?: string;
+  /** Zusätzliche Aktion im Kopf der Detailansicht (z. B. „Maker per E-Mail verständigen“). */
+  action?: { text: string; icon: string; disabled?: boolean; onClick: () => void };
 }
 
 interface IRelatedState {
@@ -154,6 +157,16 @@ export const RecordPanel: React.FC<IRecordPanelProps> = props => {
             <span>{table.title}</span>
           </div>
           <h2 className={styles.panelTitle}>{title}</h2>
+          {props.action && (
+            <div className={styles.panelAction}>
+              <DefaultButton
+                text={props.action.text}
+                iconProps={{ iconName: props.action.icon }}
+                disabled={props.action.disabled}
+                onClick={props.action.onClick}
+              />
+            </div>
+          )}
           {statusColumns.length > 0 && (
             <div className={styles.panelBadges}>
               {statusColumns.map(c => {
