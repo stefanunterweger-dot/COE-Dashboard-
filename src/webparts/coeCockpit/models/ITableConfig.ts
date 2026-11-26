@@ -55,6 +55,10 @@ export interface IRelatedConfig {
   lookupField?: string;
   /** N:N – Navigationseigenschaft (Beziehungsname) des geöffneten Datensatzes. */
   navigationProperty?: string;
+  /** Verknüpfung über einen Textwert: Spalte der verknüpften Tabelle … */
+  matchField?: string;
+  /** … und Spalte des geöffneten Datensatzes, deren Wert gesucht wird (z. B. Name der Person). */
+  parentField?: string;
   /** Optionaler zusätzlicher OData-Filter. */
   filter?: string;
   defaultSort?: ISortConfig;

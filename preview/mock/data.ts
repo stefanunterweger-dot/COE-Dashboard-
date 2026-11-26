@@ -16,6 +16,7 @@ export interface ITableDef {
   primaryName: string;
   attrs: IAttr[];
   rows: Record<string, unknown>[];
+  navs?: { [prop: string]: string };
 }
 
 export interface IDatabase {
@@ -450,6 +451,110 @@ const solutions = solutionSeeds.map(([name, unique, pub, managed, visible]) => {
   };
 });
 
+
+// ---------- Sicherheit & Governance (nachträglich, damit die übrigen Beispieldaten gleich bleiben) ----------
+export const PIPELINES_HOST = 'contoso-pipelines.crm4.dynamics.com';
+const pipelinesEnv: Record<string, unknown> = {
+  ...COMMON(), admin_environmentid: guid(), admin_displayname: 'Pipelines Host', admin_environmentsku: 'Production',
+  _admin_maker_value: humans[0].admin_makerid, admin_environmentmakerdisplayname: humans[0].admin_displayname,
+  admin_governanceprotectionlevel: 'Standard', admin_environmentruntimestate: 'Enabled', admin_environmentstate: 'Ready',
+  admin_region: 'europe', admin_environmentcdsinstanceurl: `https://${PIPELINES_HOST}/`, admin_environmentcreatedon: daysAgo(380),
+  admin_environmentdeleted: false, admin_excusefrominventory: false, admin_securitygroupname: 'SG-PP-ALM', admin_numberofapps: 0, admin_numberofflows: 0
+};
+environments.push(pipelinesEnv as typeof environments[0]);
+envById[String(pipelinesEnv.admin_environmentid)] = pipelinesEnv;
+const envNamed = (n: string): Record<string, unknown> => environments.filter(e => e.admin_displayname === n)[0];
+const liveEnvs = environments.filter(e => !e.admin_environmentdeleted);
+
+// DLP-Richtlinien (N:N zu Environments und Connectors wie im CoE)
+const DLP_SCOPES: { [v: number]: string } = { 597910000: 'All environments', 597910001: 'Include certain environments', 597910002: 'Exclude certain environments' };
+const conn = (n: string): unknown => connectors.filter(c => c.admin_displayname === n)[0].admin_connectorid;
+const excludedFromTenant = liveEnvs.filter(e => e.admin_environmentsku === 'Trial' || e.admin_environmentsku === 'Teams'
+  || (e.admin_environmentsku === 'Developer' && chance(0.35)));
+const dlpPolicies: Record<string, unknown>[] = [
+  { name: 'Contoso Standard-DLP', scope: 597910002, desc: 'Basisrichtlinie für alle Environments außer den ausgenommenen.', envs: excludedFromTenant,
+    blocked: ['HTTP', '1DocStop', 'Salesforce'], business: ['SharePoint', 'Office 365 Outlook', 'Microsoft Teams', 'OneDrive for Business', 'Approvals', 'Microsoft Dataverse'] },
+  { name: 'Default Environment – streng', scope: 597910001, desc: 'Nur Microsoft-365-Connectors im Default Environment.', envs: [envNamed('Contoso (default)')],
+    blocked: ['HTTP', 'SQL Server', 'Azure Blob Storage', 'Salesforce', 'SAP ERP', 'DocuSign', '1DocStop'], business: ['SharePoint', 'Office 365 Outlook', 'Microsoft Teams', 'Approvals'] },
+  { name: 'Produktion – Business-Daten', scope: 597910001, desc: 'Produktive Environments mit SAP- und SQL-Anbindung.', envs: liveEnvs.filter(e => e.admin_environmentsku === 'Production'),
+    blocked: ['1DocStop'], business: ['SharePoint', 'Microsoft Dataverse', 'SQL Server', 'SAP ERP', 'Contoso Personal-API', 'Contoso Lager-API'] },
+  { name: 'Finanzen – Sonderregel', scope: 597910001, desc: '', envs: [envNamed('Finanzen Produktion'), envNamed('Finanzen Entwicklung')],
+    blocked: ['HTTP', 'DocuSign'], business: ['SharePoint', 'Excel Online (Business)', 'SQL Server'] }
+].map(d => ({
+  ...COMMON(), admin_dlppolicyid: guid(), admin_name: d.name, admin_scope: d.scope, admin_description: d.desc || null, admin_isshared: false, admin_policyid: guid(),
+  __nav_admin_policy_environments: (d.envs as Record<string, unknown>[]).map(e => e.admin_environmentid),
+  __nav_admin_blocked_policy_connectors: (d.blocked as string[]).map(conn),
+  __nav_admin_confidential_policy_connectors: (d.business as string[]).map(conn)
+}));
+liveEnvs.forEach(e => {
+  const names = dlpPolicies.filter(d => {
+    const listed = (d.__nav_admin_policy_environments as unknown[]).indexOf(e.admin_environmentid) >= 0;
+    return d.admin_scope === 597910002 ? !listed : d.admin_scope === 597910000 || listed;
+  }).map(d => String(d.admin_name));
+  (e as Record<string, unknown>).admin_hasdlppolicy = names.length > 0;
+  (e as Record<string, unknown>).admin_dlppolicies = names.length ? names.join(', ') : null;
+});
+
+// Freigaben, Gäste, DLP-Verstöße, unverschlüsselte Custom Connectors
+apps.forEach(a => {
+  a.admin_appsharedwithtenant = chance(0.025);
+  a.admin_appsharedguestuser = chance(0.035);
+  a.admin_dlppoliciesviolated = chance(0.012) ? pick(['Contoso Standard-DLP', 'Default Environment – streng']) : null;
+});
+flows.forEach(f => { f.admin_flowsharedguestuser = chance(0.015); });
+connectors.forEach(c => {
+  c.admin_customconnectorhost = c.admin_iscustomapi ? (c.admin_displayname === 'Contoso Lager-API' ? 'lager.intern.contoso.com' : 'api.contoso.com') : null;
+  c.admin_customconnectorhostishttp = c.admin_displayname === 'Contoso Lager-API';
+});
+
+// ---------- Power Platform Pipelines (eigenes Host-Environment) ----------
+const sysUsers = humans.slice(6, 14).map(m => ({ systemuserid: guid(), fullname: m.admin_displayname, ...COMMON() }));
+const ENV_ROLE: { [v: number]: string } = { 200000000: 'Entwicklungsumgebung', 200000001: 'Zielumgebung' };
+const VALIDATION: { [v: number]: string } = { 200000000: 'Ausstehend', 200000001: 'Erfolgreich', 200000002: 'Fehlgeschlagen' };
+const RUN_STATUS: { [v: number]: string } = { 200000000: 'Nicht gestartet', 200000002: 'Wird ausgeführt', 200000003: 'Erfolgreich', 200000004: 'Fehlgeschlagen', 200000005: 'Abgebrochen', 200000006: 'Genehmigung ausstehend' };
+const depEnvSeeds: [string, number][] = [['HR Test', 200000000], ['HR Produktion', 200000001], ['Finanzen Entwicklung', 200000000],
+  ['Finanzen Produktion', 200000001], ['Einkauf Sandbox', 200000000], ['Vertrieb Produktion', 200000001], ['Marketing Kampagnen', 200000001]];
+const depEnvs = depEnvSeeds.map(([n, role]) => ({
+  ...COMMON(), deploymentenvironmentid: guid(), name: n, environmenttype: role, validationstatus: n === 'Marketing Kampagnen' ? 200000002 : 200000001,
+  environmentid: envNamed(n).admin_environmentid
+}));
+const depEnv = (n: string): unknown => depEnvs.filter(e => e.name === n)[0].deploymentenvironmentid;
+const pipelineSeeds: [string, string, string[], string][] = [
+  ['HR-Apps', 'HR Test', ['HR Produktion'], 'Urlaubs- und Onboarding-Apps'],
+  ['Finanzen', 'Finanzen Entwicklung', ['Finanzen Produktion'], 'Spesen, Rechnungsfreigabe'],
+  ['Einkauf & Vertrieb', 'Einkauf Sandbox', ['Vertrieb Produktion', 'Marketing Kampagnen'], 'Gemeinsame Lösungen für Einkauf und Vertrieb']
+];
+const pipelines: Record<string, unknown>[] = [];
+const stages: Record<string, unknown>[] = [];
+pipelineSeeds.forEach(([name, , targets, desc]) => {
+  const pl = { ...COMMON(), deploymentpipelineid: guid(), name, description: desc, _ownerid_value: pick(sysUsers).systemuserid };
+  pipelines.push(pl);
+  let prev: unknown = null;
+  targets.forEach((t, i) => {
+    const st = { ...COMMON(), deploymentstageid: guid(), name: i === 0 && targets.length > 1 ? 'Test' : 'Produktion', _deploymentpipelineid_value: pl.deploymentpipelineid,
+      _targetdeploymentenvironmentid_value: depEnv(t), _previousdeploymentstageid_value: prev };
+    stages.push(st);
+    prev = st.deploymentstageid;
+  });
+});
+const SOLUTION_NAMES: { [p: string]: string[] } = { 'HR-Apps': ['ContosoUrlaub', 'ContosoOnboarding'], 'Finanzen': ['ContosoSpesen', 'ContosoRechnungsfreigabe'], 'Einkauf & Vertrieb': ['ContosoBestellung', 'ContosoAngebote', 'ContosoBasis'] };
+const stageRuns: Record<string, unknown>[] = [];
+for (let i = 0; i < 140; i++) {
+  const pl = pick(pipelines);
+  const st = pick(stages.filter(x => x._deploymentpipelineid_value === pl.deploymentpipelineid));
+  const r = rnd();
+  const status = i < 2 ? 200000002 : i < 4 ? 200000006 : r < 0.8 ? 200000003 : r < 0.93 ? 200000004 : 200000005;
+  const startDays = i < 4 ? 0 : int(0, 160);
+  const start = daysAgo(startDays);
+  stageRuns.push({
+    ...COMMON(), deploymentstagerunid: guid(), artifactname: pick(SOLUTION_NAMES[String(pl.name)]),
+    artifactversion: `1.${int(0, 9)}.${int(0, 40)}.${int(0, 9)}`, _deploymentpipelineid_value: pl.deploymentpipelineid, _deploymentstageid_value: st.deploymentstageid,
+    stagerunstatus: status, _createdby_value: pick(sysUsers).systemuserid, starttime: start,
+    endtime: status === 200000002 || status === 200000006 ? null : new Date(Date.parse(start) + int(2, 25) * 60000).toISOString().replace(/\.\d{3}Z$/, 'Z'),
+    createdon: start
+  });
+}
+
 // ---------- Tabellen-Definitionen ----------
 const A = (name: string, type: string, label: string, target?: string, options?: { [v: number]: string }): IAttr => ({ name, type, label, target, options });
 const STD = [A('statecode', 'State', 'Status'), A('createdon', 'DateTime', 'Erstellt am'), A('modifiedon', 'DateTime', 'Geändert am')];
@@ -458,6 +563,11 @@ function table(logicalName: string, entitySet: string, displayName: string, prim
   attrs: IAttr[], rows: Record<string, unknown>[] | (() => Record<string, unknown>[])): ITableDef {
   const def = { logicalName, entitySet, displayName, primaryId, primaryName, attrs: [A(primaryId, 'Uniqueidentifier', displayName)].concat(attrs, STD) } as ITableDef;
   Object.defineProperty(def, 'rows', { get: typeof rows === 'function' ? rows : () => rows, enumerable: true });
+  return def;
+}
+/** N:N-Beziehungen: Navigationseigenschaft → Zieltabelle (IDs stehen im Datensatz unter __nav_<name>). */
+function withNav(def: ITableDef, navs: { [prop: string]: string }): ITableDef {
+  def.navs = navs;
   return def;
 }
 function db(host: string, defs: ITableDef[]): IDatabase {
@@ -478,13 +588,16 @@ export const DATABASES: IDatabase[] = [
       A('admin_appmodifiedon', 'DateTime', 'App Modified On'), A('admin_appcreatedon', 'DateTime', 'App Created On'),
       A('admin_appdeleted', 'Boolean', 'App Deleted'), A('admin_appplanclassification', 'String', 'App Plan Classification'),
       A('admin_appsharedusers', 'Integer', 'App Shared Users'), A('admin_appsharedgroups', 'Integer', 'App Shared Groups'),
-      A('admin_launchesinthepast30days', 'Integer', 'Launches in the past 30 days')
+      A('admin_launchesinthepast30days', 'Integer', 'Launches in the past 30 days'),
+      A('admin_appsharedwithtenant', 'Boolean', 'App Shared With Tenant'), A('admin_appsharedguestuser', 'Boolean', 'App Shared With Guest User'),
+      A('admin_dlppoliciesviolated', 'String', 'DLP Policies Violated')
     ], apps),
     table('admin_flow', 'admin_flows', 'Flow', 'admin_flowid', 'admin_displayname', [
       A('admin_displayname', 'String', 'Display Name'), MAKER_LK('admin_flowcreator', 'Maker'), MAKER_LK('admin_derivedowner', 'Derived Owner'),
       ENV_LK('admin_flowenvironment'), A('admin_flowenvironmentid', 'String', 'Flow Environment Id'), A('admin_flowidstring', 'String', 'Flow ID String'),
       A('admin_flowstate', 'String', 'Flow State'), A('cr5d5_flowisorphaned', 'String', 'Flow is Orphaned'), A('cr5d5_flowtrigger', 'String', 'Trigger'),
-      A('admin_flowmodifiedon', 'DateTime', 'Flow Modified On'), A('admin_flowcreatedon', 'DateTime', 'Flow Created On'), A('admin_flowdeleted', 'Boolean', 'Flow Deleted'), A('admin_flowispublished', 'Boolean', 'Flow Is Published')
+      A('admin_flowmodifiedon', 'DateTime', 'Flow Modified On'), A('admin_flowcreatedon', 'DateTime', 'Flow Created On'), A('admin_flowdeleted', 'Boolean', 'Flow Deleted'), A('admin_flowispublished', 'Boolean', 'Flow Is Published'),
+      A('admin_flowsharedguestuser', 'Boolean', 'Flow Shared With Guest User')
     ], flows),
     table('admin_environment', 'admin_environments', 'Environment', 'admin_environmentid', 'admin_displayname', [
       A('admin_displayname', 'String', 'Display Name'), A('admin_environmentname', 'String', 'Name'), A('admin_environmentsku', 'String', 'Environment Sku'),
@@ -493,12 +606,14 @@ export const DATABASES: IDatabase[] = [
       A('admin_environmentstate', 'String', 'Environment State'), A('admin_region', 'String', 'Environment Region'),
       A('admin_environmentcdsinstanceurl', 'String', 'Environment CDS Instance URL'), A('admin_environmentcreatedon', 'DateTime', 'Environment Created On'),
       A('admin_environmentdeleted', 'Boolean', 'Has the environment been deleted?'), A('admin_excusefrominventory', 'Boolean', 'Excuse From Inventory'),
-      A('admin_securitygroupname', 'String', 'Security Group Name'), A('admin_numberofapps', 'Integer', 'Number of Apps'), A('admin_numberofflows', 'Integer', 'Number of Flows')
+      A('admin_securitygroupname', 'String', 'Security Group Name'), A('admin_numberofapps', 'Integer', 'Number of Apps'), A('admin_numberofflows', 'Integer', 'Number of Flows'),
+      A('admin_hasdlppolicy', 'Boolean', 'Has DLP Policy'), A('admin_dlppolicies', 'String', 'DLP Policies')
     ], environments),
     table('admin_connector', 'admin_connectors', 'PowerApps Connector', 'admin_connectorid', 'admin_displayname', [
       A('admin_displayname', 'String', 'Connector Display Name'), A('admin_name', 'String', 'Name'), A('admin_tier', 'String', 'Tier'),
       A('admin_publisher', 'String', 'Publisher'), A('admin_iscustomapi', 'Boolean', 'Is Custom API'), A('admin_connectordeleted', 'Boolean', 'Connector Deleted'),
-      A('admin_numapps', 'Integer', 'Number of Apps'), A('admin_numflows', 'Integer', 'Number of Flows')
+      A('admin_numapps', 'Integer', 'Number of Apps'), A('admin_numflows', 'Integer', 'Number of Flows'),
+      A('admin_customconnectorhost', 'String', 'Custom Connector Host'), A('admin_customconnectorhostishttp', 'Boolean', 'Custom Connector Host is HTTP')
     ], connectorRows),
     table('admin_connectionreference', 'admin_connectionreferences', 'Connection Reference', 'admin_connectionreferenceid', 'admin_name', [
       A('admin_name', 'String', 'Name'), LK('admin_app', 'App', 'admin_app'), LK('admin_flow', 'Flow', 'admin_flow'), LK('admin_connector', 'Connector', 'admin_connector'),
@@ -569,7 +684,11 @@ export const DATABASES: IDatabase[] = [
       A('admin_capacitytype', 'String', 'Capacity Type'), ENV_LK('admin_environment'), A('admin_actualconsumption', 'Decimal', 'Actual Consumption'),
       A('admin_ratedconsumption', 'Decimal', 'Rated Consumption'), A('admin_approvedcapacity', 'Decimal', 'Approved Capacity'),
       A('admin_percentusedofapproved', 'Decimal', 'Percent Used'), A('admin_capacityunit', 'String', 'Capacity Unit'), A('admin_environmentdeleted', 'Boolean', 'Environment Deleted')
-    ], capacity)
+    ], capacity),
+    withNav(table('admin_dlppolicy', 'admin_dlppolicies', 'DLP Policy', 'admin_dlppolicyid', 'admin_name', [
+      A('admin_name', 'String', 'Display Name'), A('admin_scope', 'Picklist', 'Environment Scope', undefined, DLP_SCOPES), A('admin_description', 'String', 'Description'),
+      A('admin_isshared', 'Boolean', 'Is Shared'), A('admin_policyid', 'String', 'Policy ID')
+    ], dlpPolicies), { admin_policy_environments: 'admin_environment', admin_blocked_policy_connectors: 'admin_connector', admin_confidential_policy_connectors: 'admin_connector' })
   ]),
   db(DEFAULT_HOST, [
     table('solution', 'solutions', 'Lösung', 'solutionid', 'friendlyname', [
@@ -579,5 +698,24 @@ export const DATABASES: IDatabase[] = [
     table('publisher', 'publishers', 'Herausgeber', 'publisherid', 'friendlyname', [
       A('friendlyname', 'String', 'Anzeigename'), A('uniquename', 'String', 'Name')
     ], publishers)
+  ]),
+  db(PIPELINES_HOST, [
+    table('deploymentpipeline', 'deploymentpipelines', 'Bereitstellungspipeline', 'deploymentpipelineid', 'name', [
+      A('name', 'String', 'Name'), A('description', 'Memo', 'Beschreibung'), LK('ownerid', 'Besitzer', 'systemuser')
+    ], pipelines),
+    table('deploymentstage', 'deploymentstages', 'Bereitstellungsphase', 'deploymentstageid', 'name', [
+      A('name', 'String', 'Name'), LK('deploymentpipelineid', 'Pipeline', 'deploymentpipeline'),
+      LK('targetdeploymentenvironmentid', 'Zielumgebung', 'deploymentenvironment'), LK('previousdeploymentstageid', 'Vorherige Phase', 'deploymentstage')
+    ], stages),
+    table('deploymentstagerun', 'deploymentstageruns', 'Ausführung der Bereitstellungsphase', 'deploymentstagerunid', 'artifactname', [
+      A('artifactname', 'String', 'Artefaktname'), A('artifactversion', 'String', 'Artefaktversion'), LK('deploymentpipelineid', 'Pipeline', 'deploymentpipeline'),
+      LK('deploymentstageid', 'Phase', 'deploymentstage'), A('stagerunstatus', 'Picklist', 'Status', undefined, RUN_STATUS), LK('createdby', 'Erstellt von', 'systemuser'),
+      A('starttime', 'DateTime', 'Startzeit'), A('endtime', 'DateTime', 'Endzeit')
+    ], stageRuns),
+    table('deploymentenvironment', 'deploymentenvironments', 'Bereitstellungsumgebung', 'deploymentenvironmentid', 'name', [
+      A('name', 'String', 'Name'), A('environmenttype', 'Picklist', 'Umgebungstyp', undefined, ENV_ROLE),
+      A('validationstatus', 'Picklist', 'Validierungsstatus', undefined, VALIDATION), A('environmentid', 'String', 'Umgebungs-ID')
+    ], depEnvs),
+    table('systemuser', 'systemusers', 'Benutzer', 'systemuserid', 'fullname', [A('fullname', 'String', 'Vollständiger Name')], sysUsers)
   ])
 ];

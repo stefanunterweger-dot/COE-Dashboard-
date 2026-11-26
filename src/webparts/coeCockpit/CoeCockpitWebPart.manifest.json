@@ -31,7 +31,9 @@
         "defaultEnvironmentDataverseUrl": "",
         "showDevEnvironments": true,
         "showOverview": true,
-        "devEnvManagedField": ""
+        "devEnvManagedField": "",
+        "showSecurity": true,
+        "pipelinesHostUrl": ""
       }
     }
   ]

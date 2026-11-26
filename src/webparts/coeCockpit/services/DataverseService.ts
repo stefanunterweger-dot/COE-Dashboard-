@@ -438,7 +438,21 @@ export class DataverseService {
    * Verknüpfte Datensätze eines Datensatzes (Reiter in der Detailansicht).
    * 1:N über eine Lookup-Spalte der verknüpften Tabelle, N:N über die Navigationseigenschaft der Beziehung.
    */
-  public async getRelated(parentLogicalName: string, parentId: string, rel: IRelatedConfig, maxRecords: number): Promise<IRecordResult> {
+  public async getRelated(
+    parentLogicalName: string, parentId: string, rel: IRelatedConfig, maxRecords: number, parentRecord?: IRecord
+  ): Promise<IRecordResult> {
+    if (rel.matchField) {
+      const value = rel.parentField && parentRecord ? rawValue(parentRecord, rel.parentField) : parentId;
+      if (!value) {
+        return { records: [], meta: await this.getEntityMeta(rel.logicalName), warnings: [], truncated: false };
+      }
+      return this.getRecords({
+        key: `_rel_${rel.key}`, title: rel.title, logicalName: rel.logicalName, icon: 'Table', strictFilter: true,
+        filter: combineFilters(rel.filter, `${rel.matchField} eq '${value.replace(/'/g, "''")}'`),
+        defaultSort: rel.defaultSort,
+        columns: rel.columns
+      }, maxRecords);
+    }
     if (rel.lookupField) {
       return this.getRecords({
         key: `_rel_${rel.key}`, title: rel.title, logicalName: rel.logicalName, icon: 'Table', strictFilter: true,
@@ -469,6 +483,11 @@ export class DataverseService {
       }
     }
     throw new DataverseError('Die verknüpften Datensätze konnten nicht geladen werden.', 400);
+  }
+
+  /** Kurzer Zugriffstest auf diese Umgebung (wirft bei fehlenden Rechten). */
+  public async whoAmI(): Promise<{ UserId?: string }> {
+    return this._get<{ UserId?: string }>('WhoAmI');
   }
 
   public getCountWithBase(table: ITableConfig, extraFilter?: string): Promise<ICountResult> {

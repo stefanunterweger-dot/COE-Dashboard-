@@ -10,6 +10,7 @@ import { IColumnConfig, IRelatedConfig, ITableConfig } from './ITableConfig';
 export const GROUP_INVENTORY = 'Inventar';
 export const GROUP_USERS = 'Benutzer';
 export const GROUP_USAGE = 'Nutzung';
+export const GROUP_GOVERNANCE = 'Governance';
 
 const YES_NO_ORPHANED = { 'Ja': 'warning', 'Nein': 'success' } as const;
 const ROLE_MAP = { 'Besitzer': 'accent', 'Mitbesitzer': 'info', 'Benutzer': 'neutral', 'Benutzer (mit Komponentenimport)': 'neutral' } as const;
@@ -87,6 +88,9 @@ export function getDefaultTables(): ITableConfig[] {
         { field: 'admin_appsharedusers', label: 'Freigegeben (User)', type: 'number', hidden: true },
         { field: 'admin_appsharedgroups', label: 'Freigegeben (Gruppen)', type: 'number', hidden: true },
         { field: 'admin_appcreatedon', label: 'Erstellt', type: 'date', hidden: true },
+        { field: 'admin_appsharedwithtenant', label: 'Für alle freigegeben', type: 'boolean', hidden: true },
+        { field: 'admin_appsharedguestuser', label: 'An Gäste freigegeben', type: 'boolean', hidden: true },
+        { field: 'admin_dlppoliciesviolated', label: 'DLP-Verstöße', type: 'text', hidden: true },
         { field: 'admin_appenvironmentid', label: 'Environment-ID', type: 'text', hidden: true }
       ],
       links: [
@@ -124,6 +128,7 @@ export function getDefaultTables(): ITableConfig[] {
         { field: 'admin_flowmodifiedon', label: 'Geändert', type: 'date' },
         { field: '_admin_flowcreator_value', label: 'Ersteller', type: 'person', hidden: true },
         { field: 'cr5d5_flowtrigger', label: 'Trigger', type: 'text', hidden: true },
+        { field: 'admin_flowsharedguestuser', label: 'An Gäste freigegeben', type: 'boolean', hidden: true },
         { field: 'admin_flowidstring', label: 'Flow-ID', type: 'text', hidden: true },
         { field: 'admin_flowenvironmentid', label: 'Environment-ID', type: 'text', hidden: true }
       ],
@@ -166,6 +171,8 @@ export function getDefaultTables(): ITableConfig[] {
         { field: 'admin_region', label: 'Region', type: 'choice' },
         { field: 'admin_environmentcreatedon', label: 'Erstellt', type: 'date' },
         { field: 'admin_securitygroupname', label: 'Sicherheitsgruppe', type: 'text', hidden: true },
+        { field: 'admin_hasdlppolicy', label: 'DLP-Richtlinie', type: 'boolean', hidden: true },
+        { field: 'admin_dlppolicies', label: 'DLP-Richtlinien', type: 'text', hidden: true },
         { field: 'admin_environmentstate', label: 'Status', type: 'choice', hidden: true },
         { field: 'admin_environmentcdsinstanceurl', label: 'Dataverse-URL', type: 'url', hidden: true },
         { field: 'admin_environmentname', label: 'Environment-ID', type: 'text', hidden: true }
@@ -243,7 +250,9 @@ export function getDefaultTables(): ITableConfig[] {
         { field: 'admin_iscustomapi', label: 'Benutzerdefiniert', type: 'boolean' },
         { field: 'admin_numapps', label: 'Apps', type: 'number' },
         { field: 'admin_numflows', label: 'Flows', type: 'number' },
-        { field: 'admin_name', label: 'Name', type: 'text', hidden: true }
+        { field: 'admin_name', label: 'Name', type: 'text', hidden: true },
+        { field: 'admin_customconnectorhost', label: 'Host (Custom Connector)', type: 'text', hidden: true },
+        { field: 'admin_customconnectorhostishttp', label: 'Unverschlüsselt (HTTP)', type: 'boolean', hidden: true }
       ],
       links: [],
       related: [
@@ -375,6 +384,51 @@ export function getDefaultTables(): ITableConfig[] {
       links: []
     },
 
+    // ===================== Governance =====================
+    {
+      key: 'dlp',
+      title: 'DLP-Richtlinien',
+      logicalName: 'admin_dlppolicy',
+      icon: 'Shield',
+      group: GROUP_GOVERNANCE,
+      filter: 'statecode eq 0',
+      showInKpis: false,
+      defaultSort: { field: 'admin_name', desc: false },
+      columns: [
+        { field: 'admin_name', label: 'Richtlinie', type: 'title' },
+        { field: 'admin_scope', label: 'Geltungsbereich', type: 'choice' },
+        { field: 'admin_description', label: 'Beschreibung', type: 'text' },
+        { field: 'admin_isshared', label: 'Freigegeben', type: 'boolean', hidden: true },
+        { field: 'admin_policyid', label: 'Richtlinien-ID', type: 'text', hidden: true }
+      ],
+      links: [
+        { label: 'Im Power Platform Admin Center öffnen', url: 'https://admin.powerplatform.microsoft.com/security/dataprotection/policies' }
+      ],
+      related: [
+        {
+          key: 'envs', title: 'Environments', logicalName: 'admin_environment', navigationProperty: 'admin_policy_environments',
+          columns: [
+            { field: 'admin_displayname', label: 'Environment', type: 'title' },
+            { field: 'admin_environmentsku', label: 'Typ', type: 'choice' }
+          ]
+        },
+        {
+          key: 'blocked', title: 'Blockierte Connectors', logicalName: 'admin_connector', navigationProperty: 'admin_blocked_policy_connectors',
+          columns: [
+            { field: 'admin_displayname', label: 'Connector', type: 'title' },
+            { field: 'admin_tier', label: 'Stufe', type: 'choice' }
+          ]
+        },
+        {
+          key: 'business', title: 'Business-Connectors', logicalName: 'admin_connector', navigationProperty: 'admin_confidential_policy_connectors',
+          columns: [
+            { field: 'admin_displayname', label: 'Connector', type: 'title' },
+            { field: 'admin_tier', label: 'Stufe', type: 'choice' }
+          ]
+        }
+      ]
+    },
+
     // ===================== Benutzer =====================
     {
       key: 'makers',
@@ -402,6 +456,43 @@ export function getDefaultTables(): ITableConfig[] {
       related: [
         RESOURCE_APPS('_admin_appowner_value', 'Apps'),
         RESOURCE_FLOWS('_admin_flowcreator_value', 'Flows'),
+        {
+          key: 'bots', title: 'Bots', logicalName: 'admin_pva', lookupField: '_admin_pvaowner_value', filter: 'admin_pvadeleted ne true',
+          columns: [
+            { field: 'admin_name', label: 'Bot', type: 'title' },
+            { field: '_admin_pvaenvironment_value', label: 'Environment', type: 'text' },
+            { field: 'admin_pvastate', label: 'Status', type: 'choice' }
+          ]
+        },
+        {
+          key: 'desktopflows', title: 'Desktop Flows', logicalName: 'admin_rpa', lookupField: '_admin_rpaowner_value',
+          columns: [
+            { field: 'admin_displayname', label: 'Desktop Flow', type: 'title' },
+            { field: '_admin_desktopflowenvironment_value', label: 'Environment', type: 'text' },
+            { field: 'admin_rpastate', label: 'Status', type: 'choice' }
+          ]
+        },
+        {
+          // Maker-ID = Entra-Objekt-ID = ID des Power Platform Users → Freigaben/Rollen der Person
+          key: 'access', title: 'Zugriff auf', logicalName: 'admin_powerplatformuserrole', lookupField: '_admin_powerplatformuser_value', filter: 'statecode eq 0',
+          columns: [
+            { field: 'admin_resourcetype', label: 'Art', type: 'choice' },
+            { field: '_admin_app_value', label: 'App', type: 'text' },
+            { field: '_admin_flow_value', label: 'Flow', type: 'text' },
+            { field: 'admin_rolename', label: 'Rolle', type: 'status', statusMap: { ...ROLE_MAP } },
+            { field: '_admin_environment_value', label: 'Environment', type: 'text' }
+          ]
+        },
+        {
+          key: 'secroles', title: 'Sicherheitsrollen', logicalName: 'admin_environmentsecurityrolepermission',
+          matchField: 'admin_name', parentField: 'admin_displayname',
+          columns: [
+            { field: '_admin_environment_value', label: 'Environment', type: 'title' },
+            { field: 'admin_securityrolename', label: 'Rolle', type: 'choice' },
+            { field: 'admin_assignedvia', label: 'Zugewiesen über', type: 'text' },
+            { field: 'admin_groupname', label: 'Gruppe', type: 'text' }
+          ]
+        },
         {
           key: 'envs', title: 'Environments', logicalName: 'admin_environment', lookupField: '_admin_maker_value', filter: 'admin_environmentdeleted ne true',
           columns: [

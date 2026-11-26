@@ -17,7 +17,10 @@ import {
 import { buildDefaultEnvironmentTables, DEFAULT_ENV_PREFIX, isDefaultEnvKey } from '../models/defaultEnvironment';
 import { buildDevEnvTable, DEV_ENV_DEADLINES, DEV_ENV_KEY, DEV_FIELDS, loadAffectedEnvironments, RECOMMENDATION } from '../models/devEnvironments';
 import { OVERVIEW_KEY } from '../models/overview';
+import { buildPipelineTables, GROUP_ALM, PIPELINE_KEY_PREFIX } from '../models/pipelines';
 import { OverviewView } from './OverviewView';
+import { SECURITY_KEY, SecurityView } from './SecurityView';
+import { GlobalSearch } from './GlobalSearch';
 import { copyCurrentLink, IViewState, readViewState, writeViewState } from '../utils/deepLink';
 import {
   displayValue, downloadText, formatCount, formatNumber, formatTime, hostOf, isValidEnvironmentUrl, sortValue, toCsv
@@ -54,6 +57,10 @@ export interface ICoeCockpitProps {
   showOverview: boolean;
   /** Spalte mit dem Managed-Status im CoE-Inventar (leer = automatisch erkennen). */
   devEnvManagedField: string;
+  /** Ansicht „Sicherheit & Freigaben“ anzeigen. */
+  showSecurity: boolean;
+  /** Dataverse-URL des Pipelines-Host-Environments (leer = ALM-Pipelines ausblenden). */
+  pipelinesHostUrl: string;
   onTablesChanged: (tables: ITableConfig[]) => void;
   onConfigure: () => void;
 }
@@ -85,7 +92,7 @@ function errorHint(e: unknown, table?: ITableConfig): string {
     return 'Die API-Berechtigung „Dynamics CRM – user_impersonation“ ist noch nicht genehmigt. Ein SharePoint-Admin muss sie im SharePoint Admin Center unter Erweitert → API-Zugriff freigeben.';
   }
   if (table && table.environmentUrl && (status === 401 || status === 403 || /privilege|prvRead|not a member|does not have/i.test(msg))) {
-    return `Dein Konto hat in der Umgebung ${hostOf(table.environmentUrl)} keine Leserechte für „${table.title}“. Benötigt wird dort mindestens die Rolle „Environment Maker“ oder „Basic User“.`;
+    return `Dein Konto hat in der Umgebung ${hostOf(table.environmentUrl)} keine Leserechte für „${table.title}“. ${ADMIN_ROLE_HINT}`;
   }
   if (status === 401 || status === 403 || /privilege|prvRead|not a member|does not have/i.test(msg)) {
     return 'Dein Konto hat in der CoE-Umgebung keine ausreichenden Leserechte. Benötigt wird eine Sicherheitsrolle mit Lesezugriff auf die CoE-Tabellen (z. B. „Power Platform Admin SR“).';
@@ -94,6 +101,27 @@ function errorHint(e: unknown, table?: ITableConfig): string {
     return 'Die Tabelle wurde in dieser Umgebung nicht gefunden. Prüfe den logischen Tabellennamen im Tabellen-Editor und die Umgebungs-URL.';
   }
   return 'Prüfe die Umgebungs-URL und ob die CoE-Umgebung erreichbar ist.';
+}
+
+/** Hinweis, wenn Daten außerhalb des CoE-Environments nicht gelesen werden dürfen. */
+const ADMIN_ROLE_HINT = 'Diese Daten liegen nicht im CoE, sondern im jeweiligen Environment. Als Power-Platform-Admin: Rolle „Power Platform-Administrator“ in Entra PIM aktivieren und – falls nötig – im Power Platform Admin Center beim Environment unter „Mitgliedschaft“ → „Mich hinzufügen“ die Rolle „System Administrator“ übernehmen. Danach die Seite neu laden.';
+
+/** Ergebnis der Zugriffsprüfung für Tabellen außerhalb des CoE-Environments. */
+interface IAccessState {
+  status: 'checking' | 'ok' | 'denied' | 'missing' | 'error';
+  message?: string;
+}
+
+function accessStatus(e: unknown): IAccessState {
+  const status = e instanceof DataverseError ? e.status : 0;
+  const msg = e instanceof Error ? e.message : String(e);
+  if (status === 401 || status === 403 || /privilege|prvRead|not a member|does not have|AADSTS/i.test(msg)) {
+    return { status: 'denied', message: msg };
+  }
+  if (status === 404 || /Could not find|does not exist|Resource not found/i.test(msg)) {
+    return { status: 'missing', message: msg };
+  }
+  return { status: 'error', message: msg };
 }
 
 function readHidden(storageKey: string): { [tableKey: string]: string[] } | undefined {
@@ -223,7 +251,13 @@ const CoeCockpit: React.FC<ICoeCockpitProps> = props => {
   );
   const defaultSig = React.useMemo(() => JSON.stringify(defaultTables), [defaultTables]);
   const devTables = React.useMemo(() => (props.showDevEnvironments ? [buildDevEnvTable()] : []), [props.showDevEnvironments]);
-  const allTables = tables.concat(defaultTables).concat(devTables);
+  const pipelineTables = React.useMemo(
+    () => (props.pipelinesHostUrl ? buildPipelineTables(props.pipelinesHostUrl) : []),
+    [props.pipelinesHostUrl]
+  );
+  const allTables = tables.concat(defaultTables).concat(devTables).concat(pipelineTables);
+  /** Tabellen für die Suche über alle Bereiche (ohne die gefilterten Kopien fürs Default Environment). */
+  const searchTables = React.useMemo(() => tables.concat(pipelineTables), [tablesSig, pipelineTables]);
   const inDevView = props.showDevEnvironments && activeKey === DEV_ENV_KEY;
   const activeTable = allTables.filter(t => t.key === activeKey)[0];
   const inDefaultView = props.showDefaultEnvironment && isDefaultEnvKey(activeKey);
@@ -254,16 +288,17 @@ const CoeCockpit: React.FC<ICoeCockpitProps> = props => {
   React.useEffect(() => { if (props.editorRequest > 0) { setEditorOpen(true); } }, [props.editorRequest]);
 
   React.useEffect(() => {
-    const waitingForDefault = (props.showDefaultEnvironment && isDefaultEnvKey(activeKey)) || (props.showOverview && activeKey === OVERVIEW_KEY);
+    const waitingForDefault = (props.showDefaultEnvironment && isDefaultEnvKey(activeKey)) || (props.showOverview && activeKey === OVERVIEW_KEY)
+      || (props.showSecurity && activeKey === SECURITY_KEY);
     if (!activeTable && tables.length && !waitingForDefault) {
       setActiveKey(tables[0].key);
     }
     // activeTable/defaultSig gehören dazu: z. B. wird beim Ausschalten von „Default Environment“
     // der aktive Reiter erst im nächsten Render ungültig.
-    if (!props.showOverview && activeKey === OVERVIEW_KEY && tables.length) {
-      setActiveKey(tables[0].key);
+    if (((!props.showOverview && activeKey === OVERVIEW_KEY) || (!props.showSecurity && activeKey === SECURITY_KEY)) && tables.length) {
+      setActiveKey(props.showOverview ? OVERVIEW_KEY : tables[0].key);
     }
-  }, [tablesSig, props.showDefaultEnvironment, props.showDevEnvironments, props.showOverview, defaultSig, !!activeTable]);
+  }, [tablesSig, props.showDefaultEnvironment, props.showDevEnvironments, props.showOverview, props.showSecurity, props.pipelinesHostUrl, defaultSig, !!activeTable]);
 
   React.useEffect(() => {
     if (activeKey && isDefaultEnvKey(activeKey)) {
@@ -454,6 +489,33 @@ const CoeCockpit: React.FC<ICoeCockpitProps> = props => {
     return () => { cancelled = true; };
   }, [service, mainKey, defaultSig]);
 
+  // Zugriff auf Tabellen außerhalb des CoE vorab prüfen (Default Environment, Pipelines-Host),
+  // damit vor dem Öffnen klar ist, was ohne aktivierte Adminrolle nicht sichtbar ist.
+  const externalTables = allTables.filter(t => !!t.environmentUrl && !t.unavailable && serviceFor(t) !== service);
+  const externalSig = externalTables.map(t => `${t.key}|${t.environmentUrl}|${t.logicalName}`).join(',');
+  const [access, setAccess] = React.useState<{ [tableKey: string]: IAccessState }>({});
+  const [accessDismissed, setAccessDismissed] = React.useState<boolean>(false);
+  React.useEffect(() => {
+    if (!service || !externalTables.length) {
+      return;
+    }
+    let cancelled = false;
+    externalTables.forEach(t => {
+      const svc = serviceFor(t);
+      if (!svc) {
+        return;
+      }
+      setAccess(prev => ({ ...prev, [t.key]: { status: 'checking' } }));
+      svc.getRecords({ ...t, key: `_probe_${t.key}`, columns: [], links: [], defaultSort: undefined }, 1).then(
+        () => { if (!cancelled) { setAccess(prev => ({ ...prev, [t.key]: { status: 'ok' } })); } },
+        (e: unknown) => { if (!cancelled) { setAccess(prev => ({ ...prev, [t.key]: accessStatus(e) })); } }
+      );
+    });
+    return () => { cancelled = true; };
+  }, [service, externalSig, reloadTick]);
+  const blocked = externalTables.filter(t => access[t.key] && ['denied', 'missing', 'error'].indexOf(access[t.key].status) >= 0);
+  const isLocked = (key: string): boolean => !!access[key] && access[key].status === 'denied' && externalTables.some(t => t.key === key);
+
   const state: ITableState | undefined = activeTable ? data[activeTable.key] : undefined;
   const records = state ? state.records : [];
   const loading = !!service && !!activeTable && !activeTable.unavailable && (!state || (state.status === 'loading' && !state.partial));
@@ -619,6 +681,56 @@ const CoeCockpit: React.FC<ICoeCockpitProps> = props => {
     );
   };
 
+  /** Hinweis: Bereiche außerhalb des CoE, die mit den aktuellen Rechten nicht sichtbar sind. */
+  const renderAccessNotice = (): JSX.Element | null => {
+    if (!blocked.length || accessDismissed) {
+      return null;
+    }
+    const areaOf = (t: ITableConfig): string => (isDefaultEnvKey(t.key) ? 'Default Environment' : t.key.indexOf(PIPELINE_KEY_PREFIX) === 0 ? GROUP_ALM : t.group || 'Weitere Umgebung');
+    const groups: { area: string; host: string; titles: string[]; status: IAccessState['status'] }[] = [];
+    blocked.forEach(t => {
+      const area = areaOf(t);
+      const host = hostOf(t.environmentUrl || '');
+      let g = groups.filter(x => x.area === area && x.host === host)[0];
+      if (!g) {
+        g = { area, host, titles: [], status: access[t.key].status };
+        groups.push(g);
+      }
+      g.titles.push(t.title);
+      if (access[t.key].status === 'denied') {
+        g.status = 'denied';
+      }
+    });
+    const anyDenied = groups.some(g => g.status === 'denied');
+    const reason = (g: { area: string; status: IAccessState['status'] }): string => (g.status === 'denied'
+      ? 'kein Zugriff mit deinem aktuellen Konto'
+      : g.status === 'missing'
+        ? (g.area === GROUP_ALM ? 'Pipelines-Tabellen nicht gefunden – ist das richtige Host-Environment gewählt?' : 'Tabelle in dieser Umgebung nicht gefunden')
+        : 'nicht erreichbar');
+    return (
+      <div className={styles.accessNotice} role="status">
+        <span className={styles.accessIcon}><Icon iconName={anyDenied ? 'Lock' : 'Info'} /></span>
+        <div className={styles.accessText}>
+          <div className={styles.accessTitle}>
+            {anyDenied ? 'Power-Platform-Adminrolle erforderlich – folgende Bereiche sind gerade nicht sichtbar' : 'Einige Bereiche sind nicht verfügbar'}
+          </div>
+          <ul className={styles.accessList}>
+            {groups.map(g => (
+              <li key={`${g.area}|${g.host}`}>
+                <strong>{g.area}</strong> · {g.titles.join(', ')} <span className={styles.accessHost}>({g.host})</span> – {reason(g)}
+              </li>
+            ))}
+          </ul>
+          {anyDenied && <div className={styles.accessHint}>{ADMIN_ROLE_HINT}</div>}
+        </div>
+        <div className={styles.accessActions}>
+          <DefaultButton text="Erneut prüfen" iconProps={{ iconName: 'Refresh' }} onClick={() => setReloadTick(t => t + 1)} />
+          <IconButton iconProps={{ iconName: 'Cancel' }} ariaLabel="Hinweis ausblenden" title="Hinweis ausblenden" onClick={() => setAccessDismissed(true)} />
+        </div>
+      </div>
+    );
+  };
+
   const renderOnboarding = (): JSX.Element => (
     <div className={styles.state}>
       <div className={styles.stateIcon}><Icon iconName="PlugConnected" /></div>
@@ -762,7 +874,7 @@ const CoeCockpit: React.FC<ICoeCockpitProps> = props => {
 
   /** Konfigurierte Tabelle zu einem logischen Namen (für das Durchklicken). */
   const tableForLogical = (logical: string): ITableConfig | undefined =>
-    tables.filter(t => t.logicalName === logical && !t.environmentUrl)[0];
+    tables.filter(t => t.logicalName === logical && !t.environmentUrl)[0] || pipelineTables.filter(t => t.logicalName === logical)[0];
 
   /** Verknüpften Datensatz in der Detailansicht öffnen (vollständig nachladen, dann „durchklicken“). */
   const openRelated = (logical: string, id: string): void => {
@@ -805,7 +917,27 @@ const CoeCockpit: React.FC<ICoeCockpitProps> = props => {
     });
   }, [activeKey, filters, search, panelStack]);
 
+  /** Datensatz aus Übersicht, Sicherheit oder Suche in der Detailansicht öffnen. */
+  const openRecord = (t: ITableConfig, record: IRecord, primaryId: string, meta?: IEntityMeta): void => setPanelStack([{
+    table: t, record,
+    meta: meta || { logicalName: t.logicalName, entitySetName: '', primaryId, primaryName: (t.columns[0] && t.columns[0].field) || '', displayName: t.title }
+  }]);
+
+  /** Reiter wechseln und dort suchen (aus der Suche über alle Bereiche). */
+  const navigateSearch = (tableKey: string, query: string): void => {
+    if (tableKey === activeKey) {
+      setFilters({});
+      setSearch(query);
+      setPage(0);
+      return;
+    }
+    pendingFiltersRef.current = undefined;
+    pendingSearchRef.current = query;
+    setActiveKey(tableKey);
+  };
+
   const inOverview = props.showOverview && activeKey === OVERVIEW_KEY;
+  const inSecurity = props.showSecurity && activeKey === SECURITY_KEY;
   const devState = data[DEV_ENV_KEY];
   const devAffected = devState && devState.status === 'ready'
     ? {
@@ -823,14 +955,14 @@ const CoeCockpit: React.FC<ICoeCockpitProps> = props => {
         reloadKey={mainKey}
         devAffected={devAffected}
         showDevEnvironments={props.showDevEnvironments}
+        onOpenSecurity={props.showSecurity ? () => setActiveKey(SECURITY_KEY) : undefined}
         onNavigate={navigate}
-        onOpenRecord={(t, record, primaryId) => setPanelStack([{
-          table: t, record,
-          meta: { logicalName: t.logicalName, entitySetName: '', primaryId, primaryName: (t.columns[0] && t.columns[0].field) || '', displayName: t.title }
-        }])}
+        onOpenRecord={openRecord}
       />
     )
-    : inDevView ? renderDevEnvironments() : inDefaultView ? renderDefaultEnvironment() : renderBody());
+    : inSecurity && service
+      ? <SecurityView service={service} tables={tables} reloadKey={mainKey} onNavigate={navigate} onOpenRecord={openRecord} />
+      : inDevView ? renderDevEnvironments() : inDefaultView ? renderDefaultEnvironment() : renderBody());
 
   /** Reiter „Betroffen ab 15.12.“: Hinweis-Banner mit Frist, Kacheln als Schnellfilter, darunter die Tabelle. */
   const renderDevEnvironments = (): JSX.Element => {
@@ -1056,7 +1188,7 @@ const CoeCockpit: React.FC<ICoeCockpitProps> = props => {
   };
 
   // ---------- Navigation (Reiter bzw. gruppierte Seitenleiste wie in der CoE Admin View) ----------
-  interface INavItem { key: string; title: string; icon: string; group: string; count?: string; active: boolean; danger?: boolean; onClick: () => void }
+  interface INavItem { key: string; title: string; icon: string; group: string; count?: string; active: boolean; danger?: boolean; locked?: boolean; onClick: () => void }
   const navItems: INavItem[] = (props.showOverview
     ? [{ key: OVERVIEW_KEY, title: 'Übersicht', icon: 'ViewDashboard', group: START_GROUP, active: !!inOverview, onClick: () => setActiveKey(OVERVIEW_KEY) }]
     : [] as INavItem[]).concat(tables.map(t => ({
@@ -1069,6 +1201,13 @@ const CoeCockpit: React.FC<ICoeCockpitProps> = props => {
   devTables.forEach(t => navItems.push({
     key: t.key, title: t.title, icon: 'Warning', group: ANALYSIS_GROUP, count: countFor(t), active: !!inDevView, danger: true, onClick: () => setActiveKey(t.key)
   }));
+  if (props.showSecurity) {
+    navItems.push({ key: SECURITY_KEY, title: 'Sicherheit & Freigaben', icon: 'Shield', group: ANALYSIS_GROUP, active: !!inSecurity, onClick: () => setActiveKey(SECURITY_KEY) });
+  }
+  pipelineTables.forEach(t => navItems.push({
+    key: t.key, title: t.title, icon: isLocked(t.key) ? 'Lock' : t.icon, group: GROUP_ALM, count: countFor(t),
+    active: t.key === activeKey, locked: isLocked(t.key), onClick: () => setActiveKey(t.key)
+  }));
   const navGroups: { name: string; items: INavItem[] }[] = [];
   navItems.forEach(n => {
     let g = navGroups.filter(x => x.name === n.group)[0];
@@ -1079,7 +1218,7 @@ const CoeCockpit: React.FC<ICoeCockpitProps> = props => {
     g.items.push(n);
   });
   // Seitenleiste, sobald es mehr Einträge gibt, als in eine Reiterzeile passen (oder Gruppen konfiguriert sind)
-  const useSideNav = navItems.length > MAX_TABS || tables.some(t => !!t.group && t.group !== DEFAULT_GROUP);
+  const useSideNav = navItems.length > MAX_TABS || pipelineTables.length > 0 || tables.some(t => !!t.group && t.group !== DEFAULT_GROUP);
 
   const renderNavItem = (n: INavItem, side: boolean): JSX.Element => (
     <button
@@ -1089,7 +1228,7 @@ const CoeCockpit: React.FC<ICoeCockpitProps> = props => {
       aria-selected={n.active}
       className={side ? `${styles.sideItem} ${n.active ? styles.sideItemActive : ''}` : `${styles.tab} ${n.active ? styles.tabActive : ''}`}
       onClick={n.onClick}
-      title={n.title}
+      title={n.locked ? `${n.title} – kein Zugriff (Adminrolle aktivieren)` : n.title}
     >
       <Icon iconName={n.icon} className={`${side ? styles.sideItemIcon : styles.tabIcon} ${n.danger ? styles.toneDanger : ''}`} />
       <span className={side ? styles.sideItemText : undefined}>{n.title}</span>
@@ -1116,6 +1255,15 @@ const CoeCockpit: React.FC<ICoeCockpitProps> = props => {
               </div>
             </div>
           </div>
+          {service && (
+            <GlobalSearch
+              tables={searchTables}
+              serviceFor={serviceFor}
+              themeVars={themeVars}
+              onOpenRecord={(t, record, meta) => openRecord(t, record, meta.primaryId, meta)}
+              onShowAll={(t, q) => navigateSearch(t.key, q)}
+            />
+          )}
           <div className={styles.headerActions}>
             {lastLoaded && <span className={styles.metaText}>Aktualisiert {formatTime(lastLoaded)}</span>}
             {service && (
@@ -1142,13 +1290,15 @@ const CoeCockpit: React.FC<ICoeCockpitProps> = props => {
 
         {service && (
           <>
-            {showKpis && !inOverview && <KpiStrip tables={tables} kpis={kpis} activeKey={activeKey} onSelect={setActiveKey} />}
+            {renderAccessNotice()}
+
+            {showKpis && !inOverview && !inSecurity && <KpiStrip tables={tables} kpis={kpis} activeKey={activeKey} onSelect={setActiveKey} />}
 
             {navItems.length > 0 && !useSideNav && (
               <nav className={styles.tabs} role="tablist" aria-label="Tabellen">
                 {navItems.map((n, i) => (
                   <React.Fragment key={n.key}>
-                    {i > 0 && n.group !== navItems[i - 1].group && n.group === ANALYSIS_GROUP && <span className={styles.tabDivider} aria-hidden="true" />}
+                    {i > 0 && n.group !== navItems[i - 1].group && (n.group === ANALYSIS_GROUP || n.group === GROUP_ALM) && <span className={styles.tabDivider} aria-hidden="true" />}
                     {renderNavItem(n, false)}
                   </React.Fragment>
                 ))}

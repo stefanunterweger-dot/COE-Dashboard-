@@ -20,6 +20,8 @@ export interface IOverviewProps {
   /** Betroffene Developer-Environments (aus dem Reiter „Betroffen ab 15.12.“), undefined = lädt. */
   devAffected: { count: number; empty: number; disabled: number } | undefined;
   showDevEnvironments: boolean;
+  /** Öffnet die Ansicht „Sicherheit & Freigaben“ (falls eingeschaltet). */
+  onOpenSecurity?: () => void;
   onNavigate: (tableKey: string, filters?: { [field: string]: IColumnFilter }) => void;
   onOpenRecord: (table: ITableConfig, record: IRecord, primaryId: string) => void;
 }
@@ -83,7 +85,7 @@ function toParts(
   return parts;
 }
 
-const Card: React.FC<{ title: string; subtitle?: string; icon: string; action?: { label: string; onClick: () => void }; className?: string }> = props => (
+export const Card: React.FC<{ title: string; subtitle?: string; icon: string; action?: { label: string; onClick: () => void }; className?: string }> = props => (
   <section className={`${styles.ovCard} ${props.className || ''}`}>
     <header className={styles.ovCardHead}>
       <span className={styles.ovCardIcon}><Icon iconName={props.icon} /></span>
@@ -101,13 +103,13 @@ const Card: React.FC<{ title: string; subtitle?: string; icon: string; action?: 
   </section>
 );
 
-const Skeleton: React.FC<{ rows?: number; height?: number }> = ({ rows = 3, height = 14 }) => (
+export const Skeleton: React.FC<{ rows?: number; height?: number }> = ({ rows = 3, height = 14 }) => (
   <div className={styles.ovSkeleton}>
     {Array.from({ length: rows }, (_x, i) => <span key={i} className={styles.skeleton} style={{ height, width: `${90 - i * 12}%` }} />)}
   </div>
 );
 
-const Failed: React.FC<{ text?: string }> = ({ text }) => (
+export const Failed: React.FC<{ text?: string }> = ({ text }) => (
   <div className={styles.ovFailed}><Icon iconName="Info" /> Nicht verfügbar{text ? ` – ${text}` : ''}</div>
 );
 
@@ -356,7 +358,8 @@ export const OverviewView: React.FC<IOverviewProps> = props => {
           )}
         </Card>
 
-        <Card title="Handlungsbedarf" subtitle="Governance auf einen Blick" icon="ShieldAlert">
+        <Card title="Handlungsbedarf" subtitle="Governance auf einen Blick" icon="ShieldAlert"
+          action={props.onOpenSecurity ? { label: 'Sicherheit', onClick: props.onOpenSecurity } : undefined}>
           <ul className={styles.govList}>
             {govItems.map(g => (
               <li key={g.key}>

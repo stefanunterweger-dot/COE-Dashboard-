@@ -2653,3 +2653,222 @@ li:last-child > .govItem {
   border: 1px solid var(--coe-border);
   border-radius: 999px;
 }
+
+// =====================================================================
+// Suche über alle Bereiche (Kopfzeile)
+// =====================================================================
+.globalSearch {
+  flex: 1 1 260px;
+  max-width: 420px;
+  min-width: 200px;
+}
+
+.searchResults {
+  width: 420px;
+  max-width: calc(100vw - 32px);
+  padding: 6px 0;
+  color: var(--coe-text);
+  background: var(--coe-bg);
+  font-size: 13px;
+}
+
+.searchGroup {
+  padding: 4px 0;
+
+  & + & {
+    border-top: 1px solid var(--coe-border-soft);
+  }
+}
+
+.searchGroupHead {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px 4px;
+  font-size: 11px;
+  font-weight: 650;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--coe-text-2);
+
+  > span {
+    flex: 1 1 auto;
+  }
+
+  button {
+    text-transform: none;
+    letter-spacing: 0;
+    font-size: 12px;
+  }
+}
+
+.searchItem {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  padding: 7px 12px 7px 32px;
+  font: inherit;
+  text-align: left;
+  color: var(--coe-text);
+  background: none;
+  border: 0;
+  cursor: pointer;
+
+  &:hover,
+  &:focus-visible {
+    background: var(--coe-hover);
+    outline: none;
+  }
+}
+
+.searchItemTitle {
+  font-weight: 600;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.searchItemSub {
+  font-size: 12px;
+  color: var(--coe-text-2);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.searchEmpty {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 14px 12px;
+  color: var(--coe-text-2);
+}
+
+// =====================================================================
+// Hinweis: Bereiche ohne Zugriff (Adminrolle)
+// =====================================================================
+.accessNotice {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  margin: 0 24px 14px;
+  padding: 14px 16px;
+  border: 1px solid var(--coe-border);
+  border-left: 4px solid var(--coe-status-warning);
+  border-radius: 10px;
+  background: var(--coe-warning-bg);
+}
+
+.accessIcon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  font-size: 15px;
+  color: #0b0b0b;
+  background: var(--coe-status-warning);
+}
+
+.accessText {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.accessTitle {
+  font-size: 14px;
+  font-weight: 650;
+}
+
+.accessList {
+  margin: 4px 0 0;
+  padding-left: 18px;
+}
+
+.accessHost {
+  color: var(--coe-text-2);
+}
+
+.accessHint {
+  margin-top: 6px;
+  color: var(--coe-text-2);
+}
+
+.accessActions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex: 0 0 auto;
+}
+
+// =====================================================================
+// Sicherheit & Freigaben
+// =====================================================================
+.secHero {
+  align-items: center;
+}
+
+.secHeroTitle {
+  margin-top: 6px;
+  font-size: 28px;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.secGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 12px;
+}
+
+.secTile {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  padding: 14px;
+  font: inherit;
+  text-align: left;
+  color: var(--coe-text);
+  background: var(--coe-bg);
+  border: 1px solid var(--coe-border);
+  border-radius: 12px;
+  box-shadow: 0 1px 2px var(--coe-card-shadow);
+  cursor: pointer;
+  transition: border-color 0.15s ease, transform 0.15s ease;
+
+  &:hover:not(:disabled) {
+    border-color: var(--coe-accent-border);
+    transform: translateY(-1px);
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--coe-accent);
+    outline-offset: 2px;
+  }
+
+  &:disabled {
+    cursor: default;
+  }
+}
+
+.narrow {
+  .globalSearch {
+    order: 3;
+    flex: 1 1 100%;
+    max-width: none;
+  }
+
+  .accessNotice {
+    flex-wrap: wrap;
+    margin: 0 12px 12px;
+  }
+
+  .secHeroTitle {
+    font-size: 22px;
+  }
+}

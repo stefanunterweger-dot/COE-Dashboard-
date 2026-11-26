@@ -79,7 +79,7 @@ export const RecordPanel: React.FC<IRecordPanelProps> = props => {
     const relKey = activeRelated.key;
     const forId = id;
     setRelated(prev => ({ ...prev, [relKey]: { status: 'loading', records: [], warnings: [] } }));
-    service.getRelated(table.logicalName, id, activeRelated, RELATED_LIMIT).then(
+    service.getRelated(table.logicalName, id, activeRelated, RELATED_LIMIT, record).then(
       res => setRelated(prev => (forId !== idRef.current ? prev : { ...prev, [relKey]: { status: 'ready', records: res.records, primaryId: res.meta.primaryId, warnings: res.warnings, truncated: res.truncated } })),
       (e: Error) => setRelated(prev => (forId !== idRef.current ? prev : { ...prev, [relKey]: { status: 'error', records: [], warnings: [], error: e.message } }))
     );

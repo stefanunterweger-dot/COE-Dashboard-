@@ -225,17 +225,64 @@ function parseFilter(t: ITableDef, s: string): Pred {
 }
 
 // ---------- Anfrage ----------
+function collection(t: ITableDef, all: Record<string, unknown>[], q: URLSearchParams, url: string, maxPage: number): IMockResponse {
+  const select = q.get('$select') ? q.get('$select')!.split(',').map(s => s.trim()).filter(Boolean) : undefined;
+  if (select) { select.forEach(f => attrFor(t, f)); }
+  let rows = all.slice();
+  const filter = q.get('$filter');
+  if (filter) {
+    const pred = parseFilter(t, filter);
+    rows = rows.filter(pred);
+  }
+  const orderby = q.get('$orderby');
+  if (orderby) {
+    const parts = orderby.split(',').map(s => s.trim().split(/\s+/));
+    parts.forEach(([f]) => attrFor(t, f));
+    rows.sort((a, b) => {
+      for (const [f, dir] of parts) {
+        const va = a[f]; const vb = b[f];
+        if (va === vb) { continue; }
+        if (va === null || va === undefined) { return dir === 'desc' ? 1 : -1; }
+        if (vb === null || vb === undefined) { return dir === 'desc' ? -1 : 1; }
+        const c = typeof va === 'number' && typeof vb === 'number' ? va - vb : String(va).localeCompare(String(vb), 'de');
+        if (c !== 0) { return dir === 'desc' ? -c : c; }
+      }
+      return 0;
+    });
+  }
+  const skip = Number(q.get('$skiptoken') || 0);
+  const pageRows = rows.slice(skip, skip + maxPage);
+  const body: Record<string, unknown> = { value: pageRows.map(r => project(t, r, select)) };
+  if (q.get('$count') === 'true') {
+    body['@odata.count'] = Math.min(rows.length, 5000);
+  }
+  if (skip + maxPage < rows.length) {
+    const next = new URL(url);
+    next.searchParams.set('$skiptoken', String(skip + maxPage));
+    body['@odata.nextLink'] = next.toString();
+  }
+  return respond(200, body);
+}
+
 function handle(url: string, headers: { [k: string]: string }): IMockResponse {
   const u = new URL(url);
   const db = findDb(u.hostname);
   if (!db) {
     throw new TypeError('Failed to fetch');
   }
+  // Vorschau: Konto ohne (aktivierte) Adminrolle in diesen Umgebungen
+  const denied = ((window as unknown as { __coeDenyHosts?: string[] }).__coeDenyHosts || []).map(h => h.toLowerCase());
+  if (denied.indexOf(u.hostname.toLowerCase()) >= 0) {
+    throw new ODataError(403, 'The user with SystemUserId=00000000-0000-0000-0000-000000000000 in OrganizationContext is not a member of the organization.');
+  }
   const path = decodeURIComponent(u.pathname.replace(/^\/api\/data\/v9\.2\//, ''));
   const q = u.searchParams;
   const prefer = headers.Prefer || headers.prefer || '';
   const maxPage = Number((/odata\.maxpagesize=(\d+)/.exec(prefer) || [])[1] || 5000);
 
+  if (path === 'WhoAmI') {
+    return respond(200, { UserId: '6d1c3b2a-0000-4000-8000-00000000c0e0', BusinessUnitId: '6d1c3b2a-0000-4000-8000-0000000000b0', OrganizationId: '6d1c3b2a-0000-4000-8000-0000000000a0' });
+  }
   if (path === 'EntityDefinitions') {
     return respond(200, {
       value: Object.keys(db.tables).map(k => db.tables[k]).map(t => ({
@@ -266,6 +313,23 @@ function handle(url: string, headers: { [k: string]: string }): IMockResponse {
       PrimaryNameAttribute: t.primaryName,
       DisplayName: { UserLocalizedLabel: { Label: t.displayName } }
     });
+  }
+
+  // N:N-Navigation, z. B. admin_dlppolicies(<id>)/admin_policy_environments
+  m = /^([a-z_]+)\(([0-9a-f-]{36})\)\/([a-z_]+)$/i.exec(path);
+  if (m) {
+    const parent = tableBySet(db, m[1]);
+    const target = parent.navs && parent.navs[m[3]];
+    if (!target) {
+      throw new ODataError(400, `Could not find a property named '${m[3]}' on type 'Microsoft.Dynamics.CRM.${parent.logicalName}'.`);
+    }
+    const row = parent.rows.filter(r => String(r[parent.primaryId]).toLowerCase() === m![2].toLowerCase())[0];
+    if (!row) {
+      throw new ODataError(404, `${parent.logicalName} With Id = ${m[2]} Does Not Exist`);
+    }
+    const t = tableByLogical(db, target);
+    const ids = ((row[`__nav_${m[3]}`] as unknown[]) || []).map(x => String(x).toLowerCase());
+    return collection(t, t.rows.filter(r => ids.indexOf(String(r[t.primaryId]).toLowerCase()) >= 0), q, url, maxPage);
   }
 
   m = /^([a-z_]+)\(([0-9a-f-]{36})\)$/i.exec(path);
@@ -343,42 +407,7 @@ function handle(url: string, headers: { [k: string]: string }): IMockResponse {
       }
       return respond(200, { value: [{ [agg[3]]: rows.length }] });
     }
-    const select = q.get('$select') ? q.get('$select')!.split(',').map(s => s.trim()).filter(Boolean) : undefined;
-    if (select) { select.forEach(f => attrFor(t, f)); }
-    let rows = t.rows.slice();
-    const filter = q.get('$filter');
-    if (filter) {
-      const pred = parseFilter(t, filter);
-      rows = rows.filter(pred);
-    }
-    const orderby = q.get('$orderby');
-    if (orderby) {
-      const parts = orderby.split(',').map(s => s.trim().split(/\s+/));
-      parts.forEach(([f]) => attrFor(t, f));
-      rows.sort((a, b) => {
-        for (const [f, dir] of parts) {
-          const va = a[f]; const vb = b[f];
-          if (va === vb) { continue; }
-          if (va === null || va === undefined) { return dir === 'desc' ? 1 : -1; }
-          if (vb === null || vb === undefined) { return dir === 'desc' ? -1 : 1; }
-          const c = typeof va === 'number' && typeof vb === 'number' ? va - vb : String(va).localeCompare(String(vb), 'de');
-          if (c !== 0) { return dir === 'desc' ? -c : c; }
-        }
-        return 0;
-      });
-    }
-    const skip = Number(q.get('$skiptoken') || 0);
-    const pageRows = rows.slice(skip, skip + maxPage);
-    const body: Record<string, unknown> = { value: pageRows.map(r => project(t, r, select)) };
-    if (q.get('$count') === 'true') {
-      body['@odata.count'] = Math.min(rows.length, 5000);
-    }
-    if (skip + maxPage < rows.length) {
-      const next = new URL(url);
-      next.searchParams.set('$skiptoken', String(skip + maxPage));
-      body['@odata.nextLink'] = next.toString();
-    }
-    return respond(200, body);
+    return collection(t, t.rows, q, url, maxPage);
   }
 
   throw new ODataError(404, `Resource not found for the segment '${path}'.`);

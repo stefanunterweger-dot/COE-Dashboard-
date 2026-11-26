@@ -43,6 +43,10 @@ export interface ICoeCockpitWebPartProps {
   showOverview: boolean;
   /** Spalte mit dem Managed-Status (leer = automatisch erkennen). */
   devEnvManagedField: string;
+  /** Ansicht „Sicherheit & Freigaben“ anzeigen. */
+  showSecurity: boolean;
+  /** Dataverse-URL des Pipelines-Host-Environments (leer = ALM-Pipelines ausblenden). */
+  pipelinesHostUrl: string;
 }
 
 export default class CoeCockpitWebPart extends BaseClientSideWebPart<ICoeCockpitWebPartProps> {
@@ -50,6 +54,7 @@ export default class CoeCockpitWebPart extends BaseClientSideWebPart<ICoeCockpit
   private _theme: IReadonlyTheme | undefined;
   private _editorRequest: number = 0;
   private _envOptions: IPropertyPaneDropdownOption[] | undefined;
+  private _hostOptions: IPropertyPaneDropdownOption[] | undefined;
   private _envLoadError: string | undefined;
   private _envLoadedFor: string | undefined;
   private _managedOptions: IPropertyPaneDropdownOption[] | undefined;
@@ -85,6 +90,8 @@ export default class CoeCockpitWebPart extends BaseClientSideWebPart<ICoeCockpit
       showDevEnvironments: this.properties.showDevEnvironments !== false,
       showOverview: this.properties.showOverview !== false,
       devEnvManagedField: (this.properties.devEnvManagedField || '').trim(),
+      showSecurity: this.properties.showSecurity !== false,
+      pipelinesHostUrl: normalizeDataverseUrl(this.properties.pipelinesHostUrl) || '',
       theme: this._theme,
       isEditMode: this.displayMode === DisplayMode.Edit,
       editorRequest: this._editorRequest,
@@ -166,6 +173,11 @@ export default class CoeCockpitWebPart extends BaseClientSideWebPart<ICoeCockpit
           key: e.id,
           text: `${e.name}${e.type ? ` (${e.type})` : ''}`
         }));
+        // Pipelines-Host: nur Environments mit Dataverse
+        this._hostOptions = envs.filter(e => !!e.dataverseUrl).map(e => ({
+          key: e.dataverseUrl as string,
+          text: `${e.name}${e.type ? ` (${e.type})` : ''}`
+        }));
         this.context.propertyPane.refresh();
       },
       (e: Error) => {
@@ -184,6 +196,17 @@ export default class CoeCockpitWebPart extends BaseClientSideWebPart<ICoeCockpit
     const current = (this.properties.defaultEnvironmentId || '').trim();
     (this._envOptions || []).forEach(o => options.push(o));
     if (current && !(this._envOptions || []).some(o => String(o.key).toLowerCase() === current.toLowerCase())) {
+      options.push({ key: current, text: current });
+    }
+    return options;
+  }
+
+  /** Auswahl des Pipelines-Host-Environments (Schlüssel = Dataverse-URL). */
+  private _pipelineHostOptions(): IPropertyPaneDropdownOption[] {
+    const options: IPropertyPaneDropdownOption[] = [{ key: '', text: 'Keine – ALM-Pipelines ausblenden' }];
+    const current = normalizeDataverseUrl(this.properties.pipelinesHostUrl) || '';
+    (this._hostOptions || []).forEach(o => options.push(o));
+    if (current && !(this._hostOptions || []).some(o => String(o.key).toLowerCase() === current.toLowerCase())) {
       options.push({ key: current, text: current });
     }
     return options;
@@ -280,6 +303,23 @@ export default class CoeCockpitWebPart extends BaseClientSideWebPart<ICoeCockpit
                       : this._managedDetected
                         ? 'Angezeigt werden Developer-Environments, die laut dieser Spalte nicht managed sind.'
                         : 'Keine Managed-Spalte erkannt – ohne Auswahl werden alle Developer-Environments angezeigt.'
+                })
+              ]
+            },
+            {
+              groupName: 'Sicherheit & ALM-Pipelines',
+              groupFields: [
+                PropertyPaneToggle('showSecurity', {
+                  label: 'Ansicht „Sicherheit & Freigaben“ anzeigen',
+                  checked: this.properties.showSecurity !== false
+                }),
+                PropertyPaneDropdown('pipelinesHostUrl', {
+                  label: 'Pipelines-Host-Environment',
+                  options: this._pipelineHostOptions(),
+                  selectedKey: normalizeDataverseUrl(this.properties.pipelinesHostUrl) || ''
+                }),
+                PropertyPaneLabel('pipelinesInfo', {
+                  text: 'Das Environment, in dem die App „Deployment Pipeline Configuration“ läuft. Die Bereitstellungen werden dort mit deinen eigenen Rechten gelesen – ohne Zugriff weist das Cockpit darauf hin.'
                 })
               ]
             },

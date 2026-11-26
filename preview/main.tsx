@@ -5,7 +5,7 @@ import CoeCockpit from '../src/webparts/coeCockpit/components/CoeCockpit';
 import { getDefaultTables } from '../src/webparts/coeCockpit/models/defaultTables';
 import { ITableConfig } from '../src/webparts/coeCockpit/models/ITableConfig';
 import { AadHttpClientFactory } from './shims/sp-http';
-import { DATABASES, COE_HOST } from './mock/data';
+import { DATABASES, COE_HOST, DEFAULT_HOST, PIPELINES_HOST } from './mock/data';
 
 initializeIcons();
 
@@ -63,8 +63,12 @@ const App: React.FC = () => {
     defaultEnvironmentId: '',
     defaultEnvironmentDataverseUrl: '',
     showDevEnvironments: true,
-    devEnvManagedField: ''
+    devEnvManagedField: '',
+    showSecurity: true,
+    pipelinesHostUrl: `https://${PIPELINES_HOST}`
   });
+  const [noAdmin, setNoAdmin] = React.useState<boolean>(false);
+  (window as unknown as { __coeDenyHosts?: string[] }).__coeDenyHosts = noAdmin ? [DEFAULT_HOST, PIPELINES_HOST] : [];
   const factory = React.useMemo(() => new AadHttpClientFactory(), []);
   const set = (patch: Partial<typeof p>): void => setP(prev => ({ ...prev, ...patch }));
 
@@ -77,9 +81,11 @@ const App: React.FC = () => {
         <Toggle inlineLabel label="Bearbeitungsmodus" checked={editMode} onChange={(_e, v) => setEditMode(!!v)} styles={{ root: { margin: 0 } }} />
         <Toggle inlineLabel label="Dunkler Abschnitt" checked={dark} onChange={(_e, v) => setDark(!!v)} styles={{ root: { margin: 0 } }} />
         <Toggle inlineLabel label="Rotes Theme" checked={red} onChange={(_e, v) => setRed(!!v)} styles={{ root: { margin: 0 } }} />
+        <Toggle inlineLabel label="Ohne Adminrolle" checked={noAdmin} onChange={(_e, v) => setNoAdmin(!!v)} styles={{ root: { margin: 0 } }} />
       </div>
       <div className={`section ${dark ? 'sectionDark' : ''}`}>
         <CoeCockpit
+          key={noAdmin ? 'noadmin' : 'admin'}
           instanceId="preview"
           title={p.title}
           subtitle={p.subtitle}
@@ -99,6 +105,8 @@ const App: React.FC = () => {
           showDevEnvironments={p.showDevEnvironments}
           showOverview={true}
           devEnvManagedField={p.devEnvManagedField}
+          showSecurity={p.showSecurity}
+          pipelinesHostUrl={p.pipelinesHostUrl}
           onTablesChanged={t => setTables(t)}
           onConfigure={() => setPaneOpen(true)}
         />
@@ -132,6 +140,15 @@ const App: React.FC = () => {
           disabled={!p.showDevEnvironments}
           options={[{ key: '', text: 'Automatisch: Governance Protection Level (admin_governanceprotectionlevel)' }, { key: 'admin_governanceprotectionlevel', text: 'Governance Protection Level (admin_governanceprotectionlevel)' }]}
           onChange={(_e, o) => set({ devEnvManagedField: o ? String(o.key) : '' })}
+        />
+        <Label styles={{ root: { marginTop: 16 } }}>Sicherheit &amp; ALM-Pipelines</Label>
+        <Toggle label="Ansicht „Sicherheit & Freigaben“ anzeigen" checked={p.showSecurity} onChange={(_e, v) => set({ showSecurity: !!v })} />
+        <Dropdown
+          label="Pipelines-Host-Environment"
+          selectedKey={p.pipelinesHostUrl}
+          options={[{ key: '', text: 'Keine – ALM-Pipelines ausblenden' }].concat(
+            environments.filter(e => !!e.admin_environmentcdsinstanceurl).map(e => ({ key: String(e.admin_environmentcdsinstanceurl).replace(/\/$/, ''), text: `${e.admin_displayname} (${e.admin_environmentsku})` })))}
+          onChange={(_e, o) => set({ pipelinesHostUrl: o ? String(o.key) : '' })}
         />
         <Label styles={{ root: { marginTop: 16 } }}>Tabellen</Label>
         <PrimaryButton text="Tabellen-Editor öffnen" iconProps={{ iconName: 'Settings' }} onClick={() => { setPaneOpen(false); setEditorRequest(n => n + 1); }} />

@@ -15,7 +15,13 @@ alle Daten direkt aus den Dataverse-Tabellen des CoE (keine Power-Platform-Admin
 | Bereich | Beschreibung |
 |---|---|
 | Übersicht (Startseite) | Dashboard mit Gesamtzahl der Ressourcen, Countdown zur Sperre nicht verwalteter Developer-Environments (15.12.2026), Kennzahl-Kacheln mit 12-Monats-Verlauf, Verlauf „Neu erstellt pro Monat“, **Handlungsbedarf** (betroffene Developer-Environments, gesperrte Flows, verwaiste Apps/Flows, seit 90 Tagen ungenutzte Apps, Gast-Maker), Verteilungen (Apps nach Typ, Flows nach Status, Environments nach Typ) und Ranglisten (meistgenutzte Apps, größte Environments, Top-Connectors, aktivste Maker). Jedes Element führt per Klick in die gefilterte Liste oder öffnet den Datensatz. Nur Zählungen/Gruppierungen – auch bei sehr großen Tabellen schnell. |
-| Navigation | Seitenleiste wie in der Admin View: **Inventar** (Apps, Flows, Environments, Connectors, Bots, Desktop Flows, Power Pages Sites, Business Process Flows, Solutions, AI-Modelle), **Benutzer** (Maker, Power Platform User, Benutzerrollen, Sicherheitsrollen, Verbindungsidentitäten), **Nutzung** (Environment-Kapazität, Audit-Log), **Auswertungen** (Default Environment, Betroffen ab 15.12.). Auf schmalen Seiten waagrecht. |
+| Navigation | Seitenleiste wie in der Admin View: **Inventar** (Apps, Flows, Environments, Connectors, Bots, Desktop Flows, Power Pages Sites, Business Process Flows, Solutions, AI-Modelle), **Governance** (DLP-Richtlinien), **Benutzer** (Maker, Power Platform User, Benutzerrollen, Sicherheitsrollen, Verbindungsidentitäten), **Nutzung** (Environment-Kapazität, Audit-Log), **Auswertungen** (Default Environment, Betroffen ab 15.12., Sicherheit & Freigaben), **ALM-Pipelines** (Bereitstellungen, Pipelines, Pipeline-Environments). Auf schmalen Seiten waagrecht. |
+| Suche über alle Bereiche | Suchfeld im Kopf: sucht gleichzeitig in Apps, Flows, Environments, Makern, Connectors, Bots, Solutions, DLP-Richtlinien, Pipelines … (direkt in Dataverse, nicht nur in geladenen Daten). Treffer öffnen die Detailansicht, „Alle anzeigen“ springt in die Liste mit dem Suchbegriff. |
+| Sicherheit & Freigaben | Risiken auf einen Blick: Apps für die gesamte Organisation, Apps/Flows an Gäste freigegeben, Custom Connectors über unverschlüsseltes HTTP, Environments ohne Sicherheitsgruppe bzw. ohne DLP-Richtlinie, deaktivierte Konten, Gast-Maker, Apps mit DLP-Verstößen, Environments mit den meisten System-Administratoren, DLP-Richtlinien. Jede Kachel führt in die gefilterte Liste. |
+| DLP-Richtlinien | Alle Richtlinien aus dem CoE-Inventar mit Geltungsbereich; in der Detailansicht die zugeordneten **Environments**, **blockierten** und **Business-Connectors** |
+| Maker 360° | Detailansicht eines Makers mit Apps, Flows, Bots, Desktop Flows, **Zugriff auf** (alle Freigaben/Rollen der Person), **Sicherheitsrollen** in allen Environments und eigenen Environments |
+| ALM-Pipelines | Bereitstellungen (Solution, Version, Pipeline, Stufe, Status, ausgelöst von), Pipelines mit Stufen und Pipeline-Environments – live aus dem Dataverse des **Pipelines-Host-Environments** (Auswahl in den Eigenschaften) |
+| Hinweis Adminrolle | Bereiche außerhalb des CoE-Environments (Solutions im Default Environment, ALM-Pipelines) werden beim Start geprüft. Fehlt der Zugriff, erscheint **vorab** ein Hinweis, welche Bereiche nicht sichtbar sind und dass die Rolle „Power Platform-Administrator“ (PIM) aktiviert werden muss; die Einträge sind in der Navigation mit einem Schloss markiert. |
 | Tabellenansicht | Volltextsuche, Sortierung, Seitenumbruch, kompakte/normale Zeilenhöhe, Spaltenauswahl, CSV-Export für Excel |
 | Spaltenfilter | Filter-Symbol in **jedem** Spaltenkopf: Werteliste mit Suche und Anzahl (wie in Excel), bei Datumsspalten Zeiträume. Aktive Filter als Chips, einzeln entfernbar. |
 | Detailansicht | Seitenpanel mit Eigenschaften, Direktlinks (Power Apps, Power Automate, Admin Center, Dataverse), „Alle Felder“ und Reitern wie in den Admin-View-Formularen: **Freigegeben für**, **Verbindungen**, **Nutzung**, **Aktionen**, Ressourcen eines Environments (Apps, Flows, Bots, Desktop Flows, Power Pages, Solutions, Kapazität, Sicherheitsrollen), **Verwendet in Apps/Flows** … Zeilen sind anklickbar (Durchklicken), „Zurück“ führt zum vorherigen Datensatz. |
@@ -74,6 +80,20 @@ Das Webpart liest mit den Rechten des angemeldeten Benutzers. Benutzer brauchen 
 mit Lesezugriff auf die CoE-Tabellen (z. B. **Power Platform Admin SR** aus dem CoE Starter Kit oder System Administrator).
 Benutzer ohne Rechte sehen eine verständliche Fehlermeldung statt Daten.
 
+## Bereiche außerhalb des CoE (Adminrolle)
+
+Fast alles liest das Cockpit aus dem CoE-Environment. Zwei Bereiche liegen in anderen Environments und werden dort mit den
+Rechten des angemeldeten Benutzers gelesen:
+
+| Bereich | Environment | Benötigt |
+|---|---|---|
+| Default Environment → Solutions | Default Environment | Leserechte auf `solution` (z. B. Environment Maker) |
+| ALM-Pipelines | Pipelines-Host-Environment | Leserechte auf die Pipelines-Tabellen (z. B. System Administrator, Deployment Pipeline Administrator) |
+
+Power-Platform-Admins aktivieren dafür die Rolle **Power Platform-Administrator** (Entra PIM) und übernehmen – falls nötig –
+im Power Platform Admin Center beim Environment unter *Mitgliedschaft* → *Mich hinzufügen* die Rolle System Administrator.
+Das Cockpit prüft den Zugriff beim Start und zeigt vorab, welche Bereiche gerade nicht sichtbar sind.
+
 ## Default Environment – Hinweise
 
 - Apps und Flows werden über die Umgebungs-Verknüpfung im CoE-Inventar gefiltert (`_admin_appenvironment_value` bzw. `_admin_flowenvironment_value`).
@@ -90,6 +110,8 @@ Benutzer ohne Rechte sehen eine verständliche Fehlermeldung statt Daten.
 | Übersicht (Dashboard) als Startseite anzeigen | Übersicht ein-/ausblenden |
 | Bereich „Default Environment“ anzeigen | Reiter ein-/ausblenden |
 | Reiter „Betroffen ab 15.12.“ anzeigen | Reiter ein-/ausblenden |
+| Ansicht „Sicherheit & Freigaben“ anzeigen | Ansicht ein-/ausblenden |
+| Pipelines-Host-Environment | Auswahlliste mit allen Environments mit Dataverse aus dem CoE-Inventar; „Keine“ blendet die ALM-Pipelines aus |
 | Spalte mit dem Managed-Status | Auswahlliste mit den Spalten der CoE-Environment-Tabelle. Standard: **automatisch erkennen** |
 | Default Environment | Auswahlliste mit allen Umgebungen aus dem CoE-Inventar. Standard: **automatisch erkennen** (Umgebungstyp „Default“) |
 | Tabellen | Über den Tabellen-Editor (Button im Eigenschaftenbereich oder „Tabellen verwalten“ im Bearbeitungsmodus) |
@@ -130,6 +152,10 @@ src/webparts/coeCockpit/
 ├─ CoeCockpitWebPart.ts          Webpart, Eigenschaftenbereich, Theme
 ├─ components/
 │  ├─ CoeCockpit.tsx             Hauptansicht (Kopf, Kennzahlen, Reiter, Toolbar, Tabelle)
+│  ├─ OverviewView.tsx           Übersicht (Dashboard)
+│  ├─ SecurityView.tsx           Sicherheit & Freigaben
+│  ├─ GlobalSearch.tsx           Suche über alle Bereiche
+│  ├─ Charts.tsx                 Diagramme (Verlauf, Balken, Sparklines)
 │  ├─ CoeCockpit.module.scss     Design-System (CSS-Variablen aus dem Theme)
 │  ├─ DataTable.tsx              Tabelle mit Sortierung und Ladezustand
 │  ├─ Cells.tsx                  Zellen-Darstellung (Status, Person, Datum …)

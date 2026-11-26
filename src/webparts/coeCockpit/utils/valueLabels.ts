@@ -34,7 +34,9 @@ const FIELD_LABELS: { [field: string]: Labels } = {
   },
   admin_usertype: { 'member': 'Mitglied', 'guest': 'Gast', 'app user': 'App-Benutzer', 'unknown': 'Unbekannt', 'microsoft account': 'Microsoft-Konto' },
   admin_operation: { 'launchpowerapp': 'App gestartet' },
-  admin_resourcetype: { 'app': 'App', 'flow': 'Flow', 'environment': 'Environment' }
+  admin_resourcetype: { 'app': 'App', 'flow': 'Flow', 'environment': 'Environment' },
+  admin_scope: { 'all environments': 'Alle Environments', 'include certain environments': 'Nur ausgewählte Environments', 'exclude certain environments': 'Alle außer ausgewählte' },
+  admin_securitygroupname: { 'not assigned': 'Keine' }
 };
 
 /** Deutscher Anzeigewert für einen CoE-Wert (unbekannte Werte bleiben unverändert). */
