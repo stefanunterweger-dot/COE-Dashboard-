@@ -3184,3 +3184,63 @@ li:last-child > .govItem {
   font-weight: 600;
   color: var(--coe-warning);
 }
+
+// ---------- Cockpit-Aktionen ----------
+.panelAction {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.actionSuggest {
+  margin-top: 4px;
+  border: 1px solid var(--coe-border);
+  border-radius: 8px;
+  max-height: 220px;
+  overflow: auto;
+  background: var(--coe-bg);
+}
+
+.actionStatus {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.actionHistory {
+  margin-top: 10px;
+  padding: 8px 10px;
+  border: 1px solid var(--coe-border);
+  border-radius: 8px;
+  background: var(--coe-surface);
+  font-size: 12px;
+}
+
+.actionHistoryRow {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  padding: 3px 0;
+}
+
+.actionHistoryStatus {
+  margin-left: auto;
+}
+
+.actionLog {
+  display: flex;
+  flex-direction: column;
+}
+
+.actionFilterActive {
+  border-color: var(--coe-accent) !important;
+  background: var(--coe-accent-soft) !important;
+}
+
+.actionReasons {
+  margin: 8px 0 0;
+  padding-left: 18px;
+  font-size: 12px;
+  color: var(--coe-text-2);
+}

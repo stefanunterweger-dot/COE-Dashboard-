@@ -5,7 +5,12 @@ import CoeCockpit from '../src/webparts/coeCockpit/components/CoeCockpit';
 import { getDefaultTables } from '../src/webparts/coeCockpit/models/defaultTables';
 import { ITableConfig } from '../src/webparts/coeCockpit/models/ITableConfig';
 import { AadHttpClientFactory, MSGraphClientFactory, SPHttpClient } from './shims/sp-http';
-import { seedNotifyEntry } from './mock/sharepoint';
+import { seedActions, seedNotifyEntry } from './mock/sharepoint';
+import { ACTION_TIMING } from '../src/webparts/coeCockpit/components/ActionDialog';
+
+// Vorschau: Aktionen sind eingerichtet (Gruppe „CoE Cockpit Admins“ mit dem angemeldeten Admin, Liste vorhanden)
+seedActions();
+ACTION_TIMING.pollMs = 600;
 import { DATABASES, COE_HOST, DEFAULT_HOST, PIPELINES_HOST } from './mock/data';
 import { DEFAULT_INFO_URL } from '../src/webparts/coeCockpit/models/notification';
 import { MAIL_TIMING } from '../src/webparts/coeCockpit/services/MailService';
@@ -145,6 +150,9 @@ const App: React.FC = () => {
           pipelinesHostUrl={p.pipelinesHostUrl}
           notify={notify}
           notifyAutoSend={true}
+          showActions={true}
+          actionsGroup="CoE Cockpit Admins"
+          deleteRequiresStop={true}
           onTablesChanged={t => setTables(t)}
           onConfigure={() => setPaneOpen(true)}
         />

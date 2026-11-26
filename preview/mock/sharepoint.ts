@@ -1,71 +1,186 @@
-/* Simulierte SharePoint-REST-API für das Versandprotokoll (Liste „CoE Cockpit Benachrichtigungen“). */
+/* Simulierte SharePoint-REST-API: Versandprotokoll, Aktionsliste, Gruppen – und ein simulierter Flow. */
 import { IMockResponse } from './odata';
+import { DATABASES } from './data';
 
-interface IStore { exists: boolean; fields: string[]; items: Record<string, unknown>[] }
-interface ISpWindow { __spStore?: IStore; __spReset?: () => void }
+interface IList { exists: boolean; fields: string[]; items: Record<string, unknown>[]; unique: boolean; nextId: number }
+interface IGroup { Id: number; Title: string; members: string[] }
+interface IStore { lists: { [title: string]: IList }; groups: IGroup[]; nextGroupId: number }
+interface ISpWindow { __spStore?: IList; __spAll?: IStore; __spReset?: () => void; __spFlowDelayMs?: number; __spFlowOff?: boolean }
 
+const NOTIFY = 'CoE Cockpit Benachrichtigungen';
+const ACTIONS = 'CoE Cockpit Aktionen';
+const ME = 'i:0#.f|membership|alex.admin@contoso.com';
 const w = window as unknown as ISpWindow;
-const store = (): IStore => (w.__spStore = w.__spStore || { exists: false, fields: [], items: [] });
-w.__spReset = () => { w.__spStore = { exists: false, fields: [], items: [] }; };
+
+const emptyList = (): IList => ({ exists: false, fields: [], items: [], unique: false, nextId: 1 });
+function all(): IStore {
+  if (!w.__spAll) {
+    w.__spAll = {
+      lists: { [NOTIFY]: emptyList(), [ACTIONS]: emptyList() },
+      groups: [{ Id: 3, Title: 'Power Platform Besitzer', members: [ME] }, { Id: 4, Title: 'Power Platform Mitglieder', members: [ME] }, { Id: 5, Title: 'Power Platform Besucher', members: [] }],
+      nextGroupId: 10
+    };
+  }
+  // Kurzzugriff für Tests: Versandprotokoll
+  w.__spStore = w.__spAll.lists[NOTIFY];
+  return w.__spAll;
+}
+w.__spReset = () => { all().lists[NOTIFY] = emptyList(); w.__spStore = all().lists[NOTIFY]; };
 
 /** Vorbelegung: ein Environment, das ein anderer Admin schon verständigt hat. */
 export function seedNotifyEntry(item: Record<string, unknown>): void {
-  const s = store();
-  s.exists = true;
-  s.fields = ['EnvironmentId', 'SentAt', 'SentBy', 'SentByEmail', 'Method', 'Recipients', 'Subject'];
-  s.items.push(item);
+  const l = all().lists[NOTIFY];
+  l.exists = true;
+  l.fields = ['EnvironmentId', 'SentAt', 'SentBy', 'SentByEmail', 'Method', 'Recipients', 'Subject'];
+  l.items.push(item);
+}
+
+/** Vorbelegung der Aktionen: Gruppe mit dem angemeldeten Admin, eingerichtete Liste. */
+export function seedActions(): void {
+  const s = all();
+  if (!s.groups.some(g => g.Title === 'CoE Cockpit Admins')) {
+    s.groups.push({ Id: 9, Title: 'CoE Cockpit Admins', members: [ME] });
+  }
+  const l = s.lists[ACTIONS];
+  l.exists = true;
+  l.unique = true;
+  l.fields = ['Action', 'ResourceType', 'ResourceId', 'CoeRecordId', 'ResourceName', 'EnvironmentId', 'TargetUser', 'TargetName', 'TargetIsGroup', 'Reason', 'Status', 'Result', 'CompletedAt', 'RequestedBy'];
 }
 
 function respond(status: number, body?: unknown): IMockResponse {
   const text = body === undefined ? '' : JSON.stringify(body);
   return { ok: status >= 200 && status < 300, status, json: () => Promise.resolve(text ? JSON.parse(text) : {}), text: () => Promise.resolve(text) };
 }
+const notFound = (what: string): IMockResponse => respond(404, { 'odata.error': { code: '-1, System.ArgumentException', message: { lang: 'de-DE', value: `${what} ist nicht vorhanden.` } } });
 
-const notFound = (): IMockResponse => respond(404, { 'odata.error': { code: '-1, System.ArgumentException', message: { lang: 'de-DE', value: 'Die Liste ist auf der Website nicht vorhanden.' } } });
+/** Simulierter Flow „CoE Cockpit | Aktion ausführen“: In Arbeit → Erledigt, CoE-Daten anpassen. */
+function simulateFlow(item: Record<string, unknown>): void {
+  if (w.__spFlowOff) {
+    return;
+  }
+  const delay = w.__spFlowDelayMs === undefined ? 1200 : w.__spFlowDelayMs;
+  setTimeout(() => {
+    item.Status = 'In Arbeit';
+    setTimeout(() => {
+      const coe = DATABASES[0].tables;
+      const id = String(item.CoeRecordId || '').toLowerCase();
+      const app = coe.admin_app.rows.filter(r => String(r.admin_appid).toLowerCase() === id)[0];
+      const flow = coe.admin_flow.rows.filter(r => String(r.admin_flowid).toLowerCase() === id)[0];
+      const env = coe.admin_environment.rows.filter(r => String(r.admin_environmentid).toLowerCase() === id)[0];
+      let result = 'Ausgeführt (Vorschau – simulierter Flow).';
+      switch (item.Action) {
+        case 'quarantine': if (app) { app.admin_appisquarantined = true; app.admin_quarantineapp = true; } break;
+        case 'unquarantine': if (app) { app.admin_appisquarantined = false; app.admin_quarantineapp = false; } break;
+        case 'flowoff': if (flow) { flow.admin_flowstate = 'Stopped'; } break;
+        case 'flowon': if (flow) { flow.admin_flowstate = 'Started'; } break;
+        case 'delete': if (app) { app.admin_appdeleted = true; } if (flow) { flow.admin_flowdeleted = true; } break;
+        case 'envmanaged': if (env) { env.admin_governanceprotectionlevel = 'Standard'; } break;
+        case 'envdisable': if (env) { env.admin_environmentruntimestate = 'Disabled'; } break;
+        case 'envenable': if (env) { env.admin_environmentruntimestate = 'Enabled'; } break;
+        default: result = `Ausgeführt für ${item.TargetName || item.TargetUser} (Vorschau – simulierter Flow).`;
+      }
+      item.Status = 'Erledigt';
+      item.Result = result;
+      item.CompletedAt = new Date().toISOString();
+    }, delay);
+  }, delay);
+}
 
 export function mockSharePoint(method: 'GET' | 'POST', url: string, body?: string): Promise<IMockResponse> {
-  return new Promise(resolve => setTimeout(() => {
-    const s = store();
-    const u = decodeURIComponent(url);
-    if (method === 'POST' && /\/_api\/web\/lists$/.test(u)) {
-      s.exists = true;
-      resolve(respond(201, { Id: 'f0000000-0000-4000-8000-000000000001', Title: JSON.parse(body || '{}').Title }));
-      return;
+  return new Promise(resolve => setTimeout(() => resolve(handle(method, url, body)), 80));
+}
+
+function handle(method: 'GET' | 'POST', url: string, body?: string): IMockResponse {
+  const s = all();
+  const u = decodeURIComponent(url);
+  const json = (): Record<string, unknown> => (body ? JSON.parse(body) as Record<string, unknown> : {});
+
+  // ---- Gruppen und Benutzer ----
+  let m = /\/_api\/web\/sitegroups\/getbyname\('(.+?)'\)/.exec(u);
+  if (m) {
+    const g = s.groups.filter(x => x.Title.toLowerCase() === m![1].replace(/''/g, "'").toLowerCase())[0];
+    return g ? respond(200, { Id: g.Id, Title: g.Title }) : notFound(`Die Gruppe „${m[1]}“`);
+  }
+  if (method === 'GET' && /\/_api\/web\/sitegroups\?/.test(u)) {
+    return respond(200, { value: s.groups.map(g => ({ Id: g.Id, Title: g.Title })) });
+  }
+  if (method === 'POST' && /\/_api\/web\/sitegroups$/.test(u)) {
+    const b = json();
+    const g = { Id: s.nextGroupId++, Title: String(b.Title), members: [] as string[] };
+    s.groups.push(g);
+    return respond(201, { Id: g.Id, Title: g.Title });
+  }
+  m = /\/_api\/web\/sitegroups\((\d+)\)\/users$/.exec(u);
+  if (m && method === 'POST') {
+    const g = s.groups.filter(x => x.Id === Number(m![1]))[0];
+    if (g) { g.members.push(String(json().LoginName)); }
+    return respond(201, {});
+  }
+  if (/\/_api\/web\/sitegroups\(\d+\)\/SetUserAsOwner/.test(u)) {
+    return respond(200, {});
+  }
+  if (/\/_api\/web\/associatedownergroup/.test(u)) {
+    return respond(200, { Id: 3 });
+  }
+  if (/\/_api\/web\/currentuser\/groups/.test(u)) {
+    return respond(200, { value: s.groups.filter(g => g.members.indexOf(ME) >= 0).map(g => ({ Title: g.Title })) });
+  }
+  if (/\/_api\/web\/currentuser/.test(u)) {
+    return respond(200, { LoginName: ME, Id: 7 });
+  }
+
+  // ---- Listen ----
+  if (method === 'POST' && /\/_api\/web\/lists$/.test(u)) {
+    const title = String(json().Title);
+    s.lists[title] = s.lists[title] || emptyList();
+    s.lists[title].exists = true;
+    w.__spStore = s.lists[NOTIFY];
+    return respond(201, { Id: 'f0000000-0000-4000-8000-000000000001', Title: title });
+  }
+  m = /GetByTitle\('(.+?)'\)/.exec(u);
+  if (!m || !s.lists[m[1]]) {
+    return respond(400, { 'odata.error': { message: { value: `Unsupported ${u}` } } });
+  }
+  const list = s.lists[m[1]];
+  if (!list.exists) {
+    return notFound('Die Liste');
+  }
+  if (method === 'POST' && /\/fields\/CreateFieldAsXml$/.test(u)) {
+    const xml = (json() as { parameters: { SchemaXml: string } }).parameters.SchemaXml;
+    list.fields.push((/Name="([^"]+)"/.exec(xml) || [])[1] || '');
+    return respond(201, {});
+  }
+  if (method === 'POST' && /\/breakroleinheritance/.test(u)) {
+    list.unique = true;
+    return respond(200, {});
+  }
+  if (method === 'POST' && /\/roleassignments\/addroleassignment/.test(u)) {
+    return respond(200, {});
+  }
+  if (method === 'POST' && /\/items$/.test(u)) {
+    const item = json();
+    const unknown = Object.keys(item).filter(k => k !== 'Title' && list.fields.indexOf(k) < 0);
+    if (unknown.length) {
+      return respond(400, { 'odata.error': { message: { value: `Die Eigenschaft '${unknown[0]}' ist nicht vorhanden.` } } });
     }
-    if (!/GetByTitle\('CoE Cockpit Benachrichtigungen'\)/.test(u)) {
-      resolve(respond(400, { 'odata.error': { message: { value: `Unsupported ${u}` } } }));
-      return;
+    const stored = { ...item, Id: list.nextId++, Created: new Date().toISOString() };
+    list.items.push(stored);
+    if (m[1] === ACTIONS) {
+      simulateFlow(stored);
     }
-    if (!s.exists) {
-      resolve(notFound());
-      return;
-    }
-    if (method === 'POST' && /\/fields\/CreateFieldAsXml$/.test(u)) {
-      const xml = (JSON.parse(body || '{}') as { parameters: { SchemaXml: string } }).parameters.SchemaXml;
-      s.fields.push((/Name="([^"]+)"/.exec(xml) || [])[1] || '');
-      resolve(respond(201, {}));
-      return;
-    }
-    if (method === 'POST' && /\/items$/.test(u)) {
-      const item = JSON.parse(body || '{}') as Record<string, unknown>;
-      const unknown = Object.keys(item).filter(k => k !== 'Title' && s.fields.indexOf(k) < 0);
-      if (unknown.length) {
-        resolve(respond(400, { 'odata.error': { message: { value: `Die Eigenschaft '${unknown[0]}' ist nicht vorhanden.` } } }));
-        return;
-      }
-      s.items.push(item);
-      resolve(respond(201, item));
-      return;
-    }
-    if (method === 'GET' && /\/items\?/.test(u)) {
-      const items = s.items.slice().sort((a, b) => String(b.SentAt).localeCompare(String(a.SentAt)));
-      resolve(respond(200, { value: items }));
-      return;
-    }
-    if (method === 'GET') {
-      resolve(respond(200, { Id: 'f0000000-0000-4000-8000-000000000001' }));
-      return;
-    }
-    resolve(respond(400, {}));
-  }, 90));
+    return respond(201, stored);
+  }
+  const byId = /\/items\((\d+)\)/.exec(u);
+  if (method === 'GET' && byId) {
+    const it = list.items.filter(x => x.Id === Number(byId[1]))[0];
+    return it ? respond(200, it) : notFound('Das Element');
+  }
+  if (method === 'GET' && /\/items\?/.test(u)) {
+    const sortField = list === s.lists[ACTIONS] ? 'Created' : 'SentAt';
+    return respond(200, { value: list.items.slice().sort((a, b) => String(b[sortField]).localeCompare(String(a[sortField]))) });
+  }
+  if (method === 'GET') {
+    return respond(200, { Id: 'f0000000-0000-4000-8000-000000000001', HasUniqueRoleAssignments: list.unique });
+  }
+  return respond(400, {});
 }

@@ -1,0 +1,181 @@
+import { IRecord } from './ITableConfig';
+import { displayValue, rawValue } from '../utils/format';
+
+/**
+ * Cockpit-Aktionen: Das Cockpit legt Aufträge in der SharePoint-Liste „CoE Cockpit Aktionen“ an,
+ * ein Flow im CoE-Environment führt sie mit einem Admin-Dienstkonto aus und schreibt das Ergebnis zurück.
+ * Nur Mitglieder der SharePoint-Gruppe (Standard „CoE Cockpit Admins“) dürfen Aufträge anlegen.
+ */
+export const DEFAULT_ACTION_GROUP = 'CoE Cockpit Admins';
+export const ACTION_LIST_TITLE = 'CoE Cockpit Aktionen';
+export const ACTION_LOG_KEY = 'actions:log';
+
+/** Technische Codes (werden vom Flow ausgewertet – nicht übersetzen). */
+export type ActionCode = 'quarantine' | 'unquarantine' | 'delete' | 'setowner' | 'addviewer' | 'addeditor' | 'removeuser' | 'flowoff' | 'flowon'
+  | 'envmanaged' | 'envdisable' | 'envenable';
+export type ResourceType = 'app' | 'flow' | 'environment';
+
+export const ACTION_LABEL: { [c in ActionCode]: string } = {
+  quarantine: 'In Quarantäne stellen',
+  unquarantine: 'Aus Quarantäne holen',
+  delete: 'Löschen',
+  setowner: 'Besitzer ändern',
+  addviewer: 'Freigabe hinzufügen (Benutzer)',
+  addeditor: 'Freigabe hinzufügen (Mitbesitzer)',
+  removeuser: 'Freigabe entfernen',
+  flowoff: 'Flow ausschalten',
+  flowon: 'Flow einschalten',
+  envmanaged: 'Auf Managed umstellen',
+  envdisable: 'Environment deaktivieren',
+  envenable: 'Environment aktivieren'
+};
+
+export const ACTION_ICON: { [c in ActionCode]: string } = {
+  quarantine: 'Blocked2', unquarantine: 'Unlock', delete: 'Delete', setowner: 'Contact',
+  addviewer: 'AddFriend', addeditor: 'AddFriend', removeuser: 'UserRemove', flowoff: 'Pause', flowon: 'Play',
+  envmanaged: 'Shield', envdisable: 'Blocked2', envenable: 'Play'
+};
+
+/** Hinweis im Dialog – was die Aktion bewirkt. */
+export const ACTION_HINT: { [c in ActionCode]: string } = {
+  quarantine: 'Benutzer, für die die App freigegeben ist, können sie nicht mehr starten. Maker können sie weiter bearbeiten. Jederzeit umkehrbar.',
+  unquarantine: 'Benutzer können die App wieder starten.',
+  delete: 'Die Ressource wird im Tenant gelöscht – nicht nur aus dem Inventar. Das lässt sich nicht rückgängig machen.',
+  setowner: 'Die gewählte Person wird Besitzer. Der bisherige Besitzer wird Mitbesitzer.',
+  addviewer: 'Die gewählte Person oder Gruppe darf die Ressource verwenden.',
+  addeditor: 'Die gewählte Person oder Gruppe darf die Ressource bearbeiten und freigeben.',
+  removeuser: 'Die gewählte Freigabe wird entfernt. Den Besitzer kann man nicht entfernen.',
+  flowoff: 'Der Flow wird angehalten und startet nicht mehr, bis er wieder eingeschaltet wird.',
+  flowon: 'Der Flow startet wieder bei seinem Auslöser bzw. nach Zeitplan.',
+  envmanaged: 'Das Environment wird zum Managed Environment und bleibt nach dem 15.12.2026 erhalten. Wer dort Apps oder Flows nutzt, braucht dann eine Premium-Lizenz (ab Februar 2027 werden Apps für Benutzer ohne Lizenz blockiert).',
+  envdisable: 'Das Environment wird deaktiviert: Apps, Flows und Bots darin laufen nicht mehr, niemand kann es verwenden. Die Daten bleiben erhalten – ein Admin kann es wieder aktivieren.',
+  envenable: 'Das Environment wird wieder aktiviert; Apps, Flows und Bots laufen wieder.'
+};
+
+export type ActionStatus = 'Angefordert' | 'In Arbeit' | 'Erledigt' | 'Fehler' | 'Abgelehnt';
+export const FINAL_STATUS: ActionStatus[] = ['Erledigt', 'Fehler', 'Abgelehnt'];
+
+export interface IActionRequest {
+  action: ActionCode;
+  resourceType: ResourceType;
+  /** Power-Platform-ID der App bzw. des Flows. */
+  resourceId: string;
+  /** Primärschlüssel im CoE (für das Aktualisieren des Inventars). */
+  coeRecordId: string;
+  resourceName: string;
+  /** Power-Platform-ID des Environments. */
+  environmentId: string;
+  /** Zielperson/-gruppe: Entra-Objekt-ID oder E-Mail-Adresse (nur Besitzer/Freigaben). */
+  targetUser?: string;
+  targetName?: string;
+  targetIsGroup?: boolean;
+  reason: string;
+}
+
+export interface IActionItem extends IActionRequest {
+  id: number;
+  status: ActionStatus;
+  result: string;
+  created: string;
+  completedAt: string;
+  requestedBy: string;
+}
+
+/** Ressource einer Tabellenzeile (Apps/Flows aus dem CoE). */
+export function resourceOf(logicalName: string, r: IRecord): { type: ResourceType; id: string; coeId: string; name: string; env: string } | undefined {
+  if (logicalName === 'admin_app') {
+    const id = String(r.admin_appid || '');
+    return { type: 'app', id, coeId: id, name: displayValue(r, 'admin_displayname'), env: rawValue(r, 'admin_appenvironmentid') };
+  }
+  if (logicalName === 'admin_environment') {
+    const coeId = String(r.admin_environmentid || '');
+    const pid = rawValue(r, 'admin_environmentname');
+    const id = /^(default-)?[0-9a-f]{8}-/i.test(pid) ? pid : coeId;
+    return { type: 'environment', id, coeId, name: displayValue(r, 'admin_displayname'), env: id };
+  }
+  if (logicalName === 'admin_flow') {
+    const coeId = String(r.admin_flowid || '');
+    return { type: 'flow', id: rawValue(r, 'admin_flowidstring') || coeId, coeId, name: displayValue(r, 'admin_displayname'), env: rawValue(r, 'admin_flowenvironmentid') };
+  }
+  return undefined;
+}
+
+/** Environment bereits Managed? (Reiter „Betroffen ab 15.12.“ bzw. CoE „Governance Protection Level“) */
+export function isManagedEnv(r: IRecord): boolean {
+  const dev = String(r.coe_managed || '');
+  if (dev) {
+    return dev === 'Ja';
+  }
+  const level = rawValue(r, 'admin_governanceprotectionlevel');
+  return !!level && !/^basic$/i.test(level);
+}
+
+/** Environment deaktiviert? */
+export function isEnvDisabled(r: IRecord): boolean {
+  return String(r.coe_state || '') === 'Deaktiviert' || /^disabled$/i.test(rawValue(r, 'admin_environmentruntimestate'));
+}
+
+/** Ist die App in Quarantäne? (CoE kennt zwei Felder: „App Is Quarantined“ und „Quarantine App“.) */
+export function isQuarantined(r: IRecord): boolean {
+  return r.admin_appisquarantined === true || r.admin_quarantineapp === true;
+}
+
+/** Ist der Flow eingeschaltet? */
+export function isFlowOn(r: IRecord): boolean {
+  return /^started$/i.test(rawValue(r, 'admin_flowstate'));
+}
+
+/**
+ * Teil einer Solution? CoE: „Is Solution App“ (admin_issolutionapp) bzw. „Is Solution Flow“ (admin_issolutionflow).
+ * true = in einer Solution, false = nicht, undefined = unbekannt (Spalte fehlt) – dann wird nicht gelöscht.
+ */
+export function inSolution(type: ResourceType, r: IRecord): boolean | undefined {
+  const v = type === 'app' ? r.admin_issolutionapp : r.admin_issolutionflow;
+  return v === true ? true : v === false ? false : undefined;
+}
+
+/** Grund, warum nicht gelöscht werden darf (leer = darf). Regel: nie, wenn Teil einer Solution. */
+export function deleteBlocked(type: ResourceType, r: IRecord, deleteRequiresStop: boolean): string {
+  const sol = inSolution(type, r);
+  if (sol === true) {
+    return `${type === 'app' ? 'Die App' : 'Der Flow'} ist Teil einer Solution – Löschen nur über die Solution (ALM), nicht hier.`;
+  }
+  if (sol === undefined) {
+    return 'Ob die Ressource Teil einer Solution ist, ist im CoE nicht erfasst – Löschen deshalb gesperrt.';
+  }
+  if (deleteRequiresStop && type === 'app' && !isQuarantined(r)) {
+    return 'Löschen ist erst möglich, wenn die App in Quarantäne ist (Einstellung „Löschen erst nach Quarantäne“).';
+  }
+  if (deleteRequiresStop && type === 'flow' && isFlowOn(r)) {
+    return 'Löschen ist erst möglich, wenn der Flow ausgeschaltet ist (Einstellung „Löschen erst nach Quarantäne/Ausschalten“).';
+  }
+  return '';
+}
+
+/** Verfügbare Aktionen je Ressource und Zustand. */
+export function actionsFor(type: ResourceType, r: IRecord, deleteRequiresStop: boolean): { code: ActionCode; disabled?: string }[] {
+  if (type === 'environment') {
+    const managed = isManagedEnv(r);
+    return [
+      { code: 'envmanaged', disabled: managed ? 'Das Environment ist bereits Managed.' : undefined },
+      { code: isEnvDisabled(r) ? 'envenable' : 'envdisable' }
+    ];
+  }
+  const del = deleteBlocked(type, r, deleteRequiresStop) || undefined;
+  if (type === 'app') {
+    return [
+      { code: isQuarantined(r) ? 'unquarantine' : 'quarantine' },
+      { code: 'setowner' },
+      { code: 'addviewer' },
+      { code: 'removeuser' },
+      { code: 'delete', disabled: del }
+    ];
+  }
+  return [
+    { code: isFlowOn(r) ? 'flowoff' : 'flowon' },
+    { code: 'setowner' },
+    { code: 'addeditor' },
+    { code: 'removeuser' },
+    { code: 'delete', disabled: del }
+  ];
+}

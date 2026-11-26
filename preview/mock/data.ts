@@ -500,8 +500,11 @@ apps.forEach(a => {
   a.admin_appsharedwithtenant = chance(0.025);
   a.admin_appsharedguestuser = chance(0.035);
   a.admin_dlppoliciesviolated = chance(0.012) ? pick(['Contoso Standard-DLP', 'Default Environment – streng']) : null;
+  a.admin_appisquarantined = !!a.admin_dlppoliciesviolated && chance(0.5);
+  a.admin_quarantineapp = a.admin_appisquarantined;
+  a.admin_issolutionapp = a.admin_powerappstype !== 597910000 || chance(0.25);
 });
-flows.forEach(f => { f.admin_flowsharedguestuser = chance(0.015); });
+flows.forEach(f => { f.admin_flowsharedguestuser = chance(0.015); f.admin_issolutionflow = chance(0.3); });
 connectors.forEach(c => {
   c.admin_customconnectorhost = c.admin_iscustomapi ? (c.admin_displayname === 'Contoso Lager-API' ? 'lager.intern.contoso.com' : 'api.contoso.com') : null;
   c.admin_customconnectorhostishttp = c.admin_displayname === 'Contoso Lager-API';
@@ -601,14 +604,17 @@ export const DATABASES: IDatabase[] = [
       A('admin_appsharedusers', 'Integer', 'App Shared Users'), A('admin_appsharedgroups', 'Integer', 'App Shared Groups'),
       A('admin_launchesinthepast30days', 'Integer', 'Launches in the past 30 days'),
       A('admin_appsharedwithtenant', 'Boolean', 'App Shared With Tenant'), A('admin_appsharedguestuser', 'Boolean', 'App Shared With Guest User'),
-      A('admin_dlppoliciesviolated', 'String', 'DLP Policies Violated')
+      A('admin_dlppoliciesviolated', 'String', 'DLP Policies Violated'),
+      A('admin_appisquarantined', 'Boolean', 'App Is Quarantined'), A('admin_quarantineapp', 'Boolean', 'Quarantine App'),
+      A('admin_issolutionapp', 'Boolean', 'Is Solution App')
     ], apps),
     table('admin_flow', 'admin_flows', 'Flow', 'admin_flowid', 'admin_displayname', [
       A('admin_displayname', 'String', 'Display Name'), MAKER_LK('admin_flowcreator', 'Maker'), MAKER_LK('admin_derivedowner', 'Derived Owner'),
       ENV_LK('admin_flowenvironment'), A('admin_flowenvironmentid', 'String', 'Flow Environment Id'), A('admin_flowidstring', 'String', 'Flow ID String'),
       A('admin_flowstate', 'String', 'Flow State'), A('cr5d5_flowisorphaned', 'String', 'Flow is Orphaned'), A('cr5d5_flowtrigger', 'String', 'Trigger'),
       A('admin_flowmodifiedon', 'DateTime', 'Flow Modified On'), A('admin_flowcreatedon', 'DateTime', 'Flow Created On'), A('admin_flowdeleted', 'Boolean', 'Flow Deleted'), A('admin_flowispublished', 'Boolean', 'Flow Is Published'),
-      A('admin_flowsharedguestuser', 'Boolean', 'Flow Shared With Guest User')
+      A('admin_flowsharedguestuser', 'Boolean', 'Flow Shared With Guest User'),
+      A('admin_issolutionflow', 'Boolean', 'Is Solution Flow')
     ], flows),
     table('admin_environment', 'admin_environments', 'Environment', 'admin_environmentid', 'admin_displayname', [
       A('admin_displayname', 'String', 'Display Name'), A('admin_environmentname', 'String', 'Name'), A('admin_environmentsku', 'String', 'Environment Sku'),

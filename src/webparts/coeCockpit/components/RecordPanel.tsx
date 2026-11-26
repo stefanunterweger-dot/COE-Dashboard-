@@ -19,7 +19,8 @@ export interface IRecordPanelProps {
   meta: IEntityMeta | undefined;
   service: DataverseService | undefined;
   themeVars: React.CSSProperties;
-  onDismiss: () => void;
+  /** ev.preventDefault() hält das Panel offen (z. B. während ein Dialog darüber geöffnet ist). */
+  onDismiss: (ev?: React.SyntheticEvent<HTMLElement> | KeyboardEvent) => void;
   /** Gibt es für diese Tabelle eine Konfiguration (dann sind Zeilen in den Reitern anklickbar)? */
   canOpen?: (logicalName: string) => boolean;
   /** Verknüpften Datensatz öffnen (Durchklicken). */
@@ -27,8 +28,12 @@ export interface IRecordPanelProps {
   /** Zurück zum vorherigen Datensatz. */
   onBack?: () => void;
   backLabel?: string;
-  /** Zusätzliche Aktion im Kopf der Detailansicht (z. B. „Maker per E-Mail verständigen“). */
-  action?: { text: string; icon: string; disabled?: boolean; onClick: () => void };
+  /** Zusätzliche Aktionen im Kopf der Detailansicht (z. B. „Maker per E-Mail verständigen“, Quarantäne …). */
+  actions?: { key: string; text: string; icon: string; disabled?: boolean; title?: string; primary?: boolean; onClick: () => void }[];
+  /** Zusätzlicher Inhalt unter den Aktionen (z. B. letzte Aufträge). */
+  headerExtra?: React.ReactNode;
+  /** Hinweis im Bereich „Aktionen“, wenn keine Aktionen angeboten werden (z. B. fehlende Gruppe). */
+  actionsNote?: string;
 }
 
 interface IRelatedState {
@@ -157,16 +162,7 @@ export const RecordPanel: React.FC<IRecordPanelProps> = props => {
             <span>{table.title}</span>
           </div>
           <h2 className={styles.panelTitle}>{title}</h2>
-          {props.action && (
-            <div className={styles.panelAction}>
-              <DefaultButton
-                text={props.action.text}
-                iconProps={{ iconName: props.action.icon }}
-                disabled={props.action.disabled}
-                onClick={props.action.onClick}
-              />
-            </div>
-          )}
+
           {statusColumns.length > 0 && (
             <div className={styles.panelBadges}>
               {statusColumns.map(c => {
@@ -223,13 +219,34 @@ export const RecordPanel: React.FC<IRecordPanelProps> = props => {
 
       <div className={styles.section}>
         <h3 className={styles.sectionTitle}>Aktionen</h3>
-        <div className={styles.infoCard}>
-          <Icon iconName="Rocket" className={styles.infoCardIcon} />
-          <div>
-            Admin-Aktionen wie Besitzer ändern, Flows aktivieren oder deaktivieren, Freigaben verwalten
-            und Umgebungseinstellungen anpassen folgen in der nächsten Ausbaustufe direkt an dieser Stelle.
+        {props.actions && props.actions.length > 0 ? (
+          <>
+            <div className={styles.panelAction}>
+              {props.actions.map(a => (
+                <DefaultButton
+                  key={a.key}
+                  text={a.text}
+                  iconProps={{ iconName: a.icon }}
+                  disabled={a.disabled}
+                  title={a.title}
+                  primary={a.primary}
+                  onClick={a.onClick}
+                />
+              ))}
+            </div>
+            {props.actions.some(a => a.disabled && !!a.title) && (
+              <ul className={styles.actionReasons}>
+                {props.actions.filter(a => a.disabled && !!a.title).map(a => <li key={a.key}><b>{a.text}:</b> {a.title}</li>)}
+              </ul>
+            )}
+            {props.headerExtra}
+          </>
+        ) : (
+          <div className={styles.infoCard}>
+            <Icon iconName="Info" className={styles.infoCardIcon} />
+            <div>{props.actionsNote || 'Für diesen Bereich gibt es keine Aktionen.'}</div>
           </div>
-        </div>
+        )}
       </div>
     </>
   );

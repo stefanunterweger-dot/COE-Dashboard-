@@ -25,6 +25,11 @@ import { copyText, NotifyDialog } from './NotifyDialog';
 import { BulkNotifyPanel } from './BulkNotifyPanel';
 import { MailService } from '../services/MailService';
 import { INotifyLogMap, NotifyLogService, NotifyMethod } from '../services/NotifyLogService';
+import { ActionService, IActionSetupState } from '../services/ActionService';
+import { ACTION_ICON, ACTION_LABEL, ACTION_LOG_KEY, actionsFor, IActionItem, resourceOf } from '../models/actions';
+import { ActionDialog, IActionTarget } from './ActionDialog';
+import { ActionLogView } from './ActionLogView';
+import { GROUP_GOVERNANCE } from '../models/defaultTables';
 import { INotifySettings } from '../models/notification';
 import { copyCurrentLink, IViewState, readViewState, writeViewState } from '../utils/deepLink';
 import {
@@ -76,6 +81,14 @@ export interface ICoeCockpitProps {
   notify: INotifySettings;
   /** Automatischen Versand über Microsoft Graph (Mail.Send) anbieten. */
   notifyAutoSend: boolean;
+  /** Aktionen (Quarantäne, Löschen, Besitzer, Freigaben, Flows ein/aus) anbieten. */
+  showActions: boolean;
+  /** SharePoint-Gruppe, deren Mitglieder Aktionen auslösen dürfen. */
+  actionsGroup: string;
+  /** Löschen erst, wenn die App in Quarantäne bzw. der Flow ausgeschaltet ist. */
+  deleteRequiresStop: boolean;
+  /** Ändert sich nach dem Einrichten von Gruppe/Liste in den Eigenschaften (Stand neu prüfen). */
+  actionsVersion?: number;
   onTablesChanged: (tables: ITableConfig[]) => void;
   onConfigure: () => void;
 }
@@ -244,6 +257,27 @@ const CoeCockpit: React.FC<ICoeCockpitProps> = props => {
     [props.notifyAutoSend, props.msGraphClientFactory]
   );
   const accentColor = String((themeVars as { [k: string]: unknown })['--coe-accent'] || '#0f6cbd');
+  // Cockpit-Aktionen (Aufträge in der SharePoint-Liste, ausgeführt von einem Flow)
+  const actionService = React.useMemo(
+    () => (props.showActions && props.spHttpClient && props.webUrl ? new ActionService(props.spHttpClient, props.webUrl) : undefined),
+    [props.showActions, props.spHttpClient, props.webUrl]
+  );
+  const [actionSetup, setActionSetup] = React.useState<IActionSetupState | undefined>(undefined);
+  const [actionItems, setActionItems] = React.useState<IActionItem[] | undefined>(undefined);
+  const [actionLoading, setActionLoading] = React.useState<boolean>(false);
+  const [actionProblem, setActionProblem] = React.useState<string>('');
+  const [actionTarget, setActionTarget] = React.useState<IActionTarget | undefined>(undefined);
+  const refreshActions = React.useCallback((): void => {
+    if (!actionService) {
+      return;
+    }
+    setActionLoading(true);
+    actionService.list().then(
+      items => { setActionItems(items || []); setActionProblem(items ? '' : 'Die Liste „CoE Cockpit Aktionen“ gibt es noch nicht – in den Webpart-Eigenschaften einrichten.'); setActionLoading(false); },
+      (e: unknown) => { setActionProblem(`Aktionsprotokoll nicht lesbar: ${e instanceof Error ? e.message : String(e)}`); setActionLoading(false); }
+    );
+  }, [actionService]);
+  const canAct = !!actionService && !!actionSetup && actionSetup.listExists && actionSetup.isMember;
   // Gemeinsames Versandprotokoll (wer hat welches Environment wann verständigt)
   const notifyLogService = React.useMemo(
     () => (props.spHttpClient && props.webUrl ? new NotifyLogService(props.spHttpClient, props.webUrl) : undefined),
@@ -354,7 +388,7 @@ const CoeCockpit: React.FC<ICoeCockpitProps> = props => {
 
   React.useEffect(() => {
     const waitingForDefault = (props.showDefaultEnvironment && isDefaultEnvKey(activeKey)) || (props.showOverview && activeKey === OVERVIEW_KEY)
-      || (props.showSecurity && activeKey === SECURITY_KEY);
+      || (props.showSecurity && activeKey === SECURITY_KEY) || (props.showActions && activeKey === ACTION_LOG_KEY);
     if (!activeTable && tables.length && !waitingForDefault) {
       setActiveKey(tables[0].key);
     }
@@ -588,6 +622,25 @@ const CoeCockpit: React.FC<ICoeCockpitProps> = props => {
     () => (isDevTable ? rawRecords.map(r => withNotifyInfo(r, notifyLog)) : rawRecords),
     [rawRecords, isDevTable, notifyLog]
   );
+  // Aktionen: Einrichtung (Gruppe, Liste, Mitgliedschaft) prüfen und Protokoll laden
+  React.useEffect(() => {
+    if (!actionService) {
+      setActionSetup(undefined);
+      return;
+    }
+    let cancelled = false;
+    actionService.getSetupState(props.actionsGroup).then(st => {
+      if (cancelled) {
+        return;
+      }
+      setActionSetup(st);
+      if (st.listExists) {
+        refreshActions();
+      }
+    }, () => { if (!cancelled) { setActionSetup({ listExists: false, isMember: false }); } });
+    return () => { cancelled = true; };
+  }, [actionService, props.actionsGroup, props.actionsVersion, reloadTick]);
+
   // Versandprotokoll laden (beim Start, beim Aktualisieren und beim Öffnen des Reiters)
   React.useEffect(() => {
     if (service && props.showDevEnvironments && isDevTable) {
@@ -1014,6 +1067,7 @@ const CoeCockpit: React.FC<ICoeCockpitProps> = props => {
 
   const inOverview = props.showOverview && activeKey === OVERVIEW_KEY;
   const inSecurity = props.showSecurity && activeKey === SECURITY_KEY;
+  const inActionLog = props.showActions && activeKey === ACTION_LOG_KEY;
   const devState = data[DEV_ENV_KEY];
   const devAffected = devState && devState.status === 'ready'
     ? {
@@ -1038,7 +1092,9 @@ const CoeCockpit: React.FC<ICoeCockpitProps> = props => {
     )
     : inSecurity && service
       ? <SecurityView service={service} tables={tables} reloadKey={mainKey} onNavigate={navigate} onOpenRecord={openRecord} />
-      : inDevView ? renderDevEnvironments() : inDefaultView ? renderDefaultEnvironment() : renderBody());
+      : inActionLog
+        ? <ActionLogView items={actionItems} loading={actionLoading} problem={actionProblem || (actionSetup && !actionSetup.listExists ? 'Die Liste „CoE Cockpit Aktionen“ ist noch nicht eingerichtet (Webpart-Eigenschaften → Aktionen).' : '')} onRefresh={refreshActions} />
+        : inDevView ? renderDevEnvironments() : inDefaultView ? renderDefaultEnvironment() : renderBody());
 
   /** Reiter „Betroffen ab 15.12.“: Hinweis-Banner mit Frist, Kacheln als Schnellfilter, darunter die Tabelle. */
   const renderDevEnvironments = (): JSX.Element => {
@@ -1304,6 +1360,111 @@ const CoeCockpit: React.FC<ICoeCockpitProps> = props => {
     );
   };
 
+  /** Schaltflächen im Bereich „Aktionen“: Mail + Environment (Betroffen ab 15.12.) bzw. Apps und Flows. */
+  const panelActions = (): { key: string; text: string; icon: string; disabled?: boolean; title?: string; onClick: () => void }[] | undefined => {
+    if (!panel) {
+      return undefined;
+    }
+    const out: { key: string; text: string; icon: string; disabled?: boolean; title?: string; onClick: () => void }[] = [];
+    const isDev = panel.table.key === DEV_ENV_KEY;
+    if (isDev) {
+      out.push({
+        key: 'mail', text: 'Maker per E-Mail verständigen', icon: 'Mail',
+        disabled: !panel.record[DEV_FIELDS.makerEmails],
+        title: panel.record[DEV_FIELDS.makerEmails] ? undefined : 'Im CoE ist kein Maker mit E-Mail-Adresse erfasst.',
+        onClick: () => { refreshNotifyLog().catch(() => undefined); setNotifyRecord(panel.record); }
+      });
+    }
+    // Environment-Aktionen nur in der Auswertung „Betroffen ab 15.12.“, App/Flow-Aktionen in Apps und Flows
+    const res = canAct && (isDev || panel.table.logicalName !== 'admin_environment') ? resourceOf(panel.table.logicalName, panel.record) : undefined;
+    if (res && panel.record.admin_appdeleted !== true && panel.record.admin_flowdeleted !== true) {
+      const pending = (actionItems || []).some(i => i.resourceId === res.id && (i.status === 'Angefordert' || i.status === 'In Arbeit'));
+      actionsFor(res.type, panel.record, props.deleteRequiresStop).forEach(a => out.push({
+        key: a.code,
+        text: ACTION_LABEL[a.code].replace(' (Benutzer)', '').replace(' (Mitbesitzer)', ''),
+        icon: ACTION_ICON[a.code],
+        disabled: !!a.disabled || pending,
+        title: pending ? 'Für diese Ressource läuft bereits ein Auftrag.' : a.disabled,
+        onClick: () => setActionTarget({ logicalName: panel.table.logicalName, record: panel.record, code: a.code })
+      }));
+    }
+    return out.length ? out : undefined;
+  };
+
+  /** Warum im Bereich „Aktionen“ nichts angeboten wird. */
+  const panelActionsNote = (): string => {
+    if (!panel || !(panel.table.logicalName === 'admin_app' || panel.table.logicalName === 'admin_flow' || panel.table.key === DEV_ENV_KEY)) {
+      return 'Für diesen Bereich gibt es keine Aktionen.';
+    }
+    if (!props.showActions) {
+      return 'Aktionen sind in den Webpart-Eigenschaften ausgeschaltet.';
+    }
+    if (!actionSetup) {
+      return 'Berechtigung wird geprüft …';
+    }
+    if (!actionSetup.listExists) {
+      return 'Aktionen sind noch nicht eingerichtet: in den Webpart-Eigenschaften unter „Aktionen für Apps und Flows“ Gruppe anlegen und Aktionsliste einrichten.';
+    }
+    if (!actionSetup.isMember) {
+      return `Aktionen dürfen nur Mitglieder der SharePoint-Gruppe „${props.actionsGroup}“ auslösen.`;
+    }
+    return 'Für diesen Datensatz gibt es keine Aktionen.';
+  };
+
+  /** Geöffneten Datensatz neu laden (nach einer Aktion); gelöschte schließen das Panel. */
+  const refreshPanelRecord = (finished?: IActionItem): void => {
+    const top = panel;
+    if (top && top.table.virtual) {
+      // Berechnete Tabelle (Betroffen ab 15.12.): Zustand lokal nachführen, Tabelle neu laden
+      if (finished && finished.status === 'Erledigt') {
+        const patchFields: IRecord = finished.action === 'envmanaged' ? { [DEV_FIELDS.managed]: 'Ja' }
+          : finished.action === 'envdisable' ? { [DEV_FIELDS.state]: 'Deaktiviert' }
+            : finished.action === 'envenable' ? { [DEV_FIELDS.state]: 'Aktiv' } : {};
+        setPanelStack(prev => prev.map(e => (e.record === top.record ? { ...e, record: { ...e.record, ...patchFields } } : e)));
+        setReloadTick(t => t + 1);
+      }
+      return;
+    }
+    const svc = top ? serviceFor(top.table) : undefined;
+    if (!top || !svc || !top.meta || !top.meta.primaryId) {
+      return;
+    }
+    const id = String(top.record[top.meta.primaryId] || '');
+    svc.getRecords({ ...top.table, key: `_reopen_${top.table.key}`, strictFilter: true, filter: `${top.meta.primaryId} eq ${id}` }, 1).then(r => {
+      setPanelStack(prev => {
+        if (!prev.length || prev[prev.length - 1].record !== top.record) {
+          return prev;
+        }
+        return r.records.length
+          ? prev.slice(0, prev.length - 1).concat([{ ...top, record: r.records[0] }])
+          : prev.slice(0, prev.length - 1);
+      });
+      setReloadTick(t => t + 1);
+    }, () => undefined);
+  };
+
+  /** Letzte Aufträge zur geöffneten App bzw. zum geöffneten Flow. */
+  const panelActionHistory = (): JSX.Element | undefined => {
+    const res = panel && canAct ? resourceOf(panel.table.logicalName, panel.record) : undefined;
+    const list = res ? (actionItems || []).filter(i => i.resourceId === res.id).slice(0, 3) : [];
+    if (!list.length) {
+      return undefined;
+    }
+    const dt = new Intl.DateTimeFormat('de-AT', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+    return (
+      <div className={styles.actionHistory} style={themeVars}>
+        {list.map(i => (
+          <div key={i.id} className={styles.actionHistoryRow}>
+            <Icon iconName={ACTION_ICON[i.action] || 'Settings'} />
+            <span>{ACTION_LABEL[i.action]}{i.targetName ? ` – ${i.targetName}` : ''}</span>
+            <span className={styles.metaText}>{dt.format(new Date(i.created))} · {i.requestedBy}</span>
+            <span className={`${styles.actionHistoryStatus} ${i.status === 'Erledigt' ? styles.bulkOk : i.status === 'Fehler' || i.status === 'Abgelehnt' ? styles.bulkErr : styles.bulkInfo}`}>{i.status}</span>
+          </div>
+        ))}
+      </div>
+    );
+  };
+
   // ---------- Navigation (Reiter bzw. gruppierte Seitenleiste wie in der CoE Admin View) ----------
   interface INavItem { key: string; title: string; icon: string; group: string; count?: string; active: boolean; danger?: boolean; locked?: boolean; onClick: () => void }
   const navItems: INavItem[] = (props.showOverview
@@ -1320,6 +1481,9 @@ const CoeCockpit: React.FC<ICoeCockpitProps> = props => {
   }));
   if (props.showSecurity) {
     navItems.push({ key: SECURITY_KEY, title: 'Sicherheit & Freigaben', icon: 'Shield', group: ANALYSIS_GROUP, active: !!inSecurity, onClick: () => setActiveKey(SECURITY_KEY) });
+  }
+  if (props.showActions && actionSetup && actionSetup.listExists) {
+    navItems.push({ key: ACTION_LOG_KEY, title: 'Aktionsprotokoll', icon: 'History', group: GROUP_GOVERNANCE, active: !!inActionLog, onClick: () => setActiveKey(ACTION_LOG_KEY) });
   }
   pipelineTables.forEach(t => navItems.push({
     key: t.key, title: t.title, icon: isLocked(t.key) ? 'Lock' : t.icon, group: GROUP_ALM, count: countFor(t),
@@ -1459,17 +1623,33 @@ const CoeCockpit: React.FC<ICoeCockpitProps> = props => {
           meta={panel ? panel.meta : undefined}
           service={serviceFor(panel ? panel.table : undefined)}
           themeVars={themeVars}
-          onDismiss={() => setPanelStack([])}
+          onDismiss={ev => {
+            // Ein Klick in einen Dialog über dem Panel (Aktion, E-Mail) schließt das Panel nicht
+            if (actionTarget || notifyRecord) {
+              if (ev && 'preventDefault' in ev) {
+                ev.preventDefault();
+              }
+              return;
+            }
+            setPanelStack([]);
+          }}
           canOpen={logical => !!tableForLogical(logical)}
           onOpenRelated={openRelated}
           onBack={panelStack.length > 1 ? () => setPanelStack(prev => prev.slice(0, prev.length - 1)) : undefined}
           backLabel={panelStack.length > 1 ? panelStack[panelStack.length - 2].table.title : undefined}
-          action={panel && panel.table.key === DEV_ENV_KEY ? {
-            text: 'Maker per E-Mail verständigen',
-            icon: 'Mail',
-            disabled: !panel.record[DEV_FIELDS.makerEmails],
-            onClick: () => { refreshNotifyLog().catch(() => undefined); setNotifyRecord(panel.record); }
-          } : undefined}
+          actions={panelActions()}
+          headerExtra={panelActionHistory()}
+          actionsNote={panelActionsNote()}
+        />
+
+        <ActionDialog
+          target={actionTarget}
+          actions={actionService as ActionService}
+          dataverse={service}
+          requestedBy={props.currentUser.displayName}
+          themeVars={themeVars}
+          onFinished={it => { refreshActions(); refreshPanelRecord(it); }}
+          onDismiss={() => { setActionTarget(undefined); refreshActions(); }}
         />
 
         <NotifyDialog

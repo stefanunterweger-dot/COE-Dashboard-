@@ -84,6 +84,31 @@ Das Webpart liest mit den Rechten des angemeldeten Benutzers. Benutzer brauchen 
 mit Lesezugriff auf die CoE-Tabellen (z. B. **Power Platform Admin SR** aus dem CoE Starter Kit oder System Administrator).
 Benutzer ohne Rechte sehen eine verständliche Fehlermeldung statt Daten.
 
+## Aktionen für Apps, Flows und Environments
+
+Im Bereich **„Aktionen“** der Detailansicht (unten) lassen sich Aufträge auslösen:
+
+| Ressource | Aktionen |
+|---|---|
+| App | In Quarantäne stellen / Aus Quarantäne holen, Besitzer ändern, Freigabe hinzufügen (Benutzer/Mitbesitzer), Freigabe entfernen, Löschen |
+| Flow | Ausschalten / Einschalten, Besitzer ändern, Mitbesitzer hinzufügen, Freigabe entfernen, Löschen |
+| Environment (nur „Betroffen ab 15.12.“) | Auf Managed umstellen, Environment deaktivieren / aktivieren, Maker per E-Mail verständigen |
+
+**So funktioniert es:** Das Cockpit legt einen Auftrag in der SharePoint-Liste **„CoE Cockpit Aktionen“** an (Aktion, Ressource, IDs,
+Zielperson, Pflicht-Begründung). Ein Flow im CoE-Environment führt ihn mit einem Admin-Dienstkonto aus und schreibt Status und Ergebnis
+zurück; das Cockpit zeigt den Fortschritt live und alle Aufträge im **Aktionsprotokoll** (Governance).
+
+**Regeln:**
+- Löschen nie, wenn die App bzw. der Flow **Teil einer Solution** ist (CoE-Felder „Is Solution App“ / „Is Solution Flow“; unbekannt = gesperrt). Bots werden nicht gelöscht.
+- Optional (Standard: an): Löschen erst, wenn die App **in Quarantäne** bzw. der Flow **ausgeschaltet** ist.
+- Pro Ressource immer nur ein offener Auftrag.
+
+**Einrichtung (Webpart-Eigenschaften → „Aktionen für Apps und Flows“):**
+1. **SharePoint-Gruppe** wählen oder mit „Gruppe anlegen“ erstellen (Standard: **„CoE Cockpit Admins“**). Nur Mitglieder sehen die Aktionen.
+2. **„Aktionsliste einrichten“**: legt die Liste an und gibt ihr eigene Berechtigungen – nur die Gruppe (Bearbeiten) und die Websitebesitzer (Vollzugriff).
+3. Flow „CoE Cockpit | Aktion ausführen“ im CoE-Environment importieren; dort denselben Gruppennamen eintragen. Der Flow prüft vor jeder
+   Ausführung, ob die anfragende Person Mitglied der Gruppe ist.
+
 ## Versandprotokoll (SharePoint-Liste)
 
 Die Liste **„CoE Cockpit Benachrichtigungen“** legt das Cockpit beim ersten Vermerk selbst auf der Website an, auf der es eingebunden ist

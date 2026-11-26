@@ -23,6 +23,8 @@ import { isValidEnvironmentUrl } from './utils/format';
 import { DataverseService, normalizeDataverseUrl } from './services/DataverseService';
 import { detectManagedAttribute, managedCandidates } from './models/devEnvironments';
 import { DEFAULT_INFO_URL, OLD_INFO_URLS, parseAddresses } from './models/notification';
+import { ACTION_LIST_TITLE, DEFAULT_ACTION_GROUP } from './models/actions';
+import { ActionService, IActionSetupState, ISiteGroup } from './services/ActionService';
 
 export interface ICoeCockpitWebPartProps {
   title: string;
@@ -62,6 +64,12 @@ export interface ICoeCockpitWebPartProps {
   notifySignature: string;
   /** Automatischen Versand über Microsoft Graph anbieten. */
   notifyAutoSend: boolean;
+  /** Aktionen für Apps und Flows anbieten. */
+  showActions: boolean;
+  /** SharePoint-Gruppe, deren Mitglieder Aktionen auslösen dürfen. */
+  actionsGroup: string;
+  /** Löschen erst nach Quarantäne (Apps) bzw. Ausschalten (Flows). */
+  deleteRequiresStop: boolean;
 }
 
 export default class CoeCockpitWebPart extends BaseClientSideWebPart<ICoeCockpitWebPartProps> {
@@ -70,6 +78,11 @@ export default class CoeCockpitWebPart extends BaseClientSideWebPart<ICoeCockpit
   private _editorRequest: number = 0;
   private _envOptions: IPropertyPaneDropdownOption[] | undefined;
   private _hostOptions: IPropertyPaneDropdownOption[] | undefined;
+  private _groups: ISiteGroup[] | undefined;
+  private _actionSetup: IActionSetupState | undefined;
+  private _actionBusy: string = '';
+  private _actionMessage: string = '';
+  private _actionsVersion: number = 0;
   private _envLoadError: string | undefined;
   private _envLoadedFor: string | undefined;
   private _managedOptions: IPropertyPaneDropdownOption[] | undefined;
@@ -120,6 +133,10 @@ export default class CoeCockpitWebPart extends BaseClientSideWebPart<ICoeCockpit
         signature: (this.properties.notifySignature || '').trim()
       },
       notifyAutoSend: this.properties.notifyAutoSend !== false,
+      showActions: this.properties.showActions !== false,
+      actionsGroup: (this.properties.actionsGroup || DEFAULT_ACTION_GROUP).trim(),
+      deleteRequiresStop: this.properties.deleteRequiresStop !== false,
+      actionsVersion: this._actionsVersion,
       theme: this._theme,
       isEditMode: this.displayMode === DisplayMode.Edit,
       editorRequest: this._editorRequest,
@@ -163,10 +180,88 @@ export default class CoeCockpitWebPart extends BaseClientSideWebPart<ICoeCockpit
 
   protected onPropertyPaneConfigurationStart(): void {
     this._loadEnvironmentOptions();
+    this._loadActionSetup();
+  }
+
+  private get _actionService(): ActionService {
+    return new ActionService(this.context.spHttpClient, this.context.pageContext.web.absoluteUrl);
+  }
+
+  private get _groupName(): string {
+    return (this.properties.actionsGroup || DEFAULT_ACTION_GROUP).trim();
+  }
+
+  /** Gruppen der Website und Stand der Einrichtung laden (für die Eigenschaften). */
+  private _loadActionSetup(): void {
+    const svc = this._actionService;
+    Promise.all([svc.listGroups().catch(() => [] as ISiteGroup[]), svc.getSetupState(this._groupName).catch(() => undefined)]).then(([groups, st]) => {
+      this._groups = groups;
+      this._actionSetup = st;
+      this.context.propertyPane.refresh();
+    });
+  }
+
+  /** Gruppe anlegen bzw. Liste einrichten – mit Rückmeldung im Eigenschaftenbereich. */
+  private _runActionSetup(kind: 'group' | 'list'): void {
+    if (this._actionBusy) {
+      return;
+    }
+    const svc = this._actionService;
+    const name = this._groupName;
+    this._actionBusy = kind === 'group' ? `Gruppe „${name}“ wird angelegt …` : `Liste „${ACTION_LIST_TITLE}“ wird eingerichtet …`;
+    this._actionMessage = '';
+    this.context.propertyPane.refresh();
+    const job = kind === 'group'
+      ? svc.createGroup(name).then(() => { this.properties.actionsGroup = name; return `Gruppe „${name}“ ist angelegt. Du bist erstes Mitglied – weitere Admins über die Websiteberechtigungen hinzufügen.`; })
+      : svc.setupList(name).then(() => `Liste „${ACTION_LIST_TITLE}“ ist eingerichtet: nur „${name}“ (Bearbeiten) und die Websitebesitzer (Vollzugriff) haben Zugriff.`);
+    job.then(
+      msg => { this._actionMessage = msg; },
+      (e: unknown) => { this._actionMessage = `Fehler: ${e instanceof Error ? e.message : String(e)}`; }
+    ).then(() => {
+      this._actionBusy = '';
+      this._actionsVersion++;
+      this._loadActionSetup();
+      this.render();
+    });
+  }
+
+  private _actionGroupOptions(): IPropertyPaneDropdownOption[] {
+    const options: IPropertyPaneDropdownOption[] = (this._groups || []).map(g => ({ key: g.title, text: g.title }));
+    const current = this._groupName;
+    if (!options.some(o => String(o.key).toLowerCase() === current.toLowerCase())) {
+      options.unshift({ key: current, text: `${current} (noch nicht angelegt)` });
+    }
+    return options;
+  }
+
+  private _actionStatusText(): string {
+    if (this._actionBusy) {
+      return this._actionBusy;
+    }
+    const st = this._actionSetup;
+    const lines: string[] = [];
+    if (!st) {
+      lines.push('Stand wird geprüft …');
+    } else {
+      lines.push(st.group ? `✓ Gruppe „${st.group.title}“ vorhanden` : `✗ Gruppe „${this._groupName}“ fehlt`);
+      lines.push(st.listExists
+        ? (st.listUnique ? `✓ Liste „${ACTION_LIST_TITLE}“ eingerichtet (eigene Berechtigungen)` : `⚠ Liste vorhanden, erbt aber die Berechtigungen der Website – „Aktionsliste einrichten“ klicken`)
+        : `✗ Liste „${ACTION_LIST_TITLE}“ fehlt`);
+      lines.push(st.isMember ? '✓ Du bist Mitglied der Gruppe' : '✗ Du bist nicht Mitglied der Gruppe – Aktionen sind für dich ausgeblendet');
+    }
+    if (this._actionMessage) {
+      lines.push(this._actionMessage);
+    }
+    return lines.join(' · ');
   }
 
   protected onPropertyPaneFieldChanged(propertyPath: string, oldValue: unknown, newValue: unknown): void {
     super.onPropertyPaneFieldChanged(propertyPath, oldValue, newValue);
+    if (propertyPath === 'actionsGroup') {
+      this._actionMessage = '';
+      this._actionSetup = undefined;
+      this._loadActionSetup();
+    }
     if (propertyPath === 'environmentUrl') {
       this._envLoadedFor = undefined;
       this._loadEnvironmentOptions();
@@ -383,6 +478,44 @@ export default class CoeCockpitWebPart extends BaseClientSideWebPart<ICoeCockpit
                 PropertyPaneTextField('notifySignature', {
                   label: 'Grußzeile',
                   placeholder: 'Ihr Power-Platform-Team'
+                })
+              ]
+            },
+            {
+              groupName: 'Aktionen für Apps und Flows',
+              groupFields: [
+                PropertyPaneToggle('showActions', {
+                  label: 'Aktionen anbieten (Quarantäne, Löschen, Besitzer, Freigaben, Flows ein/aus)',
+                  checked: this.properties.showActions !== false
+                }),
+                PropertyPaneDropdown('actionsGroup', {
+                  label: 'SharePoint-Gruppe mit Berechtigung',
+                  options: this._actionGroupOptions(),
+                  selectedKey: this._groupName,
+                  disabled: this.properties.showActions === false
+                }),
+                PropertyPaneButton('createActionGroup', {
+                  text: `Gruppe „${this._groupName}“ anlegen`,
+                  buttonType: PropertyPaneButtonType.Normal,
+                  icon: 'AddGroup',
+                  disabled: this.properties.showActions === false || !!this._actionBusy || !!(this._actionSetup && this._actionSetup.group),
+                  onClick: () => { this._runActionSetup('group'); return undefined; }
+                }),
+                PropertyPaneButton('setupActionList', {
+                  text: 'Aktionsliste einrichten',
+                  buttonType: PropertyPaneButtonType.Normal,
+                  icon: 'Lock',
+                  disabled: this.properties.showActions === false || !!this._actionBusy || !(this._actionSetup && this._actionSetup.group),
+                  onClick: () => { this._runActionSetup('list'); return undefined; }
+                }),
+                PropertyPaneLabel('actionStatus', { text: this._actionStatusText() }),
+                PropertyPaneToggle('deleteRequiresStop', {
+                  label: 'Löschen erst nach Quarantäne (Apps) bzw. Ausschalten (Flows)',
+                  checked: this.properties.deleteRequiresStop !== false,
+                  disabled: this.properties.showActions === false
+                }),
+                PropertyPaneLabel('actionInfo', {
+                  text: 'Ausgeführt werden die Aufträge vom Flow „CoE Cockpit | Aktion ausführen“ im CoE-Environment. Dort muss derselbe Gruppenname eingetragen sein.'
                 })
               ]
             },

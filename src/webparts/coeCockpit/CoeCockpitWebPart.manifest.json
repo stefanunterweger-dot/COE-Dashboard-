@@ -40,7 +40,10 @@
         "notifyFeedbackUrl": "",
         "notifyCc": "",
         "notifySignature": "",
-        "notifyAutoSend": true
+        "notifyAutoSend": true,
+        "showActions": true,
+        "actionsGroup": "CoE Cockpit Admins",
+        "deleteRequiresStop": true
       }
     }
   ]

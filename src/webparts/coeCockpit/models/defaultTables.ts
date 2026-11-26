@@ -91,6 +91,9 @@ export function getDefaultTables(): ITableConfig[] {
         { field: 'admin_appsharedwithtenant', label: 'Für alle freigegeben', type: 'boolean', hidden: true },
         { field: 'admin_appsharedguestuser', label: 'An Gäste freigegeben', type: 'boolean', hidden: true },
         { field: 'admin_dlppoliciesviolated', label: 'DLP-Verstöße', type: 'text', hidden: true },
+        { field: 'admin_appisquarantined', label: 'In Quarantäne', type: 'boolean', hidden: true },
+        { field: 'admin_issolutionapp', label: 'In Solution', type: 'boolean', hidden: true },
+        { field: 'admin_quarantineapp', label: 'Quarantäne (CoE-Feld)', type: 'boolean', hidden: true },
         { field: 'admin_appenvironmentid', label: 'Environment-ID', type: 'text', hidden: true }
       ],
       links: [
@@ -129,6 +132,7 @@ export function getDefaultTables(): ITableConfig[] {
         { field: '_admin_flowcreator_value', label: 'Ersteller', type: 'person', hidden: true },
         { field: 'cr5d5_flowtrigger', label: 'Trigger', type: 'text', hidden: true },
         { field: 'admin_flowsharedguestuser', label: 'An Gäste freigegeben', type: 'boolean', hidden: true },
+        { field: 'admin_issolutionflow', label: 'In Solution', type: 'boolean', hidden: true },
         { field: 'admin_flowidstring', label: 'Flow-ID', type: 'text', hidden: true },
         { field: 'admin_flowenvironmentid', label: 'Environment-ID', type: 'text', hidden: true }
       ],
