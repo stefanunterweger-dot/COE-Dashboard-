@@ -33,6 +33,7 @@
         "showOverview": true,
         "devEnvManagedField": "",
         "showSecurity": true,
+        "showCopilotCredits": true,
         "pipelinesHostUrl": "",
         "notifyTone": "sie",
         "notifyReplyDays": 14,

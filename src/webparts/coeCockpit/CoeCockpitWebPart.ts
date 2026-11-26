@@ -48,6 +48,7 @@ export interface ICoeCockpitWebPartProps {
   devEnvManagedField: string;
   /** Ansicht „Sicherheit & Freigaben“ anzeigen. */
   showSecurity: boolean;
+  showCopilotCredits: boolean;
   /** Dataverse-URL des Pipelines-Host-Environments (leer = ALM-Pipelines ausblenden). */
   pipelinesHostUrl: string;
   /** E-Mail an Maker: Anrede „sie“ oder „du“. */
@@ -123,6 +124,7 @@ export default class CoeCockpitWebPart extends BaseClientSideWebPart<ICoeCockpit
       showOverview: this.properties.showOverview !== false,
       devEnvManagedField: (this.properties.devEnvManagedField || '').trim(),
       showSecurity: this.properties.showSecurity !== false,
+      showCopilotCredits: this.properties.showCopilotCredits !== false,
       pipelinesHostUrl: normalizeDataverseUrl(this.properties.pipelinesHostUrl) || '',
       notify: {
         formal: this.properties.notifyTone !== 'du',
@@ -516,6 +518,19 @@ export default class CoeCockpitWebPart extends BaseClientSideWebPart<ICoeCockpit
                 }),
                 PropertyPaneLabel('actionInfo', {
                   text: 'Ausgeführt werden die Aufträge vom Flow „CoE Cockpit | Aktion ausführen“ im CoE-Environment. Dort muss derselbe Gruppenname eingetragen sein.'
+                })
+              ]
+            },
+            {
+              groupName: 'Lizenzen & Kapazität (live)',
+              groupFields: [
+                PropertyPaneToggle('showCopilotCredits', {
+                  label: 'Ansichten „Copilot-Credits“ und „Abrechnungspläne“ anzeigen',
+                  checked: this.properties.showCopilotCredits !== false
+                }),
+                PropertyPaneLabel('copilotCreditsInfo', {
+                  text: 'Die Daten kommen live aus der Power Platform API – ohne CoE und Dataverse. Voraussetzungen: Ein Admin hat die Power Platform API für SharePoint freigegeben '
+                    + '(Skript im README), und wer die Ansicht öffnet, hat die Rolle „Power Platform Administrator“ aktiv (bei PIM vorher aktivieren).'
                 })
               ]
             },

@@ -34,6 +34,8 @@ export interface IRecordPanelProps {
   headerExtra?: React.ReactNode;
   /** Hinweis im Bereich „Aktionen“, wenn keine Aktionen angeboten werden (z. B. fehlende Gruppe). */
   actionsNote?: string;
+  /** Zusätzlicher Abschnitt in der Übersicht unter „Eigenschaften“ (z. B. „Inhalt der Solution“). */
+  extraSection?: { title: string; content: React.ReactNode };
 }
 
 interface IRelatedState {
@@ -198,6 +200,13 @@ export const RecordPanel: React.FC<IRecordPanelProps> = props => {
           })}
         </div>
       </div>
+
+      {props.extraSection && (
+        <div className={styles.section}>
+          <h3 className={styles.sectionTitle}>{props.extraSection.title}</h3>
+          {props.extraSection.content}
+        </div>
+      )}
 
       {links.length > 0 && (
         <div className={styles.section}>

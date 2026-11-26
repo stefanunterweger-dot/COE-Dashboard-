@@ -2,6 +2,7 @@
 import { IMockResponse, mockGet } from '../mock/odata';
 import { mockGraphPost } from '../mock/graph';
 import { mockSharePoint } from '../mock/sharepoint';
+import { mockPpApiGet, ppApiConsentError } from '../mock/ppapi';
 
 export type HttpClientResponse = IMockResponse;
 
@@ -9,6 +10,10 @@ export class AadHttpClient {
   public static configurations = { v1: {} };
   constructor(private resource: string) {}
   public get(url: string, _config: unknown, options?: { headers?: { [k: string]: string } }): Promise<HttpClientResponse> {
+    if (/^https:\/\/api\.powerplatform\.com\//i.test(url)) {
+      const consent = ppApiConsentError();
+      return consent ? Promise.reject(consent) : mockPpApiGet(url);
+    }
     return mockGet(url, (options && options.headers) || {});
   }
   public post(url: string, _config: unknown, options?: { headers?: { [k: string]: string }; body?: string }): Promise<HttpClientResponse> {

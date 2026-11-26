@@ -9,20 +9,24 @@ Apps, Flows, Environments und Maker sind vorkonfiguriert, weitere Tabellen lasse
 
 ## Funktionen
 
-Nachbau der CoE-App **„Power Platform Admin View“** (CoE Starter Kit, Core Components) als SharePoint-Webpart – **nur lesend**,
-alle Daten direkt aus den Dataverse-Tabellen des CoE (keine Power-Platform-Admin-APIs).
+Nachbau der CoE-App **„Power Platform Admin View“** (CoE Starter Kit, Core Components) als SharePoint-Webpart. Die Daten kommen
+direkt aus den Dataverse-Tabellen des CoE; nur **Copilot-Credits / Abrechnungspläne** werden live über die Power Platform API gelesen.
+Ändernde Aktionen laufen ausschließlich als Auftrag über eine SharePoint-Liste und einen Flow (siehe „Aktionen“).
 
 | Bereich | Beschreibung |
 |---|---|
 | Übersicht (Startseite) | Dashboard mit Gesamtzahl der Ressourcen, Countdown zur Sperre nicht verwalteter Developer-Environments (15.12.2026), Kennzahl-Kacheln mit 12-Monats-Verlauf, Verlauf „Neu erstellt pro Monat“, **Handlungsbedarf** (betroffene Developer-Environments, gesperrte Flows, verwaiste Apps/Flows, seit 90 Tagen ungenutzte Apps, Gast-Maker), Verteilungen (Apps nach Typ, Flows nach Status, Environments nach Typ) und Ranglisten (meistgenutzte Apps, größte Environments, Top-Connectors, aktivste Maker). Jedes Element führt per Klick in die gefilterte Liste oder öffnet den Datensatz. Nur Zählungen/Gruppierungen – auch bei sehr großen Tabellen schnell. |
-| Navigation | Seitenleiste wie in der Admin View: **Inventar** (Apps, Flows, Environments, Connectors, Bots, Desktop Flows, Power Pages Sites, Business Process Flows, Solutions, AI-Modelle), **Governance** (DLP-Richtlinien), **Benutzer** (Maker, Power Platform User, Benutzerrollen, Sicherheitsrollen, Verbindungsidentitäten), **Nutzung** (Environment-Kapazität, Audit-Log), **Auswertungen** (Default Environment, Betroffen ab 15.12., Sicherheit & Freigaben), **ALM-Pipelines** (Bereitstellungen, Pipelines, Pipeline-Environments). Auf schmalen Seiten waagrecht. |
+| Navigation | Seitenleiste wie in der Admin View: **Inventar** (Apps, Flows, Environments, Connectors, Bots, Desktop Flows, Power Pages Sites, Business Process Flows, Solutions, AI-Modelle), **Governance** (DLP-Richtlinien), **Benutzer** (Maker, Power Platform User, Benutzerrollen, Sicherheitsrollen, Verbindungsidentitäten), **Nutzung** (Environment-Kapazität, Audit-Log), **Auswertungen** (Default Environment, Betroffen ab 15.12., Sicherheit & Freigaben), **Lizenzen & Kapazität** (Copilot-Credits, Abrechnungspläne – live), **ALM-Pipelines** (Bereitstellungen, Pipelines, Pipeline-Environments). Auf schmalen Seiten waagrecht. |
 | Suche über alle Bereiche | Suchfeld im Kopf: sucht gleichzeitig in Apps, Flows, Environments, Makern, Connectors, Bots, Solutions, DLP-Richtlinien, Pipelines … (direkt in Dataverse, nicht nur in geladenen Daten). Treffer öffnen die Detailansicht, „Alle anzeigen“ springt in die Liste mit dem Suchbegriff. |
 | Sicherheit & Freigaben | Risiken auf einen Blick: Apps für die gesamte Organisation, Apps/Flows an Gäste freigegeben, Custom Connectors über unverschlüsseltes HTTP, Environments ohne Sicherheitsgruppe bzw. ohne DLP-Richtlinie, deaktivierte Konten, Gast-Maker, Apps mit DLP-Verstößen, Environments mit den meisten System-Administratoren, DLP-Richtlinien. Jede Kachel führt in die gefilterte Liste. |
 | DLP-Richtlinien | Alle Richtlinien aus dem CoE-Inventar mit Geltungsbereich; in der Detailansicht die zugeordneten **Environments**, **blockierten** und **Business-Connectors** |
 | Maker 360° | Detailansicht eines Makers mit Apps, Flows, Bots, Desktop Flows, **Zugriff auf** (alle Freigaben/Rollen der Person), **Sicherheitsrollen** in allen Environments und eigenen Environments |
 | ALM-Pipelines | Bereitstellungen (Solution, Version, Pipeline, Stufe, Status, ausgelöst von), Pipelines mit Stufen und Pipeline-Environments – live aus dem Dataverse des **Pipelines-Host-Environments** (Auswahl in den Eigenschaften) |
 | Hinweis Adminrolle | Bereiche außerhalb des CoE-Environments (Solutions im Default Environment, ALM-Pipelines) werden beim Start geprüft. Fehlt der Zugriff, erscheint **vorab** ein Hinweis, welche Bereiche nicht sichtbar sind und dass die Rolle „Power Platform-Administrator“ (PIM) aktiviert werden muss; die Einträge sind in der Navigation mit einem Schloss markiert. |
-| Tabellenansicht | Volltextsuche, Sortierung, Seitenumbruch, kompakte/normale Zeilenhöhe, Spaltenauswahl, CSV-Export für Excel |
+| Tabellenansicht | Volltextsuche, Sortierung, Seitenumbruch, kompakte/normale Zeilenhöhe, Spaltenauswahl, CSV-Export für Excel. **Trefferzahl direkt neben dem Suchfeld**: „571 Einträge“, nach Suche/Filter hervorgehoben „9 von 571 Einträgen“. |
+| Copilot-Credits (live) | Copilot-Studio-Kapazität je Environment wie im Admin Center (Lizenzierung → Copilot Studio): gekauft, zugewiesen, noch zuweisbar, Prepaid- und Pay-as-you-go-Verbrauch, Status (im Rahmen / überschritten / überschritten – gedeckt), „Aus der Tenant-Kapazität ziehen“, verknüpfter Abrechnungsplan, Typ, Managed. Filter (Mit Zuweisung, Über Kapazität, Pay-as-you-go, Ohne Zuweisung), Suche, Sortierung; „Alle Environments prüfen“ fragt jedes Environment einzeln ab. **Ohne CoE/Dataverse** – direkt aus der Power Platform API. |
+| Abrechnungspläne (live) | Alle Pay-as-you-go-Abrechnungspläne mit Status, Produkten, Azure-Abonnement, Ressourcengruppe (Link ins Azure-Portal), Region, Erstelldatum; aufklappbar mit den verknüpften Environments und deren Copilot-Verbrauch. |
+| Inhalt der Solution | In der Detailansicht einer Solution: Reiter **Apps, Flows, Bots, Desktop Flows, Power Pages** mit Anzahl. Apps und Flows aus dem CoE-Inventar (Beziehungen „admin_PPSolution_Apps“ / „admin_PPSolution_Flow“, anklickbar), Bots, Desktop Flows und Power Pages live aus dem Environment der Solution (Tabelle `solutioncomponents`), außerdem Link „Solution in Power Apps öffnen“. |
 | Spaltenfilter | Filter-Symbol in **jedem** Spaltenkopf: Werteliste mit Suche und Anzahl (wie in Excel), bei Datumsspalten Zeiträume. Aktive Filter als Chips, einzeln entfernbar. |
 | Detailansicht | Seitenpanel mit Eigenschaften, Direktlinks (Power Apps, Power Automate, Admin Center, Dataverse), „Alle Felder“ und Reitern wie in den Admin-View-Formularen: **Freigegeben für**, **Verbindungen**, **Nutzung**, **Aktionen**, Ressourcen eines Environments (Apps, Flows, Bots, Desktop Flows, Power Pages, Solutions, Kapazität, Sicherheitsrollen), **Verwendet in Apps/Flows** … Zeilen sind anklickbar (Durchklicken), „Zurück“ führt zum vorherigen Datensatz. |
 | Betroffen ab 15.12. | Alle **nicht verwalteten Developer-Environments** (Sperre 15.12.2026, Löschung ab 15.01.2027) mit Ersteller, Zustand, Anzahl Apps/Flows. Managed-Status aus „Governance Protection Level“ („Basic“ = nicht managed), per Auswahl in den Eigenschaften änderbar. |
@@ -73,8 +77,11 @@ Ergebnis: `sharepoint/solution/coe-cockpit.sppkg`
 2. **API-Zugriff genehmigen:** SharePoint Admin Center → *Erweitert* → *API-Zugriff* →
    Anforderung **Dynamics CRM – user_impersonation** genehmigen. Ohne diese Genehmigung kann das Webpart keine Daten laden.
    Für den automatischen E-Mail-Versand zusätzlich **Microsoft Graph – Mail.Send** genehmigen (optional; ohne diese
-   Genehmigung funktioniert „In Outlook öffnen“ bzw. „Nacheinander in Outlook“ weiterhin). Achtung: API-Genehmigungen für
-   SharePoint-Webparts gelten für alle SPFx-Lösungen im Tenant.
+   Genehmigung funktioniert „In Outlook öffnen“ bzw. „Nacheinander in Outlook“ weiterhin). Für **Copilot-Credits und
+   Abrechnungspläne** die drei Anforderungen der **Power Platform API** genehmigen (optional). Achtung: API-Genehmigungen für
+   SharePoint-Webparts gelten für alle SPFx-Lösungen im Tenant. **Erscheinen unter „API-Zugriff“ keine Anforderungen**, setzt das
+   Skript [`scripts/Grant-CoeCockpitPermissions.ps1`](scripts/Grant-CoeCockpitPermissions.ps1) dieselben Berechtigungen
+   (Microsoft Graph PowerShell, als Globaler Administrator bzw. Administrator für privilegierte Rollen).
 3. Webpart **CoE Cockpit** auf einer Seite einfügen und in den Eigenschaften die **URL der CoE-Umgebung** eintragen,
    z. B. `https://contoso-coe.crm4.dynamics.com`.
 
@@ -109,6 +116,31 @@ zurück; das Cockpit zeigt den Fortschritt live und alle Aufträge im **Aktionsp
 3. Flow „CoE Cockpit | Aktion ausführen“ im CoE-Environment importieren; dort denselben Gruppennamen eintragen. Der Flow prüft vor jeder
    Ausführung, ob die anfragende Person Mitglied der Gruppe ist.
 
+## Copilot-Credits und Abrechnungspläne (live)
+
+Diese beiden Ansichten (Navigation → **Lizenzen & Kapazität**) brauchen weder CoE noch Dataverse. Sie lesen mit den Rechten des
+angemeldeten Benutzers direkt aus der **Power Platform API** (`https://api.powerplatform.com`, Bereich Licensing):
+
+| Abfrage | Zweck |
+|---|---|
+| `GET /licensing/entitlements/MCSMessages` | Tenant-Summen: gekauft, zugewiesen, verbraucht, Pay-as-you-go |
+| `GET /licensing/tenantCapacity/currencyReports` | Rückfall für gekauft/zugewiesen |
+| `GET /licensing/allocationsByEnvironment` | Zuweisungen je Environment inkl. „Aus der Tenant-Kapazität ziehen“ |
+| `GET /licensing/entitlements/MCSMessages/resources` | Verbrauch im laufenden Monat (findet Environments ohne Zuweisung) |
+| `GET /licensing/environments/{id}/entitlements` | Details je Environment: Zuweisung, Verbrauch, Status, Pay-as-you-go, Typ, Managed |
+| `GET /licensing/billingPolicies` + `/{id}/environments` | Abrechnungspläne und verknüpfte Environments |
+| `GET /environmentmanagement/environments` | Namen aller Environments („Alle Environments prüfen“) |
+
+**Voraussetzungen**
+1. Freigabe der Power Platform API für SharePoint-Webparts: Anforderungen unter „API-Zugriff“ genehmigen oder
+   `.\scripts\Grant-CoeCockpitPermissions.ps1 -PowerPlatformApi` ausführen (legt bei Bedarf auch den Dienstprinzipal „Power Platform API“ an).
+2. Wer die Ansicht öffnet, braucht die **aktive** Rolle **Power Platform Administrator** (oder Globaler Administrator) – bei PIM vorher aktivieren,
+   danach die Seite neu laden (Tokens werden bis zu einer Stunde zwischengespeichert; notfalls ab- und wieder anmelden).
+
+Fehlt eines davon, zeigt das Cockpit statt der Daten einen klaren Hinweis (mit Link zur PIM-Aktivierung). Ein- und ausblenden lassen sich
+die Ansichten in den Webpart-Eigenschaften unter „Lizenzen & Kapazität (live)“. Zuweisungen ändern geht weiterhin im Admin Center
+(Lizenzierung → Copilot Studio → Kapazität verwalten).
+
 ## Versandprotokoll (SharePoint-Liste)
 
 Die Liste **„CoE Cockpit Benachrichtigungen“** legt das Cockpit beim ersten Vermerk selbst auf der Website an, auf der es eingebunden ist
@@ -124,6 +156,7 @@ Rechten des angemeldeten Benutzers gelesen:
 | Bereich | Environment | Benötigt |
 |---|---|---|
 | Default Environment → Solutions | Default Environment | Leserechte auf `solution` (z. B. Environment Maker) |
+| Solution → Bots, Desktop Flows, Power Pages | Environment der Solution | Leserechte auf `solutioncomponents`, `workflows`, `bots`, `powerpagesites` (z. B. System Administrator) |
 | ALM-Pipelines | Pipelines-Host-Environment | Leserechte auf die Pipelines-Tabellen (z. B. System Administrator, Deployment Pipeline Administrator) |
 
 Power-Platform-Admins aktivieren dafür die Rolle **Power Platform-Administrator** (Entra PIM) und übernehmen – falls nötig –
@@ -147,6 +180,7 @@ Das Cockpit prüft den Zugriff beim Start und zeigt vorab, welche Bereiche gerad
 | Bereich „Default Environment“ anzeigen | Reiter ein-/ausblenden |
 | Reiter „Betroffen ab 15.12.“ anzeigen | Reiter ein-/ausblenden |
 | Ansicht „Sicherheit & Freigaben“ anzeigen | Ansicht ein-/ausblenden |
+| Ansichten „Copilot-Credits“ und „Abrechnungspläne“ anzeigen | Live-Ansichten über die Power Platform API ein-/ausblenden |
 | E-Mail an Maker: Automatischen Versand anbieten | Schaltflächen „Direkt senden“ und „Automatisch senden“ (Microsoft Graph, Mail.Send) ein-/ausblenden |
 | E-Mail an Maker: Anrede | Sie oder Du |
 | E-Mail an Maker: Frist für die Rückmeldung | 7, 10, 14 oder 21 Tage (spätestens 3 Tage vor dem Stichtag) |
@@ -196,6 +230,8 @@ src/webparts/coeCockpit/
 │  ├─ CoeCockpit.tsx             Hauptansicht (Kopf, Kennzahlen, Reiter, Toolbar, Tabelle)
 │  ├─ OverviewView.tsx           Übersicht (Dashboard)
 │  ├─ SecurityView.tsx           Sicherheit & Freigaben
+│  ├─ CopilotCreditsView.tsx     Copilot-Credits und Abrechnungspläne (live, Power Platform API)
+│  ├─ SolutionContents.tsx       Inhalt einer Solution (Detailansicht)
 │  ├─ GlobalSearch.tsx           Suche über alle Bereiche
 │  ├─ Charts.tsx                 Diagramme (Verlauf, Balken, Sparklines)
 │  ├─ CoeCockpit.module.scss     Design-System (CSS-Variablen aus dem Theme)
@@ -207,10 +243,11 @@ src/webparts/coeCockpit/
 │  └─ themeVars.ts               Theme → CSS-Variablen
 ├─ models/                       Konfigurationsmodell und Standardtabellen
 ├─ services/DataverseService.ts  Dataverse Web API (Metadaten, Daten, Zählung)
+├─ services/PowerPlatformApiService.ts  Power Platform API (Licensing) mit Versions-Fallback und Seitenabruf
 └─ utils/format.ts               Formatierung, CSV, Hilfsfunktionen
 ```
 
 ## Nächste Ausbaustufe
 
-Admin-Aktionen direkt aus der Detailansicht (Besitzer ändern, Flows aktivieren/deaktivieren, Freigaben verwalten,
-Umgebungseinstellungen). Dafür werden zusätzlich die Power-Platform-Admin-APIs bzw. ein Power Automate Flow als Backend benötigt.
+- Flow „CoE Cockpit | Aktion ausführen“ als importierbare Lösung (führt die Aufträge aus der Liste „CoE Cockpit Aktionen“ aus).
+- Copilot-Credits zuweisen direkt aus dem Cockpit (Power Platform API `licensing/allocationsV2`, Rolle Power Platform Administrator).

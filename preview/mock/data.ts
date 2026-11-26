@@ -665,10 +665,11 @@ export const DATABASES: IDatabase[] = [
       A('admin_businessprocessflowstatus', 'String', 'Status'), A('admin_businessprocessflowmodifiedon', 'DateTime', 'Modified On'),
       A('admin_businessprocessflowdeleted', 'Boolean', 'Deleted')
     ], bpfs),
-    table('admin_solution', 'admin_solutions', 'Solution', 'admin_solutionid', 'admin_name', [
+    withNav(table('admin_solution', 'admin_solutions', 'Solution', 'admin_solutionid', 'admin_name', [
       A('admin_name', 'String', 'Solution Unique Name'), ENV_LK('admin_solutionenvironment'), MAKER_LK('admin_solutioncreator', 'Creator'),
-      A('admin_solutionpublisher', 'String', 'Publisher'), A('admin_solutionismanaged', 'Boolean', 'Is Managed'), A('admin_solutiondeleted', 'Boolean', 'Deleted')
-    ], coeSolutions),
+      A('admin_solutionpublisher', 'String', 'Publisher'), A('admin_solutionismanaged', 'Boolean', 'Is Managed'), A('admin_solutiondeleted', 'Boolean', 'Deleted'),
+      A('admin_solutionenvtobjectguidstring', 'String', 'Solution Envt Object Guid String'), A('admin_solutionenvtguid', 'String', 'Solution Envt Guid')
+    ], coeSolutions), { admin_PPSolution_Apps: 'admin_app', admin_PPSolution_Flow: 'admin_flow' }),
     table('admin_aibuildermodel', 'admin_aibuildermodels', 'AI Model', 'admin_aibuildermodelid', 'admin_name', [
       A('admin_name', 'String', 'Name'), MAKER_LK('admin_aicreator', 'Creator'), ENV_LK('admin_aienvironment'), A('admin_aitemplate', 'String', 'Template'),
       A('admin_aistatus', 'String', 'Status'), A('admin_ailastused', 'DateTime', 'Last Used'), A('admin_aideleted', 'Boolean', 'Deleted')
@@ -736,3 +737,114 @@ export const DATABASES: IDatabase[] = [
     table('systemuser', 'systemusers', 'Benutzer', 'systemuserid', 'fullname', [A('fullname', 'String', 'Vollständiger Name')], sysUsers)
   ])
 ];
+
+// ---------- Inhalt der Solutions (CoE-N:N + Systemtabellen im jeweiligen Environment) ----------
+// Eigener Zufallsgenerator, damit die übrigen Beispieldaten unverändert bleiben.
+(function seedSolutionContents(): void {
+  let s2 = 4711;
+  const r2 = (): number => { s2 = (s2 * 1103515245 + 12345) & 0x7fffffff; return s2 / 0x7fffffff; };
+  const g2 = (): string => {
+    const h = (n: number): string => Array.from({ length: n }, () => Math.floor(r2() * 16).toString(16)).join('');
+    return `${h(8)}-${h(4)}-4${h(3)}-a${h(3)}-${h(12)}`;
+  };
+  const pick2 = <T>(a: T[]): T => a[Math.floor(r2() * a.length)];
+  const envById: { [id: string]: Record<string, unknown> } = {};
+  environments.forEach(e => { envById[String(e.admin_environmentid)] = e; });
+  const BOT_TYPE = 10187;
+  const SITE_TYPE = 10254;
+  const envDb = (host: string): IDatabase => {
+    let d = DATABASES.filter(x => x.host.toLowerCase() === host.toLowerCase())[0];
+    if (!d) {
+      d = { host, tables: {} };
+      DATABASES.push(d);
+    }
+    if (!d.tables.solutioncomponent) {
+      const add = (t: ITableDef): void => { d!.tables[t.logicalName] = t; };
+      add(table('solutioncomponent', 'solutioncomponents', 'Lösungskomponente', 'solutioncomponentid', 'objectid', [
+        LK('solutionid', 'Lösung', 'solution'), A('componenttype', 'Integer', 'Objekttyp'), A('objectid', 'Uniqueidentifier', 'Objekt-ID')
+      ], []));
+      add(table('solutioncomponentdefinition', 'solutioncomponentdefinitions', 'Lösungskomponentendefinition', 'solutioncomponentdefinitionid', 'primaryentityname', [
+        A('solutioncomponenttype', 'Integer', 'Komponententyp'), A('primaryentityname', 'String', 'Primäre Entität')
+      ], [
+        { solutioncomponentdefinitionid: g2(), solutioncomponenttype: BOT_TYPE, primaryentityname: 'bot' },
+        { solutioncomponentdefinitionid: g2(), solutioncomponenttype: BOT_TYPE + 1, primaryentityname: 'botcomponent' },
+        { solutioncomponentdefinitionid: g2(), solutioncomponenttype: SITE_TYPE, primaryentityname: 'powerpagesite' }
+      ]));
+      add(table('workflow', 'workflows', 'Prozess', 'workflowid', 'name', [
+        A('name', 'String', 'Name'), A('category', 'Integer', 'Kategorie'), A('statecode', 'Integer', 'Status')
+      ], []));
+      add(table('canvasapp', 'canvasapps', 'Canvas-App', 'canvasappid', 'displayname', [
+        A('displayname', 'String', 'Anzeigename'), A('name', 'String', 'Name')
+      ], []));
+      add(table('appmodule', 'appmodules', 'Modellgesteuerte App', 'appmoduleid', 'name', [A('name', 'String', 'Name')], []));
+      add(table('bot', 'bots', 'Copilot', 'botid', 'name', [A('name', 'String', 'Name'), A('statecode', 'Integer', 'Status')], []));
+      add(table('powerpagesite', 'powerpagesites', 'Power Pages-Site', 'powerpagesiteid', 'name', [A('name', 'String', 'Name')], []));
+    }
+    return d;
+  };
+  const appsByEnv: { [id: string]: Record<string, unknown>[] } = {};
+  apps.forEach(a => { (appsByEnv[String(a._admin_appenvironment_value)] = appsByEnv[String(a._admin_appenvironment_value)] || []).push(a); });
+  const flowsByEnv: { [id: string]: Record<string, unknown>[] } = {};
+  flows.forEach(f => { (flowsByEnv[String(f._admin_flowenvironment_value)] = flowsByEnv[String(f._admin_flowenvironment_value)] || []).push(f); });
+
+  coeSolutions.forEach((sol, i) => {
+    const env = envById[String(sol._admin_solutionenvironment_value)];
+    sol.admin_solutionenvtobjectguidstring = sol.admin_solutionid;
+    sol.admin_solutionenvtguid = env ? env.admin_environmentname : null;
+    const host = env && env.admin_environmentcdsinstanceurl ? String(env.admin_environmentcdsinstanceurl).replace(/^https:\/\//, '').replace(/\/$/, '') : '';
+    const managed = !!sol.admin_solutionismanaged;
+    const ea = appsByEnv[String(sol._admin_solutionenvironment_value)] || [];
+    const ef = flowsByEnv[String(sol._admin_solutionenvironment_value)] || [];
+    // Jede vierte Solution ohne CoE-Zuordnung (dann zeigt das Cockpit Apps/Flows live aus dem Environment)
+    const coeLinked = i % 4 !== 1;
+    const nApps = managed ? 0 : Math.min(ea.length, Math.floor(r2() * 4));
+    const nFlows = managed ? Math.min(ef.length, Math.floor(r2() * 2)) : Math.min(ef.length, 1 + Math.floor(r2() * 5));
+    const solApps = Array.from({ length: nApps }, () => pick2(ea)).filter((x, k, arr) => arr.indexOf(x) === k);
+    const solFlows = Array.from({ length: nFlows }, () => pick2(ef)).filter((x, k, arr) => arr.indexOf(x) === k);
+    sol.__nav_admin_PPSolution_Apps = coeLinked ? solApps.map(a => a.admin_appid) : [];
+    sol.__nav_admin_PPSolution_Flow = coeLinked ? solFlows.map(f => f.admin_flowid) : [];
+    if (!host) {
+      return;
+    }
+    const d = envDb(host);
+    const comp = (type: number, objectid: unknown): void => {
+      d.tables.solutioncomponent.rows.push({ solutioncomponentid: g2(), _solutionid_value: sol.admin_solutionid, componenttype: type, objectid });
+    };
+    solApps.forEach(a => {
+      d.tables.canvasapp.rows.push({ canvasappid: a.admin_appid, displayname: a.admin_displayname, name: `cr5d5_app_${String(a.admin_appid).slice(0, 5)}` });
+      comp(300, a.admin_appid);
+    });
+    solFlows.forEach(f => {
+      const wid = g2();
+      d.tables.workflow.rows.push({ workflowid: wid, name: f.admin_displayname, category: 5, statecode: f.admin_flowstate === 'Started' ? 1 : 0 });
+      comp(29, wid);
+    });
+    if (!managed) {
+      if (r2() < 0.35) {
+        const id = g2();
+        d.tables.appmodule.rows.push({ appmoduleid: id, name: `${pick2(['Antrags', 'Service', 'Vertriebs'])}verwaltung` });
+        comp(80, id);
+      }
+      for (let k = 0; k < Math.floor(r2() * 3); k++) {
+        const id = g2();
+        d.tables.workflow.rows.push({ workflowid: id, name: `${pick2(['SAP-Export', 'Rechnungsimport', 'Excel-Abgleich', 'Belegablage'])} (Desktop)`, category: 6, statecode: 1 });
+        comp(29, id);
+      }
+      for (let k = 0; k < Math.floor(r2() * 3); k++) {
+        const id = g2();
+        d.tables.bot.rows.push({ botid: id, name: `${pick2(['HR', 'IT', 'Einkauf', 'Service'])}-Copilot`, statecode: 0 });
+        comp(BOT_TYPE, id);
+        // Themen (botcomponent) sind keine eigenen Einträge
+        comp(BOT_TYPE + 1, g2());
+      }
+      if (r2() < 0.3) {
+        const id = g2();
+        d.tables.powerpagesite.rows.push({ powerpagesiteid: id, name: `${pick2(['Lieferanten', 'Bewerber', 'Kunden'])}portal` });
+        comp(SITE_TYPE, id);
+      }
+      // Tabellen, Spalten usw. – ignoriert das Cockpit
+      comp(1, g2());
+      comp(2, g2());
+    }
+  });
+})();

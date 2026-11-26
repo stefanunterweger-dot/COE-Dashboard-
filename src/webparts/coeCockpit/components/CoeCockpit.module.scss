@@ -471,6 +471,36 @@
   flex: 1 1 auto;
 }
 
+.resultBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 12px;
+  font-size: 13px;
+  white-space: nowrap;
+  color: var(--coe-text-2);
+  background: var(--coe-surface);
+  border: 1px solid var(--coe-border);
+  border-radius: 14px;
+  font-variant-numeric: tabular-nums;
+
+  strong {
+    font-weight: 700;
+    color: var(--coe-text);
+  }
+}
+
+.resultBadgeActive {
+  color: var(--coe-accent);
+  background: var(--coe-accent-soft);
+  border-color: var(--coe-accent-border);
+
+  strong {
+    color: var(--coe-accent);
+  }
+}
+
 .resultInfo {
   font-size: 12px;
   color: var(--coe-text-2);
@@ -2871,6 +2901,350 @@ li:last-child > .govItem {
   .secHeroTitle {
     font-size: 22px;
   }
+}
+
+// =====================================================================
+// Inhalt der Solution (Detailbereich)
+// =====================================================================
+.solBox {
+  overflow: hidden;
+  border: 1px solid var(--coe-border);
+  border-radius: 10px;
+  background: var(--coe-bg);
+}
+
+.solLoading {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px;
+}
+
+.solTabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px;
+  padding: 6px 6px 0;
+  border-bottom: 1px solid var(--coe-border);
+  background: var(--coe-surface);
+}
+
+.solTab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 10px 9px;
+  font: inherit;
+  font-size: 13px;
+  color: var(--coe-text-2);
+  background: none;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  cursor: pointer;
+
+  &:hover {
+    color: var(--coe-text);
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--coe-accent);
+    outline-offset: -2px;
+  }
+}
+
+.solTabActive {
+  font-weight: 600;
+  color: var(--coe-text);
+  border-bottom-color: var(--coe-accent);
+}
+
+.solCount {
+  min-width: 18px;
+  padding: 0 6px;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 18px;
+  text-align: center;
+  color: var(--coe-text-2);
+  background: var(--coe-border-soft);
+  border-radius: 9px;
+}
+
+.solBody {
+  max-height: 320px;
+  overflow: auto;
+}
+
+.solEmpty {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 14px;
+  font-size: 13px;
+  color: var(--coe-text-2);
+}
+
+.solList {
+  margin: 0;
+  padding: 4px 0;
+  list-style: none;
+
+  > li.muted {
+    padding: 6px 14px;
+    font-size: 12px;
+  }
+}
+
+.solItem {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 7px 14px;
+  font: inherit;
+  text-align: left;
+  color: var(--coe-text);
+  background: none;
+  border: 0;
+}
+
+button.solItem {
+  cursor: pointer;
+
+  &:hover {
+    background: var(--coe-hover);
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--coe-accent);
+    outline-offset: -2px;
+  }
+}
+
+.solIcon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  font-size: 14px;
+  color: var(--coe-accent);
+  background: var(--coe-accent-soft);
+}
+
+.solText {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.solName {
+  overflow: hidden;
+  font-size: 13px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.solSub {
+  font-size: 12px;
+  color: var(--coe-text-2);
+}
+
+.solFoot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px 12px;
+  padding: 8px 14px;
+  font-size: 12px;
+  color: var(--coe-text-2);
+  border-top: 1px solid var(--coe-border-soft);
+  background: var(--coe-surface);
+}
+
+// =====================================================================
+// Copilot-Credits & Abrechnungspläne (live, Power Platform API)
+// =====================================================================
+.ccStamp {
+  align-self: center;
+  font-size: 12px;
+  opacity: 0.85;
+}
+
+.ccGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 12px;
+}
+
+.ccTable .td {
+  padding: 10px 12px;
+}
+
+.ccTable .thButton {
+  padding-left: 12px;
+}
+
+.ccName {
+  display: inline-block;
+  max-width: 240px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: bottom;
+}
+
+.ccTileActive {
+  border-color: var(--coe-accent);
+  box-shadow: 0 0 0 1px var(--coe-accent) inset;
+}
+
+.ccNoticeText {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 13px;
+  color: var(--coe-text);
+}
+
+.ccDetail {
+  font-size: 11px;
+  color: var(--coe-text-2);
+  word-break: break-word;
+}
+
+.ccLoading {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 18px;
+}
+
+.ccWarnings {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+}
+
+.ccSegments {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 3px;
+  border-radius: 8px;
+  background: var(--coe-surface);
+  border: 1px solid var(--coe-border);
+}
+
+.ccSegment {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 26px;
+  padding: 0 10px;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--coe-text-2);
+  background: none;
+  border: 0;
+  border-radius: 6px;
+  cursor: pointer;
+
+  &:hover {
+    color: var(--coe-text);
+    background: var(--coe-hover);
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--coe-accent);
+    outline-offset: 1px;
+  }
+}
+
+.ccSegmentActive {
+  color: var(--coe-accent);
+  background: var(--coe-bg);
+  box-shadow: 0 1px 2px var(--coe-card-shadow);
+}
+
+.ccSegmentCount {
+  font-weight: 500;
+  color: var(--coe-text-3);
+}
+
+.ccNum {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.ccConsumed {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.ccMeter {
+  display: inline-block;
+  width: 56px;
+  height: 6px;
+  overflow: hidden;
+  border-radius: 3px;
+  background: var(--coe-border-soft);
+}
+
+.ccMeterFill {
+  display: block;
+  height: 100%;
+  border-radius: 3px;
+  background: var(--coe-status-good);
+}
+
+.ccMeterHigh {
+  background: var(--coe-status-warning);
+}
+
+.ccMeterFull {
+  background: var(--coe-status-critical);
+}
+
+.ccRowClickable {
+  cursor: pointer;
+
+  &:hover .td {
+    background: var(--coe-hover);
+  }
+}
+
+.ccExpanded .td {
+  white-space: normal;
+  max-width: none;
+  background: var(--coe-surface);
+}
+
+.ccEnvList {
+  margin: 0;
+  padding: 0 0 0 18px;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 4px 16px;
+  font-size: 13px;
+}
+
+.ccFoot {
+  padding: 10px 16px 14px;
+  font-size: 12px;
+  color: var(--coe-text-2);
+  border-top: 1px solid var(--coe-border-soft);
 }
 
 // =====================================================================

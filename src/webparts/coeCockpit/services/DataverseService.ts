@@ -485,6 +485,11 @@ export class DataverseService {
     throw new DataverseError('Die verknüpften Datensätze konnten nicht geladen werden.', 400);
   }
 
+  /** Einfache Abfrage eines Entity-Sets (folgt @odata.nextLink) – z. B. Systemtabellen eines Environments. */
+  public async query(entitySet: string, select: string[], filter?: string, maxRecords: number = 5000): Promise<IRecord[]> {
+    return (await this._fetchAll(entitySet, select, filter, undefined, maxRecords)).records;
+  }
+
   /** Kurzer Zugriffstest auf diese Umgebung (wirft bei fehlenden Rechten). */
   public async whoAmI(): Promise<{ UserId?: string }> {
     return this._get<{ UserId?: string }>('WhoAmI');

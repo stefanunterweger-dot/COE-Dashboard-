@@ -7,6 +7,7 @@ import { ITableConfig } from '../src/webparts/coeCockpit/models/ITableConfig';
 import { AadHttpClientFactory, MSGraphClientFactory, SPHttpClient } from './shims/sp-http';
 import { seedActions, seedNotifyEntry } from './mock/sharepoint';
 import { ACTION_TIMING } from '../src/webparts/coeCockpit/components/ActionDialog';
+import { resetCreditsCache } from '../src/webparts/coeCockpit/components/CopilotCreditsView';
 
 // Vorschau: Aktionen sind eingerichtet (Gruppe „CoE Cockpit Admins“ mit dem angemeldeten Admin, Liste vorhanden)
 seedActions();
@@ -101,6 +102,9 @@ const App: React.FC = () => {
   }), [p.notifyTone, p.notifyReplyDays, p.notifyFeedbackUrl, p.notifyCc, p.notifySignature]);
   const [noAdmin, setNoAdmin] = React.useState<boolean>(false);
   const [noMailSend, setNoMailSend] = React.useState<boolean>(false);
+  const [noPpApi, setNoPpApi] = React.useState<boolean>(false);
+  (window as unknown as { __coePpApiDeny?: string }).__coePpApiDeny = noPpApi ? 'consent' : noAdmin ? 'forbidden' : '';
+  React.useMemo(() => resetCreditsCache(), [noAdmin, noPpApi]);
   (window as unknown as { __coeDenyMailSend?: boolean }).__coeDenyMailSend = noMailSend;
   (window as unknown as { __coeDenyHosts?: string[] }).__coeDenyHosts = noAdmin ? [DEFAULT_HOST, PIPELINES_HOST] : [];
   const factory = React.useMemo(() => new AadHttpClientFactory(), []);
@@ -119,10 +123,11 @@ const App: React.FC = () => {
         <Toggle inlineLabel label="Rotes Theme" checked={red} onChange={(_e, v) => setRed(!!v)} styles={{ root: { margin: 0 } }} />
         <Toggle inlineLabel label="Ohne Adminrolle" checked={noAdmin} onChange={(_e, v) => setNoAdmin(!!v)} styles={{ root: { margin: 0 } }} />
         <Toggle inlineLabel label="Mail.Send fehlt" checked={noMailSend} onChange={(_e, v) => setNoMailSend(!!v)} styles={{ root: { margin: 0 } }} />
+        <Toggle inlineLabel label="PP-API nicht freigegeben" checked={noPpApi} onChange={(_e, v) => setNoPpApi(!!v)} styles={{ root: { margin: 0 } }} />
       </div>
       <div className={`section ${dark ? 'sectionDark' : ''}`}>
         <CoeCockpit
-          key={noAdmin ? 'noadmin' : 'admin'}
+          key={`${noAdmin ? 'noadmin' : 'admin'}-${noPpApi ? 'noppapi' : 'ppapi'}`}
           instanceId="preview"
           title={p.title}
           subtitle={p.subtitle}
@@ -147,6 +152,7 @@ const App: React.FC = () => {
           showOverview={true}
           devEnvManagedField={p.devEnvManagedField}
           showSecurity={p.showSecurity}
+          showCopilotCredits={true}
           pipelinesHostUrl={p.pipelinesHostUrl}
           notify={notify}
           notifyAutoSend={true}

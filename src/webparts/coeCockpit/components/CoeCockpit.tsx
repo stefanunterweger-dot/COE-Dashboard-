@@ -29,6 +29,10 @@ import { ActionService, IActionSetupState } from '../services/ActionService';
 import { ACTION_ICON, ACTION_LABEL, ACTION_LOG_KEY, actionsFor, IActionItem, resourceOf } from '../models/actions';
 import { ActionDialog, IActionTarget } from './ActionDialog';
 import { ActionLogView } from './ActionLogView';
+import { CopilotCreditsView } from './CopilotCreditsView';
+import { SolutionContents } from './SolutionContents';
+import { BILLING_KEY, CREDITS_KEY, GROUP_LICENSING } from '../models/copilotCredits';
+import { PowerPlatformApiService } from '../services/PowerPlatformApiService';
 import { GROUP_GOVERNANCE } from '../models/defaultTables';
 import { INotifySettings } from '../models/notification';
 import { copyCurrentLink, IViewState, readViewState, writeViewState } from '../utils/deepLink';
@@ -75,6 +79,8 @@ export interface ICoeCockpitProps {
   devEnvManagedField: string;
   /** Ansicht „Sicherheit & Freigaben“ anzeigen. */
   showSecurity: boolean;
+  /** Ansichten „Copilot-Credits“ und „Abrechnungspläne“ (live über die Power Platform API) anzeigen. */
+  showCopilotCredits: boolean;
   /** Dataverse-URL des Pipelines-Host-Environments (leer = ALM-Pipelines ausblenden). */
   pipelinesHostUrl: string;
   /** Vorlage für die E-Mail an die Maker betroffener Developer-Environments. */
@@ -237,6 +243,7 @@ const CoeCockpit: React.FC<ICoeCockpitProps> = props => {
   const [data, setData] = React.useState<{ [key: string]: ITableState }>({});
   const [kpis, setKpis] = React.useState<{ [key: string]: IKpiState }>({});
   const [reloadTick, setReloadTick] = React.useState<number>(0);
+  const ppApi = React.useMemo(() => new PowerPlatformApiService(props.aadHttpClientFactory), [props.aadHttpClientFactory]);
   const [search, setSearch] = React.useState<string>('');
   const [filters, setFilters] = React.useState<{ [field: string]: IColumnFilter }>({});
   const [sort, setSort] = React.useState<ISortConfig | undefined>(undefined);
@@ -366,6 +373,18 @@ const CoeCockpit: React.FC<ICoeCockpitProps> = props => {
     ? `${mainKey}|${defaultSig}`
     : t.key === DEV_ENV_KEY ? `${mainKey}|${props.devEnvManagedField}` : mainKey);
 
+  /** Dataverse-Service für eine beliebige Umgebungs-URL (z. B. das Environment einer Solution). */
+  const serviceForUrl = (url: string): DataverseService => {
+    const u = normalizeDataverseUrl(url) || url;
+    if (service && u.toLowerCase() === service.baseUrl.toLowerCase()) {
+      return service;
+    }
+    if (!servicesRef.current[u]) {
+      servicesRef.current[u] = new DataverseService(props.aadHttpClientFactory, u);
+    }
+    return servicesRef.current[u];
+  };
+
   /** Dataverse-Service für eine Tabelle (CoE-Umgebung oder eigene Umgebung der Tabelle). */
   const serviceFor = (t: ITableConfig | undefined): DataverseService | undefined => {
     if (!service || !t || !t.environmentUrl) {
@@ -388,16 +407,18 @@ const CoeCockpit: React.FC<ICoeCockpitProps> = props => {
 
   React.useEffect(() => {
     const waitingForDefault = (props.showDefaultEnvironment && isDefaultEnvKey(activeKey)) || (props.showOverview && activeKey === OVERVIEW_KEY)
-      || (props.showSecurity && activeKey === SECURITY_KEY) || (props.showActions && activeKey === ACTION_LOG_KEY);
+      || (props.showSecurity && activeKey === SECURITY_KEY) || (props.showActions && activeKey === ACTION_LOG_KEY)
+      || (props.showCopilotCredits && (activeKey === CREDITS_KEY || activeKey === BILLING_KEY));
     if (!activeTable && tables.length && !waitingForDefault) {
       setActiveKey(tables[0].key);
     }
     // activeTable/defaultSig gehören dazu: z. B. wird beim Ausschalten von „Default Environment“
     // der aktive Reiter erst im nächsten Render ungültig.
-    if (((!props.showOverview && activeKey === OVERVIEW_KEY) || (!props.showSecurity && activeKey === SECURITY_KEY)) && tables.length) {
+    if (((!props.showOverview && activeKey === OVERVIEW_KEY) || (!props.showSecurity && activeKey === SECURITY_KEY)
+      || (!props.showCopilotCredits && (activeKey === CREDITS_KEY || activeKey === BILLING_KEY))) && tables.length) {
       setActiveKey(props.showOverview ? OVERVIEW_KEY : tables[0].key);
     }
-  }, [tablesSig, props.showDefaultEnvironment, props.showDevEnvironments, props.showOverview, props.showSecurity, props.pipelinesHostUrl, defaultSig, !!activeTable]);
+  }, [tablesSig, props.showDefaultEnvironment, props.showDevEnvironments, props.showOverview, props.showSecurity, props.showCopilotCredits, props.pipelinesHostUrl, defaultSig, !!activeTable]);
 
   React.useEffect(() => {
     if (activeKey && isDefaultEnvKey(activeKey)) {
@@ -787,6 +808,36 @@ const CoeCockpit: React.FC<ICoeCockpitProps> = props => {
     return undefined;
   };
 
+  /**
+   * Anzahl der angezeigten Einträge – gut sichtbar neben dem Suchfeld.
+   * Gefiltert/gesucht: „9 von 571 Einträgen“ (hervorgehoben), sonst „571 Einträge“.
+   */
+  const renderResultBadge = (): JSX.Element => {
+    const narrowed = activeFilterCount > 0;
+    const more = state && state.truncated ? '+' : '';
+    let content: React.ReactNode;
+    if (loading) {
+      content = 'Wird geladen …';
+    } else if (partial) {
+      content = `Lädt … ${formatNumber(records.length)}${serverTotal && serverTotal.total !== undefined ? ` von ${formatCount(Math.min(serverTotal.total, maxRecords), serverTotal.totalAtLeast && serverTotal.total < maxRecords)}` : ''}`;
+    } else if (narrowed) {
+      content = <><strong>{formatNumber(filtered.length)}</strong> von {formatNumber(records.length)}{more} {records.length === 1 ? 'Eintrag' : 'Einträgen'}</>;
+    } else {
+      content = <><strong>{formatNumber(records.length)}{more}</strong> {records.length === 1 ? 'Eintrag' : 'Einträge'}</>;
+    }
+    return (
+      <span
+        className={`${styles.resultBadge} ${narrowed && !loading && !partial ? styles.resultBadgeActive : ''}`}
+        role="status"
+        aria-live="polite"
+        title={narrowed ? 'Angezeigte Einträge (nach Suche und Filtern) von allen geladenen Einträgen' : 'Geladene Einträge'}
+      >
+        {narrowed && !loading && !partial && <Icon iconName="Filter" />}
+        {content}
+      </span>
+    );
+  };
+
   const renderPager = (): JSX.Element => {
     const pages: number[] = [];
     const start = Math.max(0, Math.min(safePage - 2, pageCount - 5));
@@ -1068,6 +1119,7 @@ const CoeCockpit: React.FC<ICoeCockpitProps> = props => {
   const inOverview = props.showOverview && activeKey === OVERVIEW_KEY;
   const inSecurity = props.showSecurity && activeKey === SECURITY_KEY;
   const inActionLog = props.showActions && activeKey === ACTION_LOG_KEY;
+  const inCredits = props.showCopilotCredits && (activeKey === CREDITS_KEY || activeKey === BILLING_KEY);
   const devState = data[DEV_ENV_KEY];
   const devAffected = devState && devState.status === 'ready'
     ? {
@@ -1077,7 +1129,16 @@ const CoeCockpit: React.FC<ICoeCockpitProps> = props => {
     }
     : undefined;
 
-  const renderMain = (): JSX.Element => (inOverview && service
+  const renderMain = (): JSX.Element => (inCredits
+    ? (
+      <CopilotCreditsView
+        api={ppApi}
+        mode={activeKey === BILLING_KEY ? 'billing' : 'credits'}
+        reloadKey={String(reloadTick)}
+        onSwitch={m => setActiveKey(m === 'billing' ? BILLING_KEY : CREDITS_KEY)}
+      />
+    )
+    : inOverview && service
     ? (
       <OverviewView
         service={service}
@@ -1248,6 +1309,7 @@ const CoeCockpit: React.FC<ICoeCockpitProps> = props => {
             onChange={(_e, v) => { setSearch(v || ''); setPage(0); }}
             styles={{ root: { width: 280, borderRadius: 6 } }}
           />
+          {renderResultBadge()}
           {activeFilterFields.map(f => (
             <button
               key={f}
@@ -1267,13 +1329,6 @@ const CoeCockpit: React.FC<ICoeCockpitProps> = props => {
             </button>
           )}
           <span className={styles.grow} />
-          <span className={styles.resultInfo}>
-            {loading
-              ? 'Wird geladen …'
-              : partial
-                ? `Lädt … ${formatNumber(records.length)}${serverTotal && serverTotal.total !== undefined ? ` von ${formatCount(Math.min(serverTotal.total, maxRecords), serverTotal.totalAtLeast && serverTotal.total < maxRecords)}` : ''}`
-                : `${formatNumber(filtered.length)} von ${formatNumber(records.length)}${state && state.truncated ? '+' : ''}`}
-          </span>
           <TooltipHost content={compact ? 'Normale Zeilenhöhe' : 'Kompakte Zeilenhöhe'}>
             <IconButton iconProps={{ iconName: compact ? 'DoubleChevronDown' : 'DoubleChevronUp' }} ariaLabel="Zeilenhöhe" onClick={() => setCompact(!compact)} />
           </TooltipHost>
@@ -1482,6 +1537,10 @@ const CoeCockpit: React.FC<ICoeCockpitProps> = props => {
   if (props.showSecurity) {
     navItems.push({ key: SECURITY_KEY, title: 'Sicherheit & Freigaben', icon: 'Shield', group: ANALYSIS_GROUP, active: !!inSecurity, onClick: () => setActiveKey(SECURITY_KEY) });
   }
+  if (props.showCopilotCredits) {
+    navItems.push({ key: CREDITS_KEY, title: 'Copilot-Credits', icon: 'AllCurrency', group: GROUP_LICENSING, active: activeKey === CREDITS_KEY, onClick: () => setActiveKey(CREDITS_KEY) });
+    navItems.push({ key: BILLING_KEY, title: 'Abrechnungspläne', icon: 'Bank', group: GROUP_LICENSING, active: activeKey === BILLING_KEY, onClick: () => setActiveKey(BILLING_KEY) });
+  }
   if (props.showActions && actionSetup && actionSetup.listExists) {
     navItems.push({ key: ACTION_LOG_KEY, title: 'Aktionsprotokoll', icon: 'History', group: GROUP_GOVERNANCE, active: !!inActionLog, onClick: () => setActiveKey(ACTION_LOG_KEY) });
   }
@@ -1573,13 +1632,13 @@ const CoeCockpit: React.FC<ICoeCockpitProps> = props => {
           <>
             {renderAccessNotice()}
 
-            {showKpis && !inOverview && !inSecurity && <KpiStrip tables={tables} kpis={kpis} activeKey={activeKey} onSelect={setActiveKey} />}
+            {showKpis && !inOverview && !inSecurity && !inCredits && <KpiStrip tables={tables} kpis={kpis} activeKey={activeKey} onSelect={setActiveKey} />}
 
             {navItems.length > 0 && !useSideNav && (
               <nav className={styles.tabs} role="tablist" aria-label="Tabellen">
                 {navItems.map((n, i) => (
                   <React.Fragment key={n.key}>
-                    {i > 0 && n.group !== navItems[i - 1].group && (n.group === ANALYSIS_GROUP || n.group === GROUP_ALM) && <span className={styles.tabDivider} aria-hidden="true" />}
+                    {i > 0 && n.group !== navItems[i - 1].group && (n.group === ANALYSIS_GROUP || n.group === GROUP_ALM || n.group === GROUP_LICENSING) && <span className={styles.tabDivider} aria-hidden="true" />}
                     {renderNavItem(n, false)}
                   </React.Fragment>
                 ))}
@@ -1640,6 +1699,22 @@ const CoeCockpit: React.FC<ICoeCockpitProps> = props => {
           actions={panelActions()}
           headerExtra={panelActionHistory()}
           actionsNote={panelActionsNote()}
+          extraSection={panel && service && panel.table.logicalName === 'admin_solution' && !panel.table.environmentUrl
+            ? {
+              title: 'Inhalt der Solution',
+              content: (
+                <SolutionContents
+                  key={String(panel.record[(panel.meta && panel.meta.primaryId) || 'admin_solutionid'])}
+                  coe={service}
+                  serviceFor={serviceForUrl}
+                  solutionId={String(panel.record[(panel.meta && panel.meta.primaryId) || 'admin_solutionid'])}
+                  record={panel.record}
+                  canOpen={logical => !!tableForLogical(logical)}
+                  onOpenRelated={openRelated}
+                />
+              )
+            }
+            : undefined}
         />
 
         <ActionDialog
