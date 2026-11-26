@@ -379,6 +379,7 @@ export class DataverseService {
       return this.getRecords({
         key: `_rel_${rel.key}`, title: rel.title, logicalName: rel.logicalName, icon: 'Table', strictFilter: true,
         filter: combineFilters(rel.filter, `${rel.lookupField} eq ${parentId}`),
+        defaultSort: rel.defaultSort,
         columns: rel.columns
       }, maxRecords);
     }

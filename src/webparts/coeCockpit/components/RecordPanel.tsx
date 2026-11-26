@@ -310,14 +310,14 @@ export const RecordPanel: React.FC<IRecordPanelProps> = props => {
       type={PanelType.custom}
       customWidth={(table.related || []).length > 0 ? '760px' : '600px'}
       closeButtonAriaLabel="Schließen"
-      onRenderHeader={header}
       styles={{
-        header: { paddingTop: 20, paddingLeft: 24, paddingRight: 48 },
-        content: { paddingLeft: 24, paddingRight: 24, paddingBottom: 32 },
+        // Kopfbereich steht im Inhalt (über den Reitern) – sonst überdeckt er bei vielen Reitern deren Beschriftung
+        content: { paddingTop: 20, paddingLeft: 24, paddingRight: 24, paddingBottom: 32 },
         navigation: { position: 'absolute', right: 8, top: 8, zIndex: 2 }
       }}
     >
       <div style={themeVars} className={`${styles.scope} ${styles.panelBody}`}>
+        <div className={styles.panelHeadWrap}>{header()}</div>
         <Pivot selectedKey={tab} onLinkClick={item => setTab((item && item.props.itemKey) || 'overview')} headersOnly={true} overflowBehavior="menu">
           <PivotItem itemKey="overview" headerText="Übersicht" />
           {(table.related || []).map(r => {

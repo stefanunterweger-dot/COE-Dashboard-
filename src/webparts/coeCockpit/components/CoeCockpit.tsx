@@ -335,6 +335,29 @@ const CoeCockpit: React.FC<ICoeCockpitProps> = props => {
     return () => { cancelled = true; };
   }, [service, mainKey, showKpis]);
 
+  // Gesamtzahl einer abgeschnittenen Tabelle nachladen (für den Hinweis „… von X Einträgen“)
+  React.useEffect(() => {
+    const st = activeTable ? data[activeTable.key] : undefined;
+    if (!activeTable || activeTable.virtual || !st || st.status !== 'ready' || !st.truncated) {
+      return;
+    }
+    const k = kpis[activeTable.key];
+    if (k && k.loadKey.indexOf(mainKey) === 0) {
+      return;
+    }
+    const t = activeTable;
+    const svc = serviceFor(t);
+    if (!svc) {
+      return;
+    }
+    const lk = keyFor(t);
+    setKpis(prev => ({ ...prev, [t.key]: { status: 'loading', loadKey: lk } }));
+    svc.getCountWithBase(t).then(
+      total => setKpis(prev => ({ ...prev, [t.key]: { status: 'ready', loadKey: lk, total: total.value, totalAtLeast: total.atLeast } })),
+      () => setKpis(prev => ({ ...prev, [t.key]: { status: 'error', loadKey: lk } }))
+    );
+  }, [activeKey, data, mainKey]);
+
   // Anzahl Apps / Flows / Solutions im Default Environment
   React.useEffect(() => {
     if (!service || defaultTables.length === 0) {
@@ -807,7 +830,7 @@ const CoeCockpit: React.FC<ICoeCockpitProps> = props => {
             {state.truncated && (
               <MessageBar messageBarType={MessageBarType.info} isMultiline={false}>
                 Geladen sind die ersten {formatNumber(records.length)}
-                {serverTotal && serverTotal.total !== undefined ? ` von ${formatCount(serverTotal.total, serverTotal.totalAtLeast)}` : ''} Einträgen
+                {serverTotal && serverTotal.total !== undefined ? ` von ${formatCount(serverTotal.total, serverTotal.totalAtLeast)} Einträgen` : ' Einträge'}
                 {activeTable.defaultSort ? ' (nach der Standardsortierung)' : ''}. Suche und Spaltenfilter berücksichtigen nur diese Einträge.
                 Das Limit lässt sich in den Webpart-Eigenschaften erhöhen (bis {formatNumber(50000)}).
               </MessageBar>

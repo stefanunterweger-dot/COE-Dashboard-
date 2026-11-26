@@ -107,7 +107,7 @@ const App: React.FC = () => {
           selectedKey={p.defaultEnvironmentId}
           disabled={!p.showDefaultEnvironment}
           options={[{ key: '', text: 'Automatisch erkennen (Typ „Default“)' }].concat(
-            environments.map(e => ({ key: String(e.admin_environmentid), text: `${e.admin_displayname} (${e.admin_environmenttype})` })))}
+            environments.map(e => ({ key: String(e.admin_environmentid), text: `${e.admin_displayname} (${e.admin_environmentsku})` })))}
           onChange={(_e, o) => set({ defaultEnvironmentId: o ? String(o.key) : '' })}
         />
         <Label styles={{ root: { marginTop: 16 } }}>Betroffen ab 15.12. (Developer-Environments)</Label>
@@ -116,7 +116,7 @@ const App: React.FC = () => {
           label="Spalte mit dem Managed-Status"
           selectedKey={p.devEnvManagedField}
           disabled={!p.showDevEnvironments}
-          options={[{ key: '', text: 'Automatisch: Managed Environment (admin_environmentismanaged)' }, { key: 'admin_environmentismanaged', text: 'Managed Environment (admin_environmentismanaged)' }]}
+          options={[{ key: '', text: 'Automatisch: Governance Protection Level (admin_governanceprotectionlevel)' }, { key: 'admin_governanceprotectionlevel', text: 'Governance Protection Level (admin_governanceprotectionlevel)' }]}
           onChange={(_e, o) => set({ devEnvManagedField: o ? String(o.key) : '' })}
         />
         <Label styles={{ root: { marginTop: 16 } }}>Tabellen</Label>

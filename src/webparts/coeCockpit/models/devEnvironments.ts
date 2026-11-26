@@ -43,7 +43,7 @@ export function buildDevEnvTable(): ITableConfig {
       { field: DEV_FIELDS.state, label: 'Zustand', type: 'status', statusMap: { 'Aktiv': 'success', 'Deaktiviert': 'danger', 'Unbekannt': 'neutral' } },
       { field: DEV_FIELDS.apps, label: 'Apps', type: 'number' },
       { field: DEV_FIELDS.flows, label: 'Flows', type: 'number' },
-      { field: 'admin_environmentregion', label: 'Region', type: 'choice' },
+      { field: 'admin_region', label: 'Region', type: 'choice' },
       { field: 'admin_environmentcreatedon', label: 'Erstellt', type: 'date' },
       { field: DEV_FIELDS.managed, label: 'Managed', type: 'status', hidden: true, statusMap: { 'Nein': 'warning', 'Ja': 'success', 'Unbekannt': 'neutral' } },
       { field: 'admin_environmentcdsinstanceurl', label: 'Dataverse-URL', type: 'url', hidden: true },
@@ -95,6 +95,11 @@ function isDeveloper(r: IRecord): boolean {
 
 /** true / false / undefined (unbekannt). */
 function managedValue(r: IRecord, field: string): boolean | undefined {
+  if (/protectionlevel/i.test(field)) {
+    // CoE „Governance Protection Level“: „Basic“ = nicht managed, leer = unbekannt, sonst (z. B. „Standard“) managed
+    const level = displayValue(r, field).trim();
+    return !level ? undefined : !/^basic$/i.test(level);
+  }
   const raw = r[field];
   if (raw === true || raw === false) {
     return raw;

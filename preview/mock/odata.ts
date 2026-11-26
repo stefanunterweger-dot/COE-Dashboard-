@@ -47,7 +47,7 @@ function tableBySet(db: IDatabase, set: string): ITableDef {
 }
 
 /** Feldname ($select/$filter) → Attribut. */
-function attrFor(t: ITableDef, field: string): { name: string; type: string; target?: string } {
+function attrFor(t: ITableDef, field: string): { name: string; type: string; target?: string; options?: { [v: number]: string } } {
   const lookup = /^_(.+)_value$/.exec(field);
   const a = t.attrs.filter(x => (lookup ? x.name === lookup[1] && x.type === 'Lookup' : x.name === field && x.type !== 'Lookup'))[0];
   if (!a) {
@@ -78,7 +78,9 @@ function project(t: ITableDef, row: Record<string, unknown>, fields: string[] | 
       out[f + FORMATTED] = v ? 'Ja' : 'Nein';
     } else if (a.type === 'DateTime') {
       out[f + FORMATTED] = dateFmt.format(new Date(String(v)));
-    } else if (a.type === 'Integer') {
+    } else if (a.type === 'Picklist' && a.options) {
+      out[f + FORMATTED] = a.options[Number(v)] || String(v);
+    } else if (a.type === 'Integer' || a.type === 'Decimal') {
       out[f + FORMATTED] = new Intl.NumberFormat('de-AT').format(Number(v));
     }
   });

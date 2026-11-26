@@ -55,6 +55,7 @@ export interface IRelatedConfig {
   navigationProperty?: string;
   /** Optionaler zusätzlicher OData-Filter. */
   filter?: string;
+  defaultSort?: ISortConfig;
   columns: IColumnConfig[];
 }
 
