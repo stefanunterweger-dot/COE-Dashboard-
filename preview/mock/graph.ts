@@ -13,7 +13,21 @@ interface IGraphWindow {
   /** true = Berechtigung User.Read.All / GroupMember.Read.All nicht genehmigt. */
   __coeDenyUserRead?: boolean;
   __graphBatchCalls?: number;
+  /** true = /subscribedSkus nicht erlaubt (Rückfall über licenseDetails) */
+  __coeDenySkus?: boolean;
 }
+
+/** Feste SKU-IDs der Beispiel-Lizenzen (wie in Entra: GUID je Produkt). */
+const SKU_IDS: { [part: string]: string } = {
+  SPE_E3: '05e9a617-0261-4cee-bb44-138d3ef5d965',
+  POWERAPPS_PER_USER: 'b30411f5-fea1-4a59-9ad9-3db7c7ead579',
+  POWERAUTOMATE_ATTENDED_RPA: 'eda1941c-3c4f-4995-b5eb-e85a42175ab9',
+  DYN365_ENTERPRISE_SALES: '1e1a282c-9c54-43a2-9310-98ef728faace',
+  POWERAPPS_VIRAL: 'dcb1a3ae-b33f-4487-846a-a640262fadf4',
+  POWER_BI_PRO: 'f8a1db68-be16-40ed-86d5-cb42ce701560',
+  Microsoft_365_Copilot: '639dec6b-bb19-468b-871c-c5c441c4b0cb'
+};
+const DEPARTMENTS = ['Vertrieb', 'Finanzen', 'IT', 'Personal', 'Einkauf', 'Marketing'];
 
 function hash(s: string): number {
   let h = 7;
@@ -26,7 +40,7 @@ function hash(s: string): number {
 /** Beispiel-Lizenzen je Person (deterministisch). */
 function licensesFor(user: string): { status: number; body: unknown } {
   const h = hash(user.toLowerCase()) % 16;
-  const sku = (part: string, plans: string[]): unknown => ({ skuPartNumber: part, servicePlans: plans.map(p => ({ servicePlanName: p, provisioningStatus: 'Success' })) });
+  const sku = (part: string, plans: string[]): unknown => ({ skuId: SKU_IDS[part], skuPartNumber: part, servicePlans: plans.map(p => ({ servicePlanName: p, provisioningStatus: 'Success' })) });
   const e3 = sku('SPE_E3', ['POWERAPPS_O365_P2', 'FLOW_O365_P2', 'EXCHANGE_S_ENTERPRISE', 'SHAREPOINTENTERPRISE']);
   if (h === 15) {
     return { status: 404, body: { error: { code: 'Request_ResourceNotFound', message: `Resource '${user}' does not exist.` } } };
@@ -49,6 +63,21 @@ function licensesFor(user: string): { status: number; body: unknown } {
 // Für Tests: einige Personen, die Graph kennt (E-Mail → Objekt-ID)
 (window as unknown as { __graphPeople?: unknown }).__graphPeople = GRAPH_PEOPLE.slice(0, 5);
 
+/** Alle Benutzer mit zugewiesenen Lizenzen (wie /users?$select=…,assignedLicenses). */
+function allUsers(): { [k: string]: unknown }[] {
+  return GRAPH_PEOPLE.map(p => {
+    const h = hash(p.upn.toLowerCase());
+    const lic = licensesFor(p.upn);
+    const skus = lic.status === 200 ? ((lic.body as { value: { skuId: string }[] }).value || []).map(l => ({ skuId: l.skuId, disabledPlans: [] as string[] })) : [];
+    if (lic.status === 200 && h % 5 === 0) { skus.push({ skuId: SKU_IDS.POWER_BI_PRO, disabledPlans: [] }); }
+    if (lic.status === 200 && h % 9 === 0) { skus.push({ skuId: SKU_IDS.Microsoft_365_Copilot, disabledPlans: [] }); }
+    return {
+      id: p.id, displayName: p.name, userPrincipalName: p.upn, mail: p.upn, department: DEPARTMENTS[h % DEPARTMENTS.length],
+      jobTitle: '', accountEnabled: h % 11 !== 0, userType: h % 13 === 0 ? 'Guest' : 'Member', assignedLicenses: skus
+    };
+  });
+}
+
 /** GET (z. B. transitive Gruppenmitglieder) */
 export function mockGraphGet(url: string): Promise<IMockResponse> {
   const w = window as unknown as IGraphWindow;
@@ -58,6 +87,31 @@ export function mockGraphGet(url: string): Promise<IMockResponse> {
       const key = decodeURIComponent(user[1]).toLowerCase();
       const p = GRAPH_PEOPLE.filter(x => x.upn.toLowerCase() === key || x.id.toLowerCase() === key)[0];
       resolve(p ? respond(200, { id: p.id }) : respond(404, { error: { code: 'Request_ResourceNotFound', message: `Resource '${key}' does not exist.` } }));
+      return;
+    }
+    // Benutzer mit zugewiesenen Lizenzen (Seiten zu 40, damit das Weiterblättern mitgetestet wird)
+    if (/\/v1\.0\/users\?/.test(url) || /\/v1\.0\/users$/.test(url)) {
+      if (w.__coeDenyUserRead) {
+        resolve(respond(403, { error: { code: 'Authorization_RequestDenied', message: 'Insufficient privileges to complete the operation.' } }));
+        return;
+      }
+      const skip = Number((/[?&]\$skiptoken=(\d+)/.exec(url) || [])[1] || 0);
+      const all = allUsers();
+      const page = all.slice(skip, skip + 40);
+      resolve(respond(200, { value: page, '@odata.nextLink': skip + 40 < all.length ? `https://graph.microsoft.com/v1.0/users?$select=id&$top=999&$skiptoken=${skip + 40}` : undefined }));
+      return;
+    }
+    if (/\/v1\.0\/subscribedSkus/.test(url)) {
+      if (w.__coeDenySkus) {
+        resolve(respond(403, { error: { code: 'Authorization_RequestDenied', message: 'Insufficient privileges to complete the operation.' } }));
+        return;
+      }
+      const counts: { [id: string]: number } = {};
+      allUsers().forEach(u => (u.assignedLicenses as { skuId: string }[]).forEach(l => { counts[l.skuId] = (counts[l.skuId] || 0) + 1; }));
+      resolve(respond(200, { value: Object.keys(SKU_IDS).map(part => ({
+        skuId: SKU_IDS[part], skuPartNumber: part, capabilityStatus: 'Enabled', appliesTo: 'User',
+        consumedUnits: counts[SKU_IDS[part]] || 0, prepaidUnits: { enabled: (counts[SKU_IDS[part]] || 0) + (part === 'SPE_E3' ? 25 : 5), suspended: 0, warning: 0 }
+      })) }));
       return;
     }
     const m = /\/groups\/([^/]+)\/transitiveMembers/.exec(url);

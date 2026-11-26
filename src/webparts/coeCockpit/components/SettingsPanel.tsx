@@ -163,6 +163,12 @@ export const SettingsPanel: React.FC<ISettingsPanelProps> = props => {
             >
               <Toggle checked={v.showPremium2027} onChange={(_e, c) => set({ showPremium2027: !!c })} />
             </Row>
+            <Row
+              label="Lizenzen je Benutzer"
+              description="Live aus Microsoft Graph: welche Lizenzen jede Person hat, filterbar nach Lizenz. Berechtigung „User.Read.All“ (gekaufte Mengen zusätzlich „Organization.Read.All“)."
+            >
+              <Toggle checked={v.showUserLicenses} onChange={(_e, c) => set({ showUserLicenses: !!c })} />
+            </Row>
             <Row label="Default Environment" description="Eigener Bereich – Details unter „Default Environment“">
               <Toggle checked={v.showDefaultEnvironment} onChange={(_e, c) => set({ showDefaultEnvironment: !!c })} />
             </Row>
@@ -323,6 +329,9 @@ export const SettingsPanel: React.FC<ISettingsPanelProps> = props => {
             <div className={styles.setCard}>
               <Row label="Kennzahlen anzeigen" description="Kacheln über der Tabelle">
                 <Toggle checked={v.showKpis} onChange={(_e, c) => set({ showKpis: !!c })} />
+              </Row>
+              <Row label="SharePoint-App-Leiste links ausblenden" description="Die Leiste am linken Rand (z. B. „Discover, Publish, Build, OneDrive“) – nur auf der Seite mit dem Cockpit. Microsoft bietet dafür keinen offiziellen Schalter; ausgeblendet wird sie per Stil.">
+                <Toggle checked={v.hideAppBar} onChange={(_e, c) => set({ hideAppBar: !!c })} />
               </Row>
               <div className={styles.setGrid3}>
                 <Dropdown label="Zeilenhöhe" options={[{ key: 'comfortable', text: 'Normal' }, { key: 'compact', text: 'Kompakt' }]} selectedKey={v.density}

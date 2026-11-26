@@ -7,7 +7,7 @@ import { IColumnFilter } from '../utils/filters';
 import { formatNumber, formatTime } from '../utils/format';
 import { translateValue } from '../utils/valueLabels';
 import {
-  count, daysAgoIso, distribution, environmentsOverview, IMonth, lastMonths, monthlyCounts, numberOf, textOf, topAppsByLaunches, topRecords
+  count, daysAgoIso, distribution, environmentsOverview, IMonth, lastMonths, monthlyCounts, monthlyCountsAny, numberOf, textOf, topAppsByLaunches, topRecords
 } from '../models/overview';
 import { DEV_ENV_DEADLINES } from '../models/devEnvironments';
 import { BarList, compactNumber, IBarItem, IPart, SegmentedBar, Sparkline, TrendChart } from './Charts';
@@ -123,8 +123,29 @@ export const OverviewView: React.FC<IOverviewProps> = props => {
     bots: byLogical('admin_pva'), connectors: byLogical('admin_connector'), rpa: byLogical('admin_rpa'), pages: byLogical('admin_portal')
   };
 
+  /** Reihen für „Neu erstellt pro Monat“ (Datumsfelder je CoE-Version; „createdon“ = erstmals im CoE erfasst). */
+  const TREND_SERIES: { key: string; label: string; table?: ITableConfig; fields: string[]; color: string; note?: string }[] = [
+    { key: 'apps', label: 'Apps', table: T.apps, fields: ['admin_appcreatedon'], color: 'var(--coe-series-1)' },
+    { key: 'flows', label: 'Flows', table: T.flows, fields: ['admin_flowcreatedon'], color: 'var(--coe-series-2)' },
+    { key: 'bots', label: 'Bots', table: T.bots, fields: ['admin_pvacreatedon', 'createdon'], color: 'var(--coe-series-3)' },
+    { key: 'rpa', label: 'Desktop Flows', table: T.rpa, fields: ['admin_rpacreatedon', 'admin_desktopflowcreatedon', 'createdon'], color: 'var(--coe-series-4)' },
+    { key: 'pages', label: 'Power Pages', table: T.pages, fields: ['admin_portalcreatedon', 'createdon'], color: 'var(--coe-series-5)' },
+    { key: 'envs', label: 'Environments', table: T.envs, fields: ['admin_environmentcreatedon', 'createdon'], color: 'var(--coe-series-6)' },
+    { key: 'makers', label: 'Neue Maker', table: T.makers, fields: ['createdon'], color: 'var(--coe-series-7)', note: 'erstmals im CoE erfasst' }
+  ].filter(s => !!s.table);
+
   const [counts, setCounts] = React.useState<{ [k: string]: ISection<ICountResult> }>({});
   const [trend, setTrend] = React.useState<ISection<{ apps: number[]; flows: number[] }>>(loading());
+  /** Diagramm „Neu erstellt pro Monat“: ausgewählte Reihen (Apps und Flows vorab, weitere bei Bedarf). */
+  const [shown, setShown] = React.useState<string[]>(() => {
+    try {
+      const v = JSON.parse(window.localStorage.getItem('coe-cockpit:trend-series') || 'null') as string[] | null;
+      return Array.isArray(v) && v.length ? v : ['apps', 'flows'];
+    } catch {
+      return ['apps', 'flows'];
+    }
+  });
+  const [extra, setExtra] = React.useState<{ [key: string]: ISection<{ values: number[]; field: string }> }>({});
   const [appTypes, setAppTypes] = React.useState<ISection<{ label: string; value: number }[]>>(loading());
   const [flowStates, setFlowStates] = React.useState<ISection<{ label: string; value: number }[]>>(loading());
   const [envs, setEnvs] = React.useState<ISection<{ records: IRecord[]; primaryId: string; byType: { label: string; value: number }[] }>>(loading());
@@ -207,6 +228,49 @@ export const OverviewView: React.FC<IOverviewProps> = props => {
     setLoadedAt({ time, cached: false });
     writeCache(cacheKey, { time, reloadKey: props.reloadKey, data: { counts, trend, appTypes, flowStates, envs, topApps, topConnectors, topMakers, gov } });
   }, [sectionsDone]);
+
+  // Weitere Reihen erst laden, wenn sie eingeblendet werden. Begonnene Abfragen laufen weiter (auch beim schnellen
+  // Umschalten); verworfen werden sie nur, wenn die Übersicht neu geladen wird (neue Generation).
+  const trendGen = React.useRef<{ gen: string; requested: { [key: string]: true } }>({ gen: '', requested: {} });
+  React.useEffect(() => {
+    try {
+      window.localStorage.setItem('coe-cockpit:trend-series', JSON.stringify(shown));
+    } catch {
+      // ohne Speicher bleibt die Auswahl nur für diese Sitzung
+    }
+    const gen = `${service.baseUrl}|${props.reloadKey}`;
+    if (trendGen.current.gen !== gen) {
+      trendGen.current = { gen, requested: {} };
+      setExtra({});
+    }
+    TREND_SERIES.filter(s => s.key !== 'apps' && s.key !== 'flows' && shown.indexOf(s.key) >= 0 && !trendGen.current.requested[s.key]).forEach(s => {
+      trendGen.current.requested[s.key] = true;
+      setExtra(prev => ({ ...prev, [s.key]: { status: 'loading' } }));
+      monthlyCountsAny(service, s.table!, s.fields, months).then(
+        data => { if (trendGen.current.gen === gen) { setExtra(prev => ({ ...prev, [s.key]: { status: 'ready', data } })); } },
+        (e: Error) => { if (trendGen.current.gen === gen) { setExtra(prev => ({ ...prev, [s.key]: { status: 'error', error: e.message } })); } }
+      );
+    });
+  }, [shown.join('|'), service, props.reloadKey]);
+
+  /** Werte einer Reihe (Apps/Flows aus dem Verlauf, übrige nachgeladen). */
+  const seriesValues = (key: string): number[] | undefined => {
+    if (key === 'apps' || key === 'flows') {
+      return trend.status === 'ready' && trend.data ? trend.data[key] : undefined;
+    }
+    const x = extra[key];
+    return x && x.status === 'ready' && x.data ? x.data.values : undefined;
+  };
+  const seriesState = (key: string): 'loading' | 'ready' | 'error' => {
+    if (key === 'apps' || key === 'flows') {
+      return trend.status;
+    }
+    const x = extra[key];
+    return !x ? 'loading' : x.status;
+  };
+  const toggleSeries = (key: string): void => {
+    setShown(prev => (prev.indexOf(key) >= 0 ? (prev.length > 1 ? prev.filter(k => k !== key) : prev) : prev.concat([key])));
+  };
 
   const value = (k: string): ICountResult | undefined => (counts[k] && counts[k].status === 'ready' ? counts[k].data : undefined);
   const resources = ['apps', 'flows', 'bots', 'rpa', 'pages'].map(value);
@@ -331,31 +395,55 @@ export const OverviewView: React.FC<IOverviewProps> = props => {
 
       {/* ---------- Verlauf + Handlungsbedarf ---------- */}
       <div className={styles.ovRow}>
-        <Card className={styles.ovWide} title="Neu erstellt pro Monat" subtitle="Apps und Flows der letzten 12 Monate" icon="AreaChart">
+        <Card className={styles.ovWide} title="Neu erstellt pro Monat" subtitle="Neue Ressourcen der letzten 12 Monate – Reihen per Klick ein- und ausblenden" icon="AreaChart">
           {trend.status === 'loading' && <Skeleton rows={5} height={18} />}
           {trend.status === 'error' && <Failed text={trend.error} />}
-          {trend.status === 'ready' && trend.data && (
-            <>
-              <div className={styles.chartLegend}>
-                <span><span className={styles.legendKey} style={{ background: 'var(--coe-series-1)' }} />Apps</span>
-                <span><span className={styles.legendKey} style={{ background: 'var(--coe-series-2)' }} />Flows</span>
-                <span><span className={styles.legendDash} />laufender Monat</span>
-                <span className={styles.chartLegendNote}>
-                  12 Monate: {formatNumber(complete(trend.data.apps)!.reduce((a, b) => a + b, 0))} Apps · {formatNumber(complete(trend.data.flows)!.reduce((a, b) => a + b, 0))} Flows
-                </span>
-              </div>
-              <TrendChart
-                height={300}
-                partialLast={true}
-                labels={months.map(m => m.short)}
-                longLabels={months.map((m, i) => (i === months.length - 1 ? `${m.long} (bis heute)` : m.long))}
-                series={[
-                  { key: 'apps', label: 'Apps', color: 'var(--coe-series-1)', values: trend.data.apps },
-                  { key: 'flows', label: 'Flows', color: 'var(--coe-series-2)', values: trend.data.flows }
-                ]}
-              />
-            </>
-          )}
+          {trend.status === 'ready' && trend.data && (() => {
+            const active = TREND_SERIES.filter(s => shown.indexOf(s.key) >= 0 && !!seriesValues(s.key));
+            const pending = TREND_SERIES.filter(s => shown.indexOf(s.key) >= 0 && seriesState(s.key) === 'loading');
+            return (
+              <>
+                <div className={styles.trendChips} role="group" aria-label="Datenreihen">
+                  {TREND_SERIES.map(s => {
+                    const on = shown.indexOf(s.key) >= 0;
+                    const vals = seriesValues(s.key);
+                    const st = seriesState(s.key);
+                    const sum = vals ? complete(vals)!.reduce((a, b) => a + b, 0) : undefined;
+                    const usedCreated = s.key !== 'makers' && extra[s.key] && extra[s.key].data && extra[s.key].data!.field === 'createdon';
+                    return (
+                      <button
+                        key={s.key}
+                        type="button"
+                        className={`${styles.trendChip} ${on ? styles.trendChipOn : ''}`}
+                        aria-pressed={on}
+                        title={on && shown.length === 1 ? 'Mindestens eine Reihe bleibt eingeblendet'
+                          : `${s.label}${s.note ? ` (${s.note})` : ''}${usedCreated ? ' – Datum: erstmals im CoE erfasst' : ''}`}
+                        onClick={() => toggleSeries(s.key)}
+                      >
+                        <span className={styles.legendKey} style={{ background: on ? s.color : 'var(--coe-border)' }} />
+                        {s.label}
+                        {on && st === 'loading' && <span className={styles.trendChipSum}>…</span>}
+                        {on && st === 'error' && <span className={styles.trendChipSum}>nicht verfügbar</span>}
+                        {on && sum !== undefined && <span className={styles.trendChipSum}>{formatNumber(sum)}</span>}
+                      </button>
+                    );
+                  })}
+                  <span className={styles.chartLegendNote}><span className={styles.legendDash} /> laufender Monat · Zahl = 12 Monate</span>
+                </div>
+                {active.length > 0 && (
+                  <TrendChart
+                    height={300}
+                    partialLast={true}
+                    areas={active.length <= 2}
+                    labels={months.map(m => m.short)}
+                    longLabels={months.map((m, i) => (i === months.length - 1 ? `${m.long} (bis heute)` : m.long))}
+                    series={active.map(s => ({ key: s.key, label: s.label, color: s.color, values: seriesValues(s.key)! }))}
+                  />
+                )}
+                {active.length === 0 && pending.length > 0 && <Skeleton rows={5} height={18} />}
+              </>
+            );
+          })()}
         </Card>
 
         <Card title="Handlungsbedarf" subtitle="Governance auf einen Blick" icon="ShieldAlert"

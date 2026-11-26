@@ -17,3 +17,12 @@ html, body { margin: 0; padding: 0; background: var(--page-bg); font-family: "Se
 .pageDark .section { background: #1b1a19; }
 .paneNote { color: #616161; font-size: 13px; margin: 4px 0 8px; }
 @media (max-width: 600px) { .section { padding: 12px 8px 32px; } .previewText { display: none; } }
+
+/* Nachbildung der SharePoint-App-Leiste (nur Vorschau) */
+.fakeAppBar {
+  padding: 6px 16px;
+  font-size: 12px;
+  color: #444;
+  background: #e8f4f8;
+  border-bottom: 1px solid #c8e0e8;
+}

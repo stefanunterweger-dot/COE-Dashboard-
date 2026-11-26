@@ -8,6 +8,8 @@ export interface ISettingsValues {
   environmentUrl: string;
   showOverview: boolean;
   showKpis: boolean;
+  /** SharePoint-App-Leiste links ausblenden */
+  hideAppBar: boolean;
   density: 'comfortable' | 'compact';
   pageSize: number;
   maxRecords: number;
@@ -18,6 +20,7 @@ export interface ISettingsValues {
   showSecurity: boolean;
   showCopilotCredits: boolean;
   showPremium2027: boolean;
+  showUserLicenses: boolean;
   pipelinesHostUrl: string;
   notifyAutoSend: boolean;
   notifyTone: 'sie' | 'du';

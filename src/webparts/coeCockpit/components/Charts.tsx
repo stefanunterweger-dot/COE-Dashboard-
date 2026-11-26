@@ -101,7 +101,9 @@ export const TrendChart: React.FC<{
   series: ITrendSeries[]; labels: string[]; longLabels: string[]; height?: number;
   /** Letzter Punkt ist ein laufender (unvollständiger) Zeitraum – wird gestrichelt gezeichnet. */
   partialLast?: boolean;
-}> = ({ series, labels, longLabels, height = 240, partialLast }) => {
+  /** Flächen unter den Linien (bei vielen Reihen besser aus) */
+  areas?: boolean;
+}> = ({ series, labels, longLabels, height = 240, partialLast, areas = true }) => {
   const [ref, width] = useWidth(640);
   const [hover, setHover] = React.useState<number | undefined>(undefined);
   const pad = { top: 16, right: 56, bottom: 28, left: 44 };
@@ -141,11 +143,11 @@ export const TrendChart: React.FC<{
         })}
         {series.map(s => (
           <g key={s.key}>
-            <path d={`${path(s.values.slice(0, solidEnd + 1))} L${x(solidEnd)},${y(0)} L${x(0)},${y(0)} Z`} fill={s.color} className={styles.chartArea} />
+            {areas && <path d={`${path(s.values.slice(0, solidEnd + 1))} L${x(solidEnd)},${y(0)} L${x(0)},${y(0)} Z`} fill={s.color} className={styles.chartArea} />}
             <path d={path(s.values.slice(0, solidEnd + 1))} stroke={s.color} className={styles.chartLine} />
             {solidEnd < n - 1 && <path d={path(s.values, solidEnd)} stroke={s.color} className={`${styles.chartLine} ${styles.chartLinePartial}`} />}
             <circle cx={x(n - 1)} cy={y(s.values[n - 1])} r={4.5} fill={s.color} className={styles.chartDot} />
-            <text x={x(n - 1) + 10} y={y(s.values[n - 1]) + 4} className={styles.chartEndLabel}>{compactNumber(s.values[n - 1])}</text>
+            {series.length <= 3 && <text x={x(n - 1) + 10} y={y(s.values[n - 1]) + 4} className={styles.chartEndLabel}>{compactNumber(s.values[n - 1])}</text>}
           </g>
         ))}
         {hover !== undefined && (

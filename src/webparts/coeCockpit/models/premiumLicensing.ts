@@ -39,7 +39,14 @@ const SKU_NAMES: { [sku: string]: string } = {
   STANDARDPACK: 'Office 365 E1', DESKLESSPACK: 'Office 365 F3', SPB: 'Microsoft 365 Business Premium', O365_BUSINESS_PREMIUM: 'Microsoft 365 Business Standard',
   POWER_BI_STANDARD: 'Power BI (kostenlos)', POWER_BI_PRO: 'Power BI Pro', DYN365_TEAM_MEMBERS: 'Dynamics 365 Team Members',
   DYN365_ENTERPRISE_SALES: 'Dynamics 365 Sales Enterprise', DYN365_ENTERPRISE_CUSTOMER_SERVICE: 'Dynamics 365 Customer Service Enterprise',
-  DYN365_ENTERPRISE_PLAN1: 'Dynamics 365 Customer Engagement Plan', Microsoft_Teams_Premium: 'Teams Premium', TEAMS_EXPLORATORY: 'Teams Exploratory'
+  DYN365_ENTERPRISE_PLAN1: 'Dynamics 365 Customer Engagement Plan', Microsoft_Teams_Premium: 'Teams Premium', TEAMS_EXPLORATORY: 'Teams Exploratory',
+  Microsoft_365_Copilot: 'Microsoft 365 Copilot', Microsoft_Copilot_Studio_Viral_Trial: 'Copilot Studio (Testversion)',
+  POWERAUTOMATE_UNATTENDED_RPA: 'Power Automate Process', POWER_BI_PREMIUM_PER_USER: 'Power BI Premium pro Benutzer',
+  EMS: 'Enterprise Mobility + Security E3', EMSPREMIUM: 'Enterprise Mobility + Security E5', AAD_PREMIUM: 'Microsoft Entra ID P1', AAD_PREMIUM_P2: 'Microsoft Entra ID P2',
+  VISIOCLIENT: 'Visio Plan 2', PROJECTPROFESSIONAL: 'Project Plan 3', PROJECTPREMIUM: 'Project Plan 5', SPE_F3: 'Microsoft 365 F3',
+  O365_BUSINESS_ESSENTIALS: 'Microsoft 365 Business Basic', SMB_BUSINESS_PREMIUM: 'Microsoft 365 Business Premium', FLOW_FREE_ALL: 'Power Automate Free',
+  CCIBOTS_PRIVPREV_VIRAL: 'Copilot Studio (Testversion)', DYN365_ENTERPRISE_P1_IW: 'Dynamics 365 P1 (Testversion)', MCOEV: 'Teams Phone',
+  WINDOWS_STORE: 'Windows Store for Business', RIGHTSMANAGEMENT_ADHOC: 'Rights Management Adhoc', STREAM: 'Microsoft Stream (Testversion)'
 };
 
 export function skuName(sku: string): string {

@@ -45,6 +45,26 @@ export function monthlyCounts(service: DataverseService, table: ITableConfig, da
     .then(c => c.value)));
 }
 
+/**
+ * Wie monthlyCounts, aber mit mehreren möglichen Datumsfeldern (CoE-Versionen unterscheiden sich): das erste Feld,
+ * das Dataverse kennt, wird verwendet. Liefert auch das verwendete Feld (z. B. „createdon“ = erstmals im CoE erfasst).
+ */
+export async function monthlyCountsAny(service: DataverseService, table: ITableConfig, fields: string[], months: IMonth[]): Promise<{ values: number[]; field: string }> {
+  let last: unknown;
+  for (const field of fields) {
+    try {
+      return { values: await monthlyCounts(service, table, field, months), field };
+    } catch (e) {
+      last = e;
+      const msg = e instanceof Error ? e.message : String(e);
+      if (!/property|attribute|could not find|not found/i.test(msg)) {
+        throw e;
+      }
+    }
+  }
+  throw last || new Error('Kein Datumsfeld gefunden.');
+}
+
 export function count(service: DataverseService, table: ITableConfig, extra?: string): Promise<ICountResult> {
   return service.getCountWithBase(table, extra);
 }

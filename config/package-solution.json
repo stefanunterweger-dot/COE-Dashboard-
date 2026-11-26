@@ -25,6 +25,10 @@
         "scope": "GroupMember.Read.All"
       },
       {
+        "resource": "Microsoft Graph",
+        "scope": "Organization.Read.All"
+      },
+      {
         "resource": "Power Platform API",
         "scope": "Licensing.Allocations.Read"
       },

@@ -54,6 +54,8 @@ export interface ICoeCockpitWebPartProps {
   showCopilotCredits: boolean;
   /** Auswertung „Betroffen ab Februar 2027“ (Premium-Lizenz in Managed Environments). */
   showPremium2027: boolean;
+  showUserLicenses: boolean;
+  hideAppBar: boolean;
   /** Dataverse-URL des Pipelines-Host-Environments (leer = ALM-Pipelines ausblenden). */
   pipelinesHostUrl: string;
   /** E-Mail an Maker: Anrede „sie“ oder „du“. */
@@ -134,6 +136,8 @@ export default class CoeCockpitWebPart extends BaseClientSideWebPart<ICoeCockpit
       showSecurity: this.properties.showSecurity !== false,
       showCopilotCredits: this.properties.showCopilotCredits !== false,
       showPremium2027: this.properties.showPremium2027 !== false,
+      showUserLicenses: this.properties.showUserLicenses !== false,
+      hideAppBar: this.properties.hideAppBar !== false,
       pipelinesHostUrl: normalizeDataverseUrl(this.properties.pipelinesHostUrl) || '',
       notify: {
         formal: this.properties.notifyTone !== 'du',
@@ -207,6 +211,8 @@ export default class CoeCockpitWebPart extends BaseClientSideWebPart<ICoeCockpit
         showSecurity: p.showSecurity !== false,
         showCopilotCredits: p.showCopilotCredits !== false,
         showPremium2027: p.showPremium2027 !== false,
+        showUserLicenses: p.showUserLicenses !== false,
+        hideAppBar: p.hideAppBar !== false,
         pipelinesHostUrl: normalizeDataverseUrl(p.pipelinesHostUrl) || '',
         notifyAutoSend: p.notifyAutoSend !== false,
         notifyTone: p.notifyTone === 'du' ? 'du' : 'sie',
@@ -661,6 +667,10 @@ export default class CoeCockpitWebPart extends BaseClientSideWebPart<ICoeCockpit
                   label: 'Auswertung „Betroffen ab Februar 2027“ anzeigen',
                   checked: this.properties.showPremium2027 !== false
                 }),
+                PropertyPaneToggle('showUserLicenses', {
+                  label: 'Ansicht „Lizenzen je Benutzer“ anzeigen (live, Microsoft Graph)',
+                  checked: this.properties.showUserLicenses !== false
+                }),
                 PropertyPaneDropdown('pipelinesHostUrl', {
                   label: 'Pipelines-Host-Environment',
                   options: this._pipelineHostOptions(),
@@ -695,6 +705,7 @@ export default class CoeCockpitWebPart extends BaseClientSideWebPart<ICoeCockpit
                 PropertyPaneTextField('subtitle', { label: strings.SubtitleLabel }),
                 PropertyPaneToggle('showOverview', { label: 'Übersicht (Dashboard) als Startseite anzeigen', checked: this.properties.showOverview !== false }),
                 PropertyPaneToggle('showKpis', { label: strings.ShowKpisLabel }),
+                PropertyPaneToggle('hideAppBar', { label: 'SharePoint-App-Leiste links ausblenden', checked: this.properties.hideAppBar !== false }),
                 PropertyPaneDropdown('density', {
                   label: strings.DensityLabel,
                   options: [

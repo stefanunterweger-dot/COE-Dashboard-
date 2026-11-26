@@ -39,6 +39,8 @@ import { IUsageTarget, UsageNotify, usageLogKey } from './UsageNotify';
 import { usageSupported } from '../models/usageMail';
 import { IWebPartSettings } from '../models/settings';
 import { BILLING_KEY, CREDITS_KEY, GROUP_LICENSING } from '../models/copilotCredits';
+import { USER_LICENSES_KEY } from '../models/userLicenses';
+import { UserLicensesView } from './UserLicensesView';
 import { PowerPlatformApiService, PPAPI_RESOURCE } from '../services/PowerPlatformApiService';
 import { DirectActionService } from '../services/DirectActionService';
 import { checkAdminRole, IRoleStatus } from '../services/RoleCheckService';
@@ -94,6 +96,10 @@ export interface ICoeCockpitProps {
   showCopilotCredits: boolean;
   /** Auswertung „Betroffen ab Februar 2027“ (Premium-Lizenz in Managed Environments) anzeigen. */
   showPremium2027?: boolean;
+  /** Ansicht „Lizenzen je Benutzer“ (live aus Microsoft Graph, Standard: an) */
+  showUserLicenses?: boolean;
+  /** SharePoint-App-Leiste links auf dieser Seite ausblenden (Standard: an) */
+  hideAppBar?: boolean;
   /** Dataverse-URL des Pipelines-Host-Environments (leer = ALM-Pipelines ausblenden). */
   pipelinesHostUrl: string;
   /** Vorlage für die E-Mail an die Maker betroffener Developer-Environments. */
@@ -493,6 +499,27 @@ const CoeCockpit: React.FC<ICoeCockpitProps> = props => {
   const activeLoadKey = activeTable ? keyFor(activeTable) : '';
 
   React.useEffect(() => { setPageSize(props.pageSize || 25); }, [props.pageSize]);
+  // SharePoint-App-Leiste (links: Discover/Publish/Build/OneDrive bzw. Startseite/Meine Websites …) auf dieser Seite ausblenden.
+  // Microsoft bietet dafür keinen Schalter mehr – daher per CSS, nur solange das Cockpit auf der Seite ist.
+  React.useEffect(() => {
+    if (props.hideAppBar === false) {
+      return;
+    }
+    const id = 'coe-cockpit-hide-appbar';
+    let style = document.getElementById(id) as HTMLStyleElement | null;
+    if (!style) {
+      style = document.createElement('style');
+      style.id = id;
+      style.textContent = '#sp-appBar, #sp-appBar-container, [data-automation-id="sp-appBar"], [data-automationid="sp-appBar"] { display: none !important; }';
+      document.head.appendChild(style);
+    }
+    return () => {
+      const el = document.getElementById(id);
+      if (el && el.parentNode) {
+        el.parentNode.removeChild(el);
+      }
+    };
+  }, [props.hideAppBar]);
   React.useEffect(() => { setCompact(props.density === 'compact'); }, [props.density]);
   React.useEffect(() => { if (props.editorRequest > 0) { setEditorOpen(true); } }, [props.editorRequest]);
   React.useEffect(() => { if ((props.settingsRequest || 0) > 0 && props.settings) { setSettingsOpen(true); } }, [props.settingsRequest]);
@@ -501,7 +528,7 @@ const CoeCockpit: React.FC<ICoeCockpitProps> = props => {
     const waitingForDefault = (props.showDefaultEnvironment && isDefaultEnvKey(activeKey)) || (props.showOverview && activeKey === OVERVIEW_KEY)
       || (props.showSecurity && activeKey === SECURITY_KEY) || (props.showActions && activeKey === ACTION_LOG_KEY)
       || (props.showCopilotCredits && (activeKey === CREDITS_KEY || activeKey === BILLING_KEY))
-      || (props.showPremium2027 !== false && activeKey === PREMIUM_KEY);
+      || (props.showPremium2027 !== false && activeKey === PREMIUM_KEY) || (props.showUserLicenses !== false && activeKey === USER_LICENSES_KEY);
     if (!activeTable && tables.length && !waitingForDefault) {
       setActiveKey(tables[0].key);
     }
@@ -1214,6 +1241,7 @@ const CoeCockpit: React.FC<ICoeCockpitProps> = props => {
   const inActionLog = props.showActions && activeKey === ACTION_LOG_KEY;
   const inCredits = props.showCopilotCredits && (activeKey === CREDITS_KEY || activeKey === BILLING_KEY);
   const inPremium = props.showPremium2027 !== false && activeKey === PREMIUM_KEY;
+  const inUserLicenses = props.showUserLicenses !== false && activeKey === USER_LICENSES_KEY;
   const devState = data[DEV_ENV_KEY];
   const devAffected = devState && devState.status === 'ready'
     ? {
@@ -1223,7 +1251,9 @@ const CoeCockpit: React.FC<ICoeCockpitProps> = props => {
     }
     : undefined;
 
-  const renderMain = (): JSX.Element => (inPremium && service
+  const renderMain = (): JSX.Element => (inUserLicenses
+    ? <UserLicensesView graphFactory={props.msGraphClientFactory} reloadKey={String(reloadTick)} />
+    : inPremium && service
     ? (
       <PremiumView
         service={service}
@@ -1747,6 +1777,9 @@ const CoeCockpit: React.FC<ICoeCockpitProps> = props => {
     navItems.push({ key: CREDITS_KEY, title: 'Copilot-Credits', icon: 'AllCurrency', group: GROUP_LICENSING, active: activeKey === CREDITS_KEY, onClick: () => setActiveKey(CREDITS_KEY) });
     navItems.push({ key: BILLING_KEY, title: 'Abrechnungspläne', icon: 'Bank', group: GROUP_LICENSING, active: activeKey === BILLING_KEY, onClick: () => setActiveKey(BILLING_KEY) });
   }
+  if (props.showUserLicenses !== false) {
+    navItems.push({ key: USER_LICENSES_KEY, title: 'Lizenzen je Benutzer', icon: 'ContactCard', group: GROUP_LICENSING, active: !!inUserLicenses, onClick: () => setActiveKey(USER_LICENSES_KEY) });
+  }
   if (props.showActions && actionSetup && actionSetup.listExists && isGroupMember) {
     navItems.push({ key: ACTION_LOG_KEY, title: 'Aktionsprotokoll', icon: 'History', group: GROUP_GOVERNANCE, active: !!inActionLog, onClick: () => setActiveKey(ACTION_LOG_KEY) });
   }
@@ -1850,7 +1883,7 @@ const CoeCockpit: React.FC<ICoeCockpitProps> = props => {
           <>
             {renderAccessNotice()}
 
-            {showKpis && !inOverview && !inSecurity && !inCredits && !inPremium && <KpiStrip tables={tables} kpis={kpis} activeKey={activeKey} onSelect={setActiveKey} />}
+            {showKpis && !inOverview && !inSecurity && !inCredits && !inPremium && !inUserLicenses && <KpiStrip tables={tables} kpis={kpis} activeKey={activeKey} onSelect={setActiveKey} />}
 
             {navItems.length > 0 && !useSideNav && (
               <nav className={styles.tabs} role="tablist" aria-label="Tabellen">

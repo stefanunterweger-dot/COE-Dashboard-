@@ -9,6 +9,7 @@ import { seedActions, seedNotifyEntry } from './mock/sharepoint';
 import { ACTION_TIMING } from '../src/webparts/coeCockpit/components/ActionDialog';
 import { resetCreditsCache } from '../src/webparts/coeCockpit/components/CopilotCreditsView';
 import { resetPremiumCache } from '../src/webparts/coeCockpit/components/PremiumView';
+import { resetUserLicenseCache } from '../src/webparts/coeCockpit/models/userLicenses';
 import { IWebPartSettings } from '../src/webparts/coeCockpit/models/settings';
 import { IMailTemplateOverrides } from '../src/webparts/coeCockpit/models/mailTemplates';
 import { ActionService, IActionSetupState } from '../src/webparts/coeCockpit/services/ActionService';
@@ -114,6 +115,8 @@ const App: React.FC = () => {
     showActions: true,
     actionsGroup: 'CoE Cockpit Admins',
     deleteRequiresStop: true,
+    showUserLicenses: true,
+    hideAppBar: true,
     mailTemplates: {} as IMailTemplateOverrides
   });
   const notify = React.useMemo(() => ({
@@ -126,7 +129,7 @@ const App: React.FC = () => {
   const [notMember, setNotMember] = React.useState<boolean>(false);
   const [noUserRead, setNoUserRead] = React.useState<boolean>(false);
   (window as unknown as { __coeDenyUserRead?: boolean }).__coeDenyUserRead = noUserRead;
-  React.useMemo(() => resetPremiumCache(), [noUserRead, noAdmin]);
+  React.useMemo(() => { resetPremiumCache(); resetUserLicenseCache(); }, [noUserRead, noAdmin]);
   (window as unknown as { __spNotMember?: boolean }).__spNotMember = notMember;
   (window as unknown as { __coePpApiDeny?: string }).__coePpApiDeny = noPpApi ? 'consent' : noAdmin ? 'forbidden' : '';
   React.useMemo(() => resetCreditsCache(), [noAdmin, noPpApi]);
@@ -180,6 +183,8 @@ const App: React.FC = () => {
 
   return (
     <div className={`page ${dark ? 'pageDark' : ''}`}>
+      {/* Nachbildung der SharePoint-App-Leiste (wird vom Cockpit ausgeblendet, wenn „hideAppBar“ an ist) */}
+      <div id="sp-appBar" className="fakeAppBar">Discover · Publish · Build · OneDrive</div>
       <div className="previewBar">
         <span className="previewBadge">Vorschau</span>
         <span className="previewText">Beispieldaten · simulierte Dataverse-API · echter Webpart-Code</span>
@@ -222,6 +227,8 @@ const App: React.FC = () => {
           devEnvManagedField={p.devEnvManagedField}
           showSecurity={p.showSecurity}
           showCopilotCredits={p.showCopilotCredits}
+          showUserLicenses={p.showUserLicenses}
+          hideAppBar={p.hideAppBar}
           pipelinesHostUrl={p.pipelinesHostUrl}
           notify={notify}
           notifyAutoSend={p.notifyAutoSend}

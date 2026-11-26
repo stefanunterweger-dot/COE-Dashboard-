@@ -8,8 +8,9 @@
 
     -Dataverse         Dynamics CRM „user_impersonation“ – CoE-Daten lesen (Pflicht für das Cockpit)
     -MailSend          Microsoft Graph „Mail.Send“ – automatischer E-Mail-Versand an Maker (optional)
-    -Licenses          Microsoft Graph „User.Read.All“ und „GroupMember.Read.All“ – Lizenzprüfung in
-                       „Betroffen ab Februar 2027“ (Lizenzen der Berechtigten, Mitglieder freigegebener Gruppen)
+    -Licenses          Microsoft Graph „User.Read.All“, „GroupMember.Read.All“ und „Organization.Read.All“ – Lizenzprüfung in
+                       „Betroffen ab Februar 2027“ (Lizenzen der Berechtigten, Mitglieder freigegebener Gruppen) und
+                       „Lizenzen je Benutzer“ (gekaufte/freie Lizenzen aus „subscribedSkus“)
     -PowerPlatformApi  Power Platform API „Licensing.Allocations.Read“, „Licensing.BillingPolicies.Read“,
                        „EnvironmentManagement.Environments.Read“ – Ansichten „Copilot-Credits“ und „Abrechnungspläne“
     -Actions           Aktionen direkt im Webpart (ohne Flow, im Namen der angemeldeten Person):
@@ -104,7 +105,7 @@ if ($MailSend) {
   Grant-Scopes $graph @('Mail.Send')
 }
 if ($Licenses) {
-  Grant-Scopes $graph @('User.Read.All', 'GroupMember.Read.All')
+  Grant-Scopes $graph @('User.Read.All', 'GroupMember.Read.All', 'Organization.Read.All')
 }
 
 if ($PowerPlatformApi -or $Actions) {

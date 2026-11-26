@@ -93,7 +93,12 @@ const FILTERS: { key: CreditFilter; label: string; test: (r: ICreditRow) => bool
 
 export interface IColumn<T> { key: string; label: string; numeric?: boolean; sort: (r: T) => string | number; render: (r: T) => React.ReactNode; title?: string }
 
-export function SortTable<T>(props: { columns: IColumn<T>[]; rows: T[]; rowKey: (r: T) => string; initial: { key: string; desc: boolean }; empty: string; expanded?: (r: T) => React.ReactNode; onRow?: (r: T) => void }): JSX.Element {
+export function SortTable<T>(props: {
+  columns: IColumn<T>[]; rows: T[]; rowKey: (r: T) => string; initial: { key: string; desc: boolean }; empty: string;
+  expanded?: (r: T) => React.ReactNode; onRow?: (r: T) => void; rowClass?: (r: T) => string | undefined;
+  /** Nur die ersten n Zeilen (nach dem Sortieren) anzeigen – für sehr lange Listen */
+  limit?: number;
+}): JSX.Element {
   const [sort, setSort] = React.useState(props.initial);
   const col = props.columns.filter(c => c.key === sort.key)[0] || props.columns[0];
   const rows = props.rows.slice().sort((a, b) => {
@@ -130,11 +135,12 @@ export function SortTable<T>(props: { columns: IColumn<T>[]; rows: T[]; rowKey: 
           {rows.length === 0 && (
             <tr><td className={styles.td} colSpan={props.columns.length}><span className={styles.muted}>{props.empty}</span></td></tr>
           )}
-          {rows.map(r => {
+          {(props.limit ? rows.slice(0, props.limit) : rows).map(r => {
             const extra = props.expanded ? props.expanded(r) : undefined;
+            const cls = [props.onRow ? styles.ccRowClickable : '', props.rowClass ? props.rowClass(r) || '' : ''].filter(x => !!x).join(' ');
             return (
               <React.Fragment key={props.rowKey(r)}>
-                <tr className={props.onRow ? styles.ccRowClickable : undefined} onClick={props.onRow ? () => props.onRow!(r) : undefined}>
+                <tr className={cls || undefined} onClick={props.onRow ? () => props.onRow!(r) : undefined}>
                   {props.columns.map(c => <td key={c.key} className={`${styles.td} ${c.numeric ? styles.ccNum : ''}`}>{c.render(r)}</td>)}
                 </tr>
                 {extra && <tr className={styles.ccExpanded}><td className={styles.td} colSpan={props.columns.length}>{extra}</td></tr>}

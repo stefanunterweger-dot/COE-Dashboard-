@@ -35,6 +35,8 @@
         "showSecurity": true,
         "showCopilotCredits": true,
         "showPremium2027": true,
+        "showUserLicenses": true,
+        "hideAppBar": true,
         "mailTemplates": {},
         "pipelinesHostUrl": "",
         "notifyTone": "sie",
