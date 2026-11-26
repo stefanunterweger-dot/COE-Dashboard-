@@ -113,8 +113,49 @@ zurück; das Cockpit zeigt den Fortschritt live und alle Aufträge im **Aktionsp
 **Einrichtung (Webpart-Eigenschaften → „Aktionen für Apps und Flows“):**
 1. **SharePoint-Gruppe** wählen oder mit „Gruppe anlegen“ erstellen (Standard: **„CoE Cockpit Admins“**). Nur Mitglieder sehen die Aktionen.
 2. **„Aktionsliste einrichten“**: legt die Liste an und gibt ihr eigene Berechtigungen – nur die Gruppe (Bearbeiten) und die Websitebesitzer (Vollzugriff).
-3. Flow „CoE Cockpit | Aktion ausführen“ im CoE-Environment importieren; dort denselben Gruppennamen eintragen. Der Flow prüft vor jeder
-   Ausführung, ob die anfragende Person Mitglied der Gruppe ist.
+3. Flow „CoE Cockpit | Aktion ausführen“ im CoE-Environment importieren (siehe nächster Abschnitt); dort denselben Gruppennamen eintragen.
+   Der Flow prüft vor jeder Ausführung, ob die anfragende Person Mitglied der Gruppe ist.
+
+### Flow „CoE Cockpit | Aktion ausführen“
+
+Fertige, nicht verwaltete Lösung: [`flow/CoECockpitAktionen_1_0_0_0.zip`](flow/CoECockpitAktionen_1_0_0_0.zip)
+(erzeugt mit [`flow/build-flow-solution.py`](flow/build-flow-solution.py); lesbare Definition: `flow/CoECockpit-Aktionausfuehren.definition.json`).
+
+**Ablauf:** Neuer Eintrag in „CoE Cockpit Aktionen“ → Status „In Arbeit“ → prüfen, ob „Erstellt von“ Mitglied der SharePoint-Gruppe ist
+(sonst „Abgelehnt“) → Aktion ausführen → CoE-Inventar nachziehen → Status „Erledigt“, „Fehler“ oder „Abgelehnt“ mit Ergebnistext zurückschreiben.
+
+| Aktion | Connector-Aktion | CoE-Inventar danach |
+|---|---|---|
+| In Quarantäne / Aus Quarantäne | Power Apps for Admins – `Set-AppQuarantineState` | „Quarantine App“ + Datum |
+| Löschen (App) | prüft „Is Solution App“ = Nein, dann `Remove-AdminApp` | „App Deleted“ + Datum |
+| Löschen (Flow) | prüft „Is Solution Flow“ = Nein, dann Power Automate for Admins – `Remove-AdminFlow` | „Flow Deleted“ + Datum |
+| Besitzer ändern (App) | `Set-AdminAppOwner` (bisheriger Besitzer wird Mitbesitzer) | „App Owner“ |
+| Besitzer ändern (Flow) | `Edit-AdminFlowOwnerRole` (als Mitbesitzer – den Ersteller kann Power Automate nicht ändern) | „Derived Owner“ |
+| Freigabe hinzufügen / entfernen | `Edit-AdminAppRoleAssignment` bzw. `Edit-AdminFlowOwnerRole` | – (nächster CoE-Sync) |
+| Flow aus / ein | Power Automate Management – `StopFlow` / `StartFlow` | „Flow State“ |
+| Auf Managed umstellen | Power Platform for Admins V2 – `EnableManagedEnvironment` | – (nächster CoE-Sync) |
+| Environment deaktivieren / aktivieren | Power Platform for Admins V2 – `DisableEnvironment` / `EnableEnvironment` | – (nächster CoE-Sync) |
+
+Zielpersonen gibt das Cockpit als Entra-Objekt-ID oder E-Mail-Adresse mit; E-Mail-Adressen löst der Flow über Office 365 Users auf
+(Gruppen bitte mit Objekt-ID).
+
+**Import (im CoE-Environment):**
+1. make.powerapps.com → CoE-Environment → *Lösungen* → *Importieren* → ZIP auswählen.
+2. **Verbindungen** mit einem **Admin-Dienstkonto** (Power Platform Administrator, Lizenz für Premium-Connectors) anlegen bzw. auswählen:
+   SharePoint, Power Apps for Admins, Power Automate for Admins, Power Automate Management, Power Platform for Admins V2,
+   Microsoft Dataverse, Office 365 Users.
+3. **Umgebungsvariablen:** SharePoint-Website des Cockpits (z. B. `https://contoso.sharepoint.com/sites/powerplatform`),
+   Name der Aktionsliste (Standard „CoE Cockpit Aktionen“ – alternativ die Listen-ID), SharePoint-Gruppe (Standard „CoE Cockpit Admins“).
+4. Dem Dienstkonto auf der Liste **„CoE Cockpit Aktionen“** die Berechtigung **Bearbeiten** geben (die Liste hat eigene Berechtigungen).
+5. Flow einschalten (falls er nach dem Import aus ist) und im Cockpit eine harmlose Aktion testen, z. B. „In Quarantäne stellen“ und wieder „Aus Quarantäne holen“.
+
+**Hinweise:**
+- Mitgliedschaft wird direkt in der SharePoint-Gruppe geprüft; Personen, die nur über eine darin enthaltene Entra-Gruppe Mitglied sind, werden abgelehnt.
+- Der Connector „Power Platform for Admins V2“ ist bei Microsoft noch in Vorschau. Meldet der Flow-Designer bei einer der drei
+  Environment-Aktionen einen Fehler, die Aktion im Designer neu hinzufügen („Enables managed governance for the specified environment“,
+  „Disables the specified environment“ mit Grund „UserRequested“, „Enables the specified environment“) und Environment-ID
+  `triggerOutputs()?['body/EnvironmentId']` eintragen.
+- Die Flow-Definition konnte hier nicht gegen einen echten Tenant getestet werden – bitte zuerst mit einer Test-App prüfen.
 
 ## Copilot-Credits und Abrechnungspläne (live)
 
@@ -249,5 +290,4 @@ src/webparts/coeCockpit/
 
 ## Nächste Ausbaustufe
 
-- Flow „CoE Cockpit | Aktion ausführen“ als importierbare Lösung (führt die Aufträge aus der Liste „CoE Cockpit Aktionen“ aus).
 - Copilot-Credits zuweisen direkt aus dem Cockpit (Power Platform API `licensing/allocationsV2`, Rolle Power Platform Administrator).
