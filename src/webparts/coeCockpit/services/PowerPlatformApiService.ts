@@ -16,11 +16,7 @@ export const PPAPI_VERSIONS = {
   billing: ['2022-03-01-preview', '2024-10-01'],
   environments: ['2022-03-01-preview', '2024-10-01'],
   /** Environment-Aktionen (Managed, Deaktivieren, Aktivieren) */
-  environmentActions: ['2024-10-01', '2022-03-01-preview'],
-  /** Inventar (Resource Query) */
-  inventory: ['2024-10-01'],
-  /** Power Automate (Flow-Ausführungen) */
-  powerautomate: ['2022-03-01-preview', '2024-10-01']
+  environmentActions: ['2024-10-01', '2022-03-01-preview']
 };
 
 export const PIM_URL = 'https://portal.azure.com/#view/Microsoft_Azure_PIMCommon/ActivationMenuBlade/~/aadmigratedroles';
@@ -104,8 +100,8 @@ export class PowerPlatformApiService {
     }
   }
 
-  /** GET (bzw. POST mit body) mit Wiederholung bei 429/503. consentHint: Hinweis, wenn dem Token eine Berechtigung fehlt. */
-  private async fetchJson<T>(url: string, body?: unknown, consentHint?: string): Promise<T> {
+  /** GET (bzw. POST mit body) mit Wiederholung bei 429/503. */
+  private async fetchJson<T>(url: string, body?: unknown): Promise<T> {
     for (let attempt = 0; ; attempt++) {
       const res = await this.raw(url, body);
       if (res.ok) {
@@ -124,7 +120,7 @@ export class PowerPlatformApiService {
       const msg = messageOf(text);
       if (res.status === 401 || res.status === 403) {
         if (body !== undefined && isScopeProblem(msg)) {
-          throw new PpApiError('consent', consentHint || PPAPI_WRITE_CONSENT_HINT, res.status, msg);
+          throw new PpApiError('consent', PPAPI_WRITE_CONSENT_HINT, res.status, msg);
         }
         throw new PpApiError('forbidden', PPAPI_FORBIDDEN_HINT, res.status, msg);
       }
@@ -151,16 +147,16 @@ export class PowerPlatformApiService {
    * Schreibender Aufruf (POST) im Namen des angemeldeten Benutzers. Microsoft prüft dabei selbst,
    * ob die Person die nötige Rolle hat (Power Platform Administrator).
    */
-  public post<T>(path: string, body: unknown, versions: string[] = PPAPI_VERSIONS.environmentActions, consentHint?: string): Promise<T> {
-    return this.call<T>(path, versions, body === undefined ? {} : body, consentHint);
+  public post<T>(path: string, body: unknown, versions: string[] = PPAPI_VERSIONS.environmentActions): Promise<T> {
+    return this.call<T>(path, versions, body === undefined ? {} : body);
   }
 
   /** Aufruf mit Fallback auf die nächste api-version. */
-  private async call<T>(path: string, versions: string[], body?: unknown, consentHint?: string): Promise<T> {
+  private async call<T>(path: string, versions: string[], body?: unknown): Promise<T> {
     let last: PpApiError | undefined;
     for (let i = 0; i < versions.length; i++) {
       try {
-        return await this.fetchJson<T>(this.url(path, versions[i]), body, consentHint);
+        return await this.fetchJson<T>(this.url(path, versions[i]), body);
       } catch (e) {
         const err = e as PpApiError;
         const versionProblem = err.kind === 'failed' && err.status === 400 && /api.?version/i.test(err.detail || '');

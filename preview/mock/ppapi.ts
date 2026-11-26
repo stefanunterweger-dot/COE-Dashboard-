@@ -1,7 +1,6 @@
 /* Simulierte Power Platform API (https://api.powerplatform.com) für die Vorschau: Copilot-Credits und Abrechnungspläne. */
 import { COE_HOST, DATABASES } from './data';
 import { IMockResponse } from './odata';
-import { envLiveFields, mockFlowRuns } from './inventory';
 
 interface IWin { __coePpApiDeny?: '' | 'forbidden' | 'consent'; __coePpApiCalls?: string[] }
 const win = window as unknown as IWin;
@@ -159,15 +158,8 @@ function route(url: URL): IMockResponse {
     const plan = d.plans.filter(p => p.id === decodeURIComponent(m![1]))[0];
     return plan ? respond(200, { value: plan.envs.map(e => ({ billingPolicyId: plan.id, environmentId: e })) }) : respond(404, { error: { code: 'NotFound', message: 'Billing policy not found' } });
   }
-  if ((m = path.match(/^\/environmentmanagement\/environments\/([^/]+)$/))) {
-    const e = d.envs.filter(x => x.id === decodeURIComponent(m![1]).toLowerCase())[0];
-    return e ? respond(200, { id: e.id, displayName: e.name, type: e.type, ...envLiveFields(e.id) }) : respond(404, { error: { code: 'EnvironmentNotFound', message: 'Environment not found' } });
-  }
-  if ((m = path.match(/^\/powerautomate\/environments\/([^/]+)\/flowRuns$/))) {
-    return mockFlowRuns(url.searchParams.get('workflowId') || '');
-  }
   if (path === '/environmentmanagement/environments') {
-    const all = d.envs.map(e => ({ id: e.id, displayName: e.name, type: e.type, ...envLiveFields(e.id) }));
+    const all = d.envs.map(e => ({ id: e.id, displayName: e.name, type: e.type }));
     if (url.searchParams.get('$skiptoken') === '2') {
       return respond(200, { value: all.slice(20) });
     }

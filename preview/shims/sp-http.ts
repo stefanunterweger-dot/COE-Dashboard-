@@ -1,7 +1,6 @@
 /* Ersatz für @microsoft/sp-http in der Vorschau: leitet Aufrufe an die simulierte Dataverse-API. */
 import { IMockResponse, mockGet, mockPatch } from '../mock/odata';
 import { adminConsentError, mockAdminCall } from '../mock/adminapi';
-import { mockAdminGet, mockInventoryQuery } from '../mock/inventory';
 import { mockGraphGet, mockGraphPost } from '../mock/graph';
 import { mockSharePoint } from '../mock/sharepoint';
 import { mockPpApiGet, ppApiConsentError } from '../mock/ppapi';
@@ -16,21 +15,9 @@ export class AadHttpClient {
       const consent = ppApiConsentError();
       return consent ? Promise.reject(consent) : mockPpApiGet(url);
     }
-    if (/^https:\/\/api\.(powerapps\.com|flow\.microsoft\.com)\//i.test(url)) {
-      const consent = adminConsentError(this.resource);
-      if (consent) {
-        return Promise.reject(consent);
-      }
-      const res = mockAdminGet(url);
-      return res ? new Promise(r => setTimeout(() => r(res), 200)) : mockAdminCall('GET', url);
-    }
     return mockGet(url, (options && options.headers) || {});
   }
   public post(url: string, _config: unknown, options?: { headers?: { [k: string]: string }; body?: string }): Promise<HttpClientResponse> {
-    if (/^https:\/\/api\.powerplatform\.com\/resourcequery\//i.test(url)) {
-      const consent = ppApiConsentError();
-      return consent ? Promise.reject(consent) : mockInventoryQuery((options && options.body) || '{}');
-    }
     if (/^https:\/\/api\.powerplatform\.com\//i.test(url)) {
       const consent = adminConsentError(this.resource) || ppApiConsentError();
       return consent ? Promise.reject(consent) : mockAdminCall('POST', url, options && options.body);

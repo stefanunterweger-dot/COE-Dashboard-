@@ -39,15 +39,8 @@ import { IUsageTarget, UsageNotify, usageLogKey } from './UsageNotify';
 import { usageSupported } from '../models/usageMail';
 import { IWebPartSettings } from '../models/settings';
 import { BILLING_KEY, CREDITS_KEY, GROUP_LICENSING } from '../models/copilotCredits';
-import { PowerPlatformApiService, PpApiError, PPAPI_RESOURCE } from '../services/PowerPlatformApiService';
+import { PowerPlatformApiService, PPAPI_RESOURCE } from '../services/PowerPlatformApiService';
 import { DirectActionService } from '../services/DirectActionService';
-import { APP_TYPES, FLOW_TYPES, ILiveEnvironment, INV_TYPE, LiveInventoryService, resetLiveCache } from '../services/LiveInventoryService';
-import { areaOf, ILiveAreaState, isInventoryFilter, LIVE_COLUMN, LIVE_FIELD, LIVE_OVERRIDE_FIELDS, LIVE_STATUS, LiveArea, overlay } from '../models/liveData';
-import { LiveDetails } from './LiveDetails';
-import { LiveDiagnostics } from './LiveDiagnostics';
-
-/** Navigation: Seite „Live-Schnittstellen“ (Diagnose) */
-const LIVE_DIAG_KEY = 'live-diagnose';
 import { checkAdminRole, IRoleStatus } from '../services/RoleCheckService';
 import { GROUP_GOVERNANCE } from '../models/defaultTables';
 import { INotifySettings } from '../models/notification';
@@ -101,12 +94,6 @@ export interface ICoeCockpitProps {
   showCopilotCredits: boolean;
   /** Auswertung „Betroffen ab Februar 2027“ (Premium-Lizenz in Managed Environments) anzeigen. */
   showPremium2027?: boolean;
-  /** Live-Abgleich der Listen mit dem Power-Platform-Inventar (Standard: an) */
-  liveInventory?: boolean;
-  /** Abschnitt „Live“ in der Detailansicht (Standard: an) */
-  liveDetails?: boolean;
-  /** Inoffizielle Admin-Schnittstellen für Freigaben/Flow-Status (Standard: an) */
-  liveAdminApis?: boolean;
   /** Dataverse-URL des Pipelines-Host-Environments (leer = ALM-Pipelines ausblenden). */
   pipelinesHostUrl: string;
   /** Vorlage für die E-Mail an die Maker betroffener Developer-Environments. */
@@ -281,15 +268,6 @@ const CoeCockpit: React.FC<ICoeCockpitProps> = props => {
   const [kpis, setKpis] = React.useState<{ [key: string]: IKpiState }>({});
   const [reloadTick, setReloadTick] = React.useState<number>(0);
   const ppApi = React.useMemo(() => new PowerPlatformApiService(props.aadHttpClientFactory), [props.aadHttpClientFactory]);
-  // Live-Daten (Power-Platform-Inventar): ergänzen das CoE, ersetzen es nicht
-  const liveService = React.useMemo(() => new LiveInventoryService(ppApi, props.aadHttpClientFactory), [ppApi, props.aadHttpClientFactory]);
-  const liveOn = props.liveInventory !== false;
-  const liveDetailsOn = props.liveDetails !== false;
-  const [live, setLive] = React.useState<{ [area: string]: ILiveAreaState }>({});
-  const [liveEnvs, setLiveEnvs] = React.useState<Map<string, ILiveEnvironment> | undefined>(undefined);
-  const [knownEnvIds, setKnownEnvIds] = React.useState<Set<string> | undefined>(undefined);
-  const [liveTick, setLiveTick] = React.useState<number>(0);
-  const liveRequested = React.useRef<{ [area: string]: string }>({});
   const [search, setSearch] = React.useState<string>('');
   const [filters, setFilters] = React.useState<{ [field: string]: IColumnFilter }>({});
   const [sort, setSort] = React.useState<ISortConfig | undefined>(undefined);
@@ -310,17 +288,7 @@ const CoeCockpit: React.FC<ICoeCockpitProps> = props => {
     : '';
   const actionExtraPending = !!actionExtraKey && !actionExtra[actionExtraKey];
   /** Datensatz für die Aktionen: Listenzeile + direkt geladene Aktionsfelder. */
-  const actionRecord = (): IRecord | undefined => {
-    if (!panel) {
-      return undefined;
-    }
-    const merged: IRecord = { ...panel.record, ...(actionExtraKey ? actionExtra[actionExtraKey] || {} : {}) };
-    // Live-Stand hat Vorrang vor nachgeladenen CoE-Werten (z. B. Quarantäne)
-    if (panel.record[LIVE_FIELD] && panel.record[LIVE_FIELD] !== LIVE_STATUS.missing) {
-      LIVE_OVERRIDE_FIELDS.forEach(f => { if (f in panel.record) { merged[f] = panel.record[f]; } });
-    }
-    return merged;
-  };
+  const actionRecord = (): IRecord | undefined => (panel ? { ...panel.record, ...(actionExtraKey ? actionExtra[actionExtraKey] || {} : {}) } : undefined);
   const [editorOpen, setEditorOpen] = React.useState<boolean>(false);
   const [settingsOpen, setSettingsOpen] = React.useState<boolean>(false);
   /** „Eigenschaften öffnen“: übersichtliche Webpart-Einstellungen, sonst der SharePoint-Eigenschaftenbereich. */
@@ -377,10 +345,6 @@ const CoeCockpit: React.FC<ICoeCockpitProps> = props => {
   React.useEffect(() => { checkRole(false); }, [checkRole]);
   /** Rolle „Power Platform Administrator“ bzw. „Globaler Administrator“ gerade aktiv? */
   const adminRoleActive = !!roleStatus && roleStatus.state === 'active';
-  /** Inventar lesen dürfen auch „Globaler Leser“ und „Dynamics 365 Administrator“. 'wait' = Prüfung läuft noch. */
-  const liveRoleProblem = !roleStatus ? (roleChecking && !!props.aadTokenProviderFactory ? 'wait' : '')
-    : roleStatus.state === 'active' || roleStatus.roles.some(r => /Globaler Leser|Dynamics 365 Administrator/.test(r)) ? ''
-      : roleStatus.state === 'inactive' ? 'Rolle „Power Platform Administrator“ nicht aktiv' : '';
   /**
    * Admin-Aktionen (Quarantäne, Löschen …) nur für Gruppenmitglieder mit AKTIVER Admin-Rolle, eingerichteter Liste
    * (Aktionsprotokoll) und eingeschalteten Aktionen. Ohne aktive Rolle sind die Schaltflächen ausgeblendet.
@@ -537,7 +501,7 @@ const CoeCockpit: React.FC<ICoeCockpitProps> = props => {
     const waitingForDefault = (props.showDefaultEnvironment && isDefaultEnvKey(activeKey)) || (props.showOverview && activeKey === OVERVIEW_KEY)
       || (props.showSecurity && activeKey === SECURITY_KEY) || (props.showActions && activeKey === ACTION_LOG_KEY)
       || (props.showCopilotCredits && (activeKey === CREDITS_KEY || activeKey === BILLING_KEY))
-      || (props.showPremium2027 !== false && activeKey === PREMIUM_KEY) || activeKey === LIVE_DIAG_KEY;
+      || (props.showPremium2027 !== false && activeKey === PREMIUM_KEY);
     if (!activeTable && tables.length && !waitingForDefault) {
       setActiveKey(tables[0].key);
     }
@@ -768,93 +732,10 @@ const CoeCockpit: React.FC<ICoeCockpitProps> = props => {
   const state: ITableState | undefined = activeTable ? data[activeTable.key] : undefined;
   const rawRecords = state ? state.records : NO_RECORDS;
   const isDevTable = !!activeTable && activeTable.key === DEV_ENV_KEY;
-  const baseRecords = React.useMemo(
+  const records = React.useMemo(
     () => (isDevTable ? rawRecords.map(r => withNotifyInfo(r, notifyLog)) : rawRecords),
     [rawRecords, isDevTable, notifyLog]
   );
-
-  // ---------- Live-Abgleich (Apps, Flows, Environments) ----------
-  const liveArea: LiveArea | undefined = liveOn && activeTable && !activeTable.environmentUrl ? areaOf(activeTable.logicalName) : undefined;
-  React.useEffect(() => {
-    if (!liveArea || liveRoleProblem === 'wait') {
-      return;
-    }
-    const reqKey = `${liveTick}|${liveRoleProblem}`;
-    const areas: LiveArea[] = liveArea === 'environments' ? ['environments'] : [liveArea, 'environments'];
-    const explainLive = (e: unknown): string => e instanceof PpApiError
-      ? (e.kind === 'consent' ? 'Berechtigung „ResourceQuery.Resources.Read“ fehlt (Skript -Live)' : e.kind === 'forbidden' ? 'Zugriff verweigert – Rolle aktiv?' : e.message)
-      : /failed to fetch/i.test(String(e instanceof Error ? e.message : e)) ? 'Power Platform API nicht erreichbar' : String(e instanceof Error ? e.message : e);
-    areas.forEach(area => {
-      if (liveRequested.current[area] === reqKey) {
-        return;
-      }
-      liveRequested.current[area] = reqKey;
-      if (liveRoleProblem) {
-        setLive(prev => ({ ...prev, [area]: { status: 'off', problem: liveRoleProblem } }));
-        return;
-      }
-      setLive(prev => ({ ...prev, [area]: { ...(prev[area] || {}), status: 'loading' } }));
-      if (area === 'environments') {
-        let envError: unknown;
-        const envP = liveService.environments().then(list => new Map(list.map(e => [e.id, e] as [string, ILiveEnvironment])), e => { envError = e; return undefined; });
-        const invP = liveService.list([INV_TYPE.environment]).then(r => r, e => { envError = envError || e; return undefined; });
-        const knownP = service
-          ? service.query('admin_environments', ['admin_environmentname', 'admin_environmentid']).then(
-            rows => new Set(rows.map(r => String(r.admin_environmentname || r.admin_environmentid || '').toLowerCase()).filter(x => !!x)), () => undefined)
-          : Promise.resolve(undefined);
-        Promise.all([envP, invP, knownP]).then(([envMap, inv, known]) => {
-          if (liveRequested.current[area] !== reqKey) {
-            return;
-          }
-          setKnownEnvIds(known);
-          setLiveEnvs(envMap);
-          if (!envMap && !inv) {
-            setLive(prev => ({ ...prev, [area]: { status: 'error', problem: explainLive(envError) } }));
-            return;
-          }
-          setLive(prev => ({
-            ...prev,
-            [area]: {
-              status: 'ready', envs: envMap,
-              items: inv ? new Map(inv.items.map(i => [i.id, i] as [string, typeof i])) : new Map(),
-              truncated: inv ? inv.truncated : false, loadedAt: new Date()
-            }
-          }));
-        }, () => undefined);
-        return;
-      }
-      liveService.list(area === 'apps' ? APP_TYPES : FLOW_TYPES).then(
-        res => {
-          if (liveRequested.current[area] === reqKey) {
-            setLive(prev => ({ ...prev, [area]: { status: 'ready', items: new Map(res.items.map(i => [i.id, i] as [string, typeof i])), truncated: res.truncated, loadedAt: res.loadedAt } }));
-          }
-        },
-        e => {
-          if (liveRequested.current[area] === reqKey) {
-            setLive(prev => ({ ...prev, [area]: { status: 'error', problem: explainLive(e) } }));
-          }
-        }
-      );
-    });
-  }, [liveArea, liveRoleProblem, liveTick, liveService, service]);
-
-  const liveState = liveArea ? live[liveArea] : undefined;
-  const liveResult = React.useMemo(() => {
-    if (!liveArea || !activeTable || !liveState || liveState.status !== 'ready' || !state || state.status !== 'ready') {
-      return undefined;
-    }
-    const complete = !activeTable.virtual && !isDefaultEnvKey(activeTable.key) && isInventoryFilter(activeTable.filter) && !state.truncated && !liveState.truncated
-      && (liveArea !== 'environments' || !!knownEnvIds);
-    // Eigene Aktionen der letzten 20 Minuten: Das Inventar ist bis zu 15 Minuten alt und würde den neuen Stand überschreiben
-    const recent = new Set<string>((actionItems || [])
-      .filter(i => i.status === 'Erledigt' && Date.now() - new Date(i.completedAt || i.created).getTime() < 20 * 60000)
-      .map(i => String(i.resourceId || '').toLowerCase()).filter(x => !!x));
-    return overlay({
-      logicalName: activeTable.logicalName, records: baseRecords, live: liveState, envs: liveEnvs, complete,
-      knownIds: liveArea === 'environments' ? knownEnvIds : undefined, skipIds: recent
-    });
-  }, [baseRecords, liveState, liveEnvs, knownEnvIds, liveArea, activeTable && activeTable.key, state && state.status, state && state.truncated, actionItems]);
-  const records = liveResult ? liveResult.records : baseRecords;
   // Aktionen: Einrichtung (Gruppe, Liste, Mitgliedschaft) prüfen und Protokoll laden
   React.useEffect(() => {
     if (!actionService) {
@@ -900,9 +781,7 @@ const CoeCockpit: React.FC<ICoeCockpitProps> = props => {
     return set;
   }, [activeTable, hidden]);
 
-  const allColumns: IColumnConfig[] = activeTable
-    ? activeTable.columns.filter(c => !!c.field).concat(liveResult && !activeTable.columns.some(c => c.field === LIVE_FIELD) ? [LIVE_COLUMN] : [])
-    : [];
+  const allColumns: IColumnConfig[] = activeTable ? activeTable.columns.filter(c => !!c.field) : [];
   const visibleColumns = allColumns.filter(c => !hiddenSet[c.field]);
   const columnByField: { [field: string]: IColumnConfig } = {};
   allColumns.forEach(c => { columnByField[c.field] = c; });
@@ -1048,35 +927,6 @@ const CoeCockpit: React.FC<ICoeCockpitProps> = props => {
       >
         {narrowed && !loading && !partial && <Icon iconName="Filter" />}
         {content}
-      </span>
-    );
-  };
-
-  /** Quelle der Liste: Live-Abgleich (mit Änderungen) oder nur CoE (mit Grund). */
-  const renderLiveBadge = (): JSX.Element | null => {
-    if (!liveArea || loading) {
-      return null;
-    }
-    const tf = new Intl.DateTimeFormat('de-AT', { hour: '2-digit', minute: '2-digit' });
-    if (!liveState || liveState.status === 'loading') {
-      return <span className={styles.liveBadge} title="Abgleich mit dem Power-Platform-Inventar läuft"><Icon iconName="Sync" /> Live-Abgleich …</span>;
-    }
-    if (liveState.status !== 'ready' || !liveResult) {
-      return (
-        <span className={`${styles.liveBadge} ${styles.liveBadgeWarn}`} title={`Angezeigt werden die CoE-Daten. Live nicht verfügbar: ${liveState.problem || 'unbekannt'}`}>
-          <Icon iconName="Database" /> Nur CoE-Daten
-        </span>
-      );
-    }
-    const st = liveResult.stats;
-    const parts = [st.changed ? `${formatNumber(st.changed)} geändert` : '', st.added ? `${formatNumber(st.added)} neu` : '', st.missing ? `${formatNumber(st.missing)} nicht mehr live` : ''].filter(x => !!x);
-    return (
-      <span
-        className={`${styles.liveBadge} ${styles.liveBadgeLive}`}
-        title={`CoE-Daten mit dem Power-Platform-Inventar abgeglichen (Stand ${liveState.loadedAt ? tf.format(liveState.loadedAt) : '–'}, höchstens 15 Minuten alt). `
-          + 'Spalte „Live-Abgleich“ zeigt je Eintrag: Aktuell, Geändert (live), Neu (nur live), Nicht im Live-Inventar. Nutzung und Verlauf kommen weiter aus dem CoE.'}
-      >
-        <Icon iconName="LightningBolt" /> Live {liveState.loadedAt ? tf.format(liveState.loadedAt) : ''}{parts.length ? ` · ${parts.join(' · ')}` : ' · alles aktuell'}
       </span>
     );
   };
@@ -1364,7 +1214,6 @@ const CoeCockpit: React.FC<ICoeCockpitProps> = props => {
   const inActionLog = props.showActions && activeKey === ACTION_LOG_KEY;
   const inCredits = props.showCopilotCredits && (activeKey === CREDITS_KEY || activeKey === BILLING_KEY);
   const inPremium = props.showPremium2027 !== false && activeKey === PREMIUM_KEY;
-  const inLiveDiag = activeKey === LIVE_DIAG_KEY;
   const devState = data[DEV_ENV_KEY];
   const devAffected = devState && devState.status === 'ready'
     ? {
@@ -1374,18 +1223,7 @@ const CoeCockpit: React.FC<ICoeCockpitProps> = props => {
     }
     : undefined;
 
-  const renderMain = (): JSX.Element => (inLiveDiag
-    ? (
-      <LiveDiagnostics
-        live={liveService}
-        ppApi={ppApi}
-        coe={service}
-        graphFactory={props.msGraphClientFactory}
-        role={roleStatus}
-        themeVars={themeVars}
-      />
-    )
-    : inPremium && service
+  const renderMain = (): JSX.Element => (inPremium && service
     ? (
       <PremiumView
         service={service}
@@ -1579,7 +1417,6 @@ const CoeCockpit: React.FC<ICoeCockpitProps> = props => {
             styles={{ root: { width: 280, borderRadius: 6 } }}
           />
           {renderResultBadge()}
-          {renderLiveBadge()}
           {activeFilterFields.map(f => (
             <button
               key={f}
@@ -1857,7 +1694,7 @@ const CoeCockpit: React.FC<ICoeCockpitProps> = props => {
         }
         return r.records.length
           ? prev.slice(0, prev.length - 1).concat([{ ...top, record: r.records[0] }])
-          : top.record.__liveOnly ? prev : prev.slice(0, prev.length - 1);
+          : prev.slice(0, prev.length - 1);
       });
       setReloadTick(t => t + 1);
     }, () => undefined);
@@ -1909,9 +1746,6 @@ const CoeCockpit: React.FC<ICoeCockpitProps> = props => {
   if (props.showCopilotCredits) {
     navItems.push({ key: CREDITS_KEY, title: 'Copilot-Credits', icon: 'AllCurrency', group: GROUP_LICENSING, active: activeKey === CREDITS_KEY, onClick: () => setActiveKey(CREDITS_KEY) });
     navItems.push({ key: BILLING_KEY, title: 'Abrechnungspläne', icon: 'Bank', group: GROUP_LICENSING, active: activeKey === BILLING_KEY, onClick: () => setActiveKey(BILLING_KEY) });
-  }
-  if (isGroupMember || isEditMode) {
-    navItems.push({ key: LIVE_DIAG_KEY, title: 'Live-Schnittstellen', icon: 'TestBeaker', group: GROUP_GOVERNANCE, active: !!inLiveDiag, onClick: () => setActiveKey(LIVE_DIAG_KEY) });
   }
   if (props.showActions && actionSetup && actionSetup.listExists && isGroupMember) {
     navItems.push({ key: ACTION_LOG_KEY, title: 'Aktionsprotokoll', icon: 'History', group: GROUP_GOVERNANCE, active: !!inActionLog, onClick: () => setActiveKey(ACTION_LOG_KEY) });
@@ -1998,7 +1832,7 @@ const CoeCockpit: React.FC<ICoeCockpitProps> = props => {
             )}
             {service && (
               <TooltipHost content="Daten neu laden">
-                <IconButton iconProps={{ iconName: 'Refresh' }} ariaLabel="Aktualisieren" onClick={() => { resetLiveCache(); setLiveTick(t => t + 1); setReloadTick(t => t + 1); }} disabled={loading} />
+                <IconButton iconProps={{ iconName: 'Refresh' }} ariaLabel="Aktualisieren" onClick={() => setReloadTick(t => t + 1)} disabled={loading} />
               </TooltipHost>
             )}
             {isEditMode && (
@@ -2085,22 +1919,7 @@ const CoeCockpit: React.FC<ICoeCockpitProps> = props => {
           actionsNote={panelActionsNote()}
           actionsInfo={panelRoleInfo()}
           hideActions={!isGroupMember && !isEditMode}
-          extraSection={panel && liveDetailsOn && !panel.table.environmentUrl && areaOf(panel.table.logicalName)
-            ? {
-              title: 'Live',
-              content: liveRoleProblem && liveRoleProblem !== 'wait'
-                ? <div className={styles.solBox}><div className={styles.solEmpty}><Icon iconName="Info" /><span>Live-Daten gibt es nur mit aktiver Rolle „Power Platform Administrator“ (oder Globaler Leser). Angezeigt werden die CoE-Daten.</span></div></div>
-                : (
-                  <LiveDetails
-                    key={`${panel.table.logicalName}:${String(panel.record[(panel.meta && panel.meta.primaryId) || ''] || panel.record.admin_appid || panel.record.admin_flowid || panel.record.admin_environmentid || '')}`}
-                    logicalName={panel.table.logicalName}
-                    record={panel.record}
-                    live={liveService}
-                    allowAdminApis={props.liveAdminApis !== false}
-                  />
-                )
-            }
-            : panel && service && panel.table.logicalName === 'admin_solution' && !panel.table.environmentUrl
+          extraSection={panel && service && panel.table.logicalName === 'admin_solution' && !panel.table.environmentUrl
             ? {
               title: 'Inhalt der Solution',
               content: (
@@ -2183,7 +2002,6 @@ const CoeCockpit: React.FC<ICoeCockpitProps> = props => {
             settings={{
               ...props.settings,
               onOpenTableEditor: () => { setSettingsOpen(false); setEditorOpen(true); },
-              onOpenLiveDiagnostics: () => { setSettingsOpen(false); setActiveKey(LIVE_DIAG_KEY); },
               onOpenPropertyPane: () => { setSettingsOpen(false); props.settings!.onOpenPropertyPane(); }
             }}
             themeVars={themeVars}

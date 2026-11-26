@@ -18,7 +18,7 @@ import { isCustomized } from '../models/mailTemplates';
  * Links Bereiche mit Status, rechts die Einstellungen des gewählten Bereichs. Änderungen gelten sofort
  * und werden mit der Seite gespeichert (im Bearbeitungsmodus „Erneut veröffentlichen“).
  */
-type SectionKey = 'connection' | 'views' | 'live' | 'default' | 'dev' | 'mail' | 'actions' | 'alm' | 'display' | 'tables';
+type SectionKey = 'connection' | 'views' | 'default' | 'dev' | 'mail' | 'actions' | 'alm' | 'display' | 'tables';
 type Tone = 'ok' | 'warn' | 'error' | 'off';
 
 export interface ISettingsPanelProps {
@@ -96,10 +96,6 @@ export const SettingsPanel: React.FC<ISettingsPanelProps> = props => {
   const sections: { key: SectionKey; label: string; icon: string; tone: Tone; hint: string }[] = [
     { key: 'connection', label: 'Verbindung', icon: 'PlugConnected', tone: urlOk ? 'ok' : 'error', hint: urlOk ? 'CoE-Umgebung eingetragen' : 'URL fehlt' },
     { key: 'views', label: 'Ansichten', icon: 'ViewDashboard', tone: 'ok', hint: 'Übersicht, Sicherheit, Copilot-Credits' },
-    {
-      key: 'live', label: 'Live-Daten', icon: 'LightningBolt', tone: v.liveInventory || v.liveDetails ? 'ok' : 'off',
-      hint: v.liveInventory && v.liveDetails ? 'Listen und Details live' : v.liveInventory ? 'Listen live' : v.liveDetails ? 'Details live' : 'nur CoE'
-    },
     { key: 'default', label: 'Default Environment', icon: 'Home', tone: v.showDefaultEnvironment ? 'ok' : 'off', hint: v.showDefaultEnvironment ? 'eingeblendet' : 'ausgeblendet' },
     { key: 'dev', label: 'Betroffen ab 15.12.', icon: 'Warning', tone: v.showDevEnvironments ? 'ok' : 'off', hint: v.showDevEnvironments ? 'eingeblendet' : 'ausgeblendet' },
     {
@@ -120,8 +116,6 @@ export const SettingsPanel: React.FC<ISettingsPanelProps> = props => {
   const intro: { [k in SectionKey]: string } = {
     connection: 'Aus dieser Dataverse-Umgebung mit dem CoE Starter Kit liest das Cockpit alle Daten – mit den Rechten der angemeldeten Person.',
     views: 'Welche Ansichten in der Navigation erscheinen.',
-    live: 'Aktueller Stand direkt von Microsoft (Power Platform API) – zusätzlich zum CoE. Das CoE bleibt die Grundlage: Nutzung, Verlauf und alle Spalten '
-      + 'kommen weiter von dort. Live-Daten gibt es nur mit aktiver Rolle „Power Platform Administrator“ (oder Globaler Leser); sonst zeigt das Cockpit die CoE-Daten.',
     default: 'Eigener Bereich für das Default Environment: Apps und Flows aus dem CoE, Solutions live aus dem Environment.',
     dev: 'Nicht verwaltete Developer-Environments, die Microsoft ab 15.12.2026 sperrt und ab 15.01.2027 löscht.',
     mail: 'Allgemeine Einstellungen für alle E-Mails und die Texte der Vorlagen „Nachfrage Verwendung“ und „Betroffen ab 15.12.“.',
@@ -175,34 +169,6 @@ export const SettingsPanel: React.FC<ISettingsPanelProps> = props => {
             <Row label="Betroffen ab 15.12." description="Nicht verwaltete Developer-Environments – Details unter „Betroffen ab 15.12.“">
               <Toggle checked={v.showDevEnvironments} onChange={(_e, c) => set({ showDevEnvironments: !!c })} />
             </Row>
-          </div>
-        );
-      case 'live':
-        return (
-          <div className={styles.setCard}>
-            <Row
-              label="Listen live abgleichen (Apps, Flows, Environments)"
-              description="Über das offizielle Power-Platform-Inventar (höchstens 15 Minuten alt): Name, Quarantäne, Besitzer, Managed und Zustand werden aktualisiert, neue Ressourcen ergänzt, gelöschte markiert (Spalte „Live-Abgleich“). Berechtigung „ResourceQuery.Resources.Read“."
-            >
-              <Toggle checked={v.liveInventory} onChange={(_e, c) => set({ liveInventory: !!c })} />
-            </Row>
-            <Row
-              label="Abschnitt „Live“ in der Detailansicht"
-              description="Apps: Connectors, Quarantäne; Flows: Auslöser, letzte Ausführungen (Berechtigung „PowerAutomate.Flows.Read“); Environments: Zustand, Managed, Anzahl Ressourcen."
-            >
-              <Toggle checked={v.liveDetails} onChange={(_e, c) => set({ liveDetails: !!c })} />
-            </Row>
-            <Row
-              label="Freigaben und Flow-Status über die Admin-Schnittstellen"
-              description="Freigaben einer App und Status eines Flows live. Das sind dieselben Schnittstellen wie bei den Aktionen – von Microsoft nicht offiziell dokumentiert."
-            >
-              <Toggle checked={v.liveAdminApis} disabled={!v.liveDetails} onChange={(_e, c) => set({ liveAdminApis: !!c })} />
-            </Row>
-            {s.onOpenLiveDiagnostics && (
-              <div className={styles.setButtons}>
-                <DefaultButton text="Live-Schnittstellen testen" iconProps={{ iconName: 'TestBeaker' }} onClick={s.onOpenLiveDiagnostics} />
-              </div>
-            )}
           </div>
         );
       case 'default':
