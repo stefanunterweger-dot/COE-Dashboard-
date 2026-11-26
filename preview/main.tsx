@@ -4,11 +4,12 @@ import { createTheme, ITheme, Panel, PanelType, TextField, Toggle, Dropdown, Pri
 import CoeCockpit from '../src/webparts/coeCockpit/components/CoeCockpit';
 import { getDefaultTables } from '../src/webparts/coeCockpit/models/defaultTables';
 import { ITableConfig } from '../src/webparts/coeCockpit/models/ITableConfig';
-import { AadHttpClientFactory, MSGraphClientFactory, SPHttpClient } from './shims/sp-http';
+import { AadHttpClientFactory, AadTokenProviderFactory, MSGraphClientFactory, SPHttpClient } from './shims/sp-http';
 import { seedActions, seedNotifyEntry } from './mock/sharepoint';
 import { ACTION_TIMING } from '../src/webparts/coeCockpit/components/ActionDialog';
 import { resetCreditsCache } from '../src/webparts/coeCockpit/components/CopilotCreditsView';
 import { IWebPartSettings } from '../src/webparts/coeCockpit/models/settings';
+import { IMailTemplateOverrides } from '../src/webparts/coeCockpit/models/mailTemplates';
 import { ActionService, IActionSetupState } from '../src/webparts/coeCockpit/services/ActionService';
 
 // Vorschau: Aktionen sind eingerichtet (Gruppe „CoE Cockpit Admins“ mit dem angemeldeten Admin, Liste vorhanden)
@@ -111,20 +112,25 @@ const App: React.FC = () => {
     showCopilotCredits: true,
     showActions: true,
     actionsGroup: 'CoE Cockpit Admins',
-    deleteRequiresStop: true
+    deleteRequiresStop: true,
+    mailTemplates: {} as IMailTemplateOverrides
   });
   const notify = React.useMemo(() => ({
     formal: p.notifyTone !== 'du', replyDays: p.notifyReplyDays, infoUrl: DEFAULT_INFO_URL,
-    feedbackUrl: p.notifyFeedbackUrl, cc: p.notifyCc, signature: p.notifySignature
-  }), [p.notifyTone, p.notifyReplyDays, p.notifyFeedbackUrl, p.notifyCc, p.notifySignature]);
+    feedbackUrl: p.notifyFeedbackUrl, cc: p.notifyCc, signature: p.notifySignature, templates: p.mailTemplates
+  }), [p.notifyTone, p.notifyReplyDays, p.notifyFeedbackUrl, p.notifyCc, p.notifySignature, p.mailTemplates]);
   const [noAdmin, setNoAdmin] = React.useState<boolean>(false);
   const [noMailSend, setNoMailSend] = React.useState<boolean>(false);
   const [noPpApi, setNoPpApi] = React.useState<boolean>(false);
+  const [notMember, setNotMember] = React.useState<boolean>(false);
+  (window as unknown as { __spNotMember?: boolean }).__spNotMember = notMember;
   (window as unknown as { __coePpApiDeny?: string }).__coePpApiDeny = noPpApi ? 'consent' : noAdmin ? 'forbidden' : '';
   React.useMemo(() => resetCreditsCache(), [noAdmin, noPpApi]);
   (window as unknown as { __coeDenyMailSend?: boolean }).__coeDenyMailSend = noMailSend;
   (window as unknown as { __coeDenyHosts?: string[] }).__coeDenyHosts = noAdmin ? [DEFAULT_HOST, PIPELINES_HOST] : [];
   const factory = React.useMemo(() => new AadHttpClientFactory(), []);
+  const tokenFactory = React.useMemo(() => new AadTokenProviderFactory(), []);
+  (window as unknown as { __coeRoleInactive?: boolean }).__coeRoleInactive = noAdmin;
   const graphFactory = React.useMemo(() => new MSGraphClientFactory(), []);
   const spClient = React.useMemo(() => new SPHttpClient(), []);
   const set = (patch: Partial<typeof p>): void => setP(prev => ({ ...prev, ...patch }));
@@ -180,10 +186,11 @@ const App: React.FC = () => {
         <Toggle inlineLabel label="Ohne Adminrolle" checked={noAdmin} onChange={(_e, v) => setNoAdmin(!!v)} styles={{ root: { margin: 0 } }} />
         <Toggle inlineLabel label="Mail.Send fehlt" checked={noMailSend} onChange={(_e, v) => setNoMailSend(!!v)} styles={{ root: { margin: 0 } }} />
         <Toggle inlineLabel label="PP-API nicht freigegeben" checked={noPpApi} onChange={(_e, v) => setNoPpApi(!!v)} styles={{ root: { margin: 0 } }} />
+        <Toggle inlineLabel label="Nicht in der Admin-Gruppe" checked={notMember} onChange={(_e, v) => setNotMember(!!v)} styles={{ root: { margin: 0 } }} />
       </div>
       <div className={`section ${dark ? 'sectionDark' : ''}`}>
         <CoeCockpit
-          key={`${noAdmin ? 'noadmin' : 'admin'}-${noPpApi ? 'noppapi' : 'ppapi'}`}
+          key={`${noAdmin ? 'noadmin' : 'admin'}-${noPpApi ? 'noppapi' : 'ppapi'}-${notMember ? 'guest' : 'member'}`}
           instanceId="preview"
           title={p.title}
           subtitle={p.subtitle}
@@ -197,6 +204,7 @@ const App: React.FC = () => {
           isEditMode={editMode}
           editorRequest={editorRequest}
           aadHttpClientFactory={factory as never}
+          aadTokenProviderFactory={tokenFactory as never}
           msGraphClientFactory={graphFactory as never}
           spHttpClient={spClient as never}
           webUrl="https://contoso.sharepoint.com/sites/powerplatform"

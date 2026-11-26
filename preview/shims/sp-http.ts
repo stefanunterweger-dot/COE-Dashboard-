@@ -59,3 +59,17 @@ export class SPHttpClient {
     return mockSharePoint('POST', url, options && options.body);
   }
 }
+
+/** Ersatz für AadTokenProviderFactory: liefert ein Beispiel-Token mit den aktiven Rollen (Claim „wids“). */
+export class AadTokenProviderFactory {
+  public getTokenProvider(): Promise<{ getToken(resource: string, useCachedToken?: boolean): Promise<string> }> {
+    return Promise.resolve({
+      getToken: (_resource: string) => {
+        const inactive = !!(window as unknown as { __coeRoleInactive?: boolean }).__coeRoleInactive;
+        const wids = ['b79fbf4d-3ef9-4689-8143-76b194e85509'].concat(inactive ? [] : ['11648597-926c-4cf3-9c36-bcebb0ba8dcc']);
+        const b64 = (o: unknown): string => btoa(JSON.stringify(o)).replace(/=+$/, '').replace(/\+/g, '-').replace(/\//g, '_');
+        return new Promise<string>(resolve => setTimeout(() => resolve(`${b64({ alg: 'none' })}.${b64({ wids, exp: Math.floor(Date.now() / 1000) + 3600 })}.x`), 300));
+      }
+    });
+  }
+}

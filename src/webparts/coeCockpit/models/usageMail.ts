@@ -9,6 +9,8 @@ import { displayValue, fillTemplate, isMailAddress, isSafeLink } from '../utils/
  * ob sie noch benötigt wird. Texte aus der Vorlage „usage“ (Webpart-Einstellungen → E-Mail & Vorlagen).
  */
 export interface IUsageInfo {
+  /** Tabelle (für die typspezifische Vorlage), z. B. admin_flow */
+  logicalName?: string;
   /** Art, z. B. „App“ */
   typeLabel: string;
   name: string;
@@ -89,7 +91,7 @@ export function buildUsageMail(info: IUsageInfo, s: INotifySettings, today: Date
     .replace(/\{environment\}/g, encodeURIComponent(info.name))
     .replace(/\{name\}/g, encodeURIComponent(info.name))
     .replace(/\{id\}/g, '');
-  const t = resolveTemplate('usage', s.formal, !!feedback, s.templates);
+  const t = resolveTemplate('usage', s.formal, !!feedback, s.templates, info.logicalName);
   const vars = { Name: info.name, Typ: info.typeLabel, Environment: info.environment || '–', Besitzer: info.ownerName || '–', Frist: frist };
   const f = (x: string): string => fillText(x, vars);
   const signature = s.signature || (s.formal ? 'Ihr Power-Platform-Team' : 'Dein Power-Platform-Team');

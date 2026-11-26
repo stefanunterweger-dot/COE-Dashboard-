@@ -21,6 +21,7 @@ import CoeCockpit, { ICoeCockpitProps } from './components/CoeCockpit';
 import { ITableConfig } from './models/ITableConfig';
 import { getDefaultTables } from './models/defaultTables';
 import { ISettingsValues, IWebPartSettings } from './models/settings';
+import { IMailTemplateOverrides } from './models/mailTemplates';
 import { isValidEnvironmentUrl } from './utils/format';
 import { DataverseService, normalizeDataverseUrl } from './services/DataverseService';
 import { detectManagedAttribute, managedCandidates } from './models/devEnvironments';
@@ -67,6 +68,8 @@ export interface ICoeCockpitWebPartProps {
   notifySignature: string;
   /** Automatischen Versand über Microsoft Graph anbieten. */
   notifyAutoSend: boolean;
+  /** Gepflegte Mail-Texte (nur Abweichungen vom Standard; Webpart-Einstellungen → E-Mail & Vorlagen). */
+  mailTemplates: IMailTemplateOverrides;
   /** Aktionen für Apps und Flows anbieten. */
   showActions: boolean;
   /** SharePoint-Gruppe, deren Mitglieder Aktionen auslösen dürfen. */
@@ -135,7 +138,8 @@ export default class CoeCockpitWebPart extends BaseClientSideWebPart<ICoeCockpit
         infoUrl: this._infoUrl(),
         feedbackUrl: /^https:\/\//i.test((this.properties.notifyFeedbackUrl || '').trim()) ? this.properties.notifyFeedbackUrl.trim() : '',
         cc: (this.properties.notifyCc || '').trim(),
-        signature: (this.properties.notifySignature || '').trim()
+        signature: (this.properties.notifySignature || '').trim(),
+        templates: this.properties.mailTemplates || {}
       },
       notifyAutoSend: this.properties.notifyAutoSend !== false,
       showActions: this.properties.showActions !== false,
@@ -146,6 +150,7 @@ export default class CoeCockpitWebPart extends BaseClientSideWebPart<ICoeCockpit
       isEditMode: this.displayMode === DisplayMode.Edit,
       editorRequest: this._editorRequest,
       aadHttpClientFactory: this.context.aadHttpClientFactory,
+      aadTokenProviderFactory: this.context.aadTokenProviderFactory,
       msGraphClientFactory: this.context.msGraphClientFactory,
       spHttpClient: this.context.spHttpClient,
       webUrl: this.context.pageContext.web.absoluteUrl,
@@ -206,6 +211,7 @@ export default class CoeCockpitWebPart extends BaseClientSideWebPart<ICoeCockpit
         notifyFeedbackUrl: p.notifyFeedbackUrl || '',
         notifyCc: p.notifyCc || '',
         notifySignature: p.notifySignature || '',
+        mailTemplates: p.mailTemplates || {},
         showActions: p.showActions !== false,
         actionsGroup: this._groupName,
         deleteRequiresStop: p.deleteRequiresStop !== false

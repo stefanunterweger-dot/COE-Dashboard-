@@ -34,6 +34,8 @@ export interface IRecordPanelProps {
   headerExtra?: React.ReactNode;
   /** Hinweis im Bereich „Aktionen“, wenn keine Aktionen angeboten werden (z. B. fehlende Gruppe). */
   actionsNote?: string;
+  /** Abschnitt „Aktionen“ ganz ausblenden (z. B. für Personen außerhalb der berechtigten SharePoint-Gruppe). */
+  hideActions?: boolean;
   /** Zusätzlicher Abschnitt in der Übersicht unter „Eigenschaften“ (z. B. „Inhalt der Solution“). */
   extraSection?: { title: string; content: React.ReactNode };
 }
@@ -226,7 +228,7 @@ export const RecordPanel: React.FC<IRecordPanelProps> = props => {
         </div>
       )}
 
-      <div className={styles.section}>
+      {!(props.hideActions && !(props.actions && props.actions.length)) && <div className={styles.section}>
         <h3 className={styles.sectionTitle}>Aktionen</h3>
         {props.actions && props.actions.length > 0 ? (
           <>
@@ -256,7 +258,7 @@ export const RecordPanel: React.FC<IRecordPanelProps> = props => {
             <div>{props.actionsNote || 'Für diesen Bereich gibt es keine Aktionen.'}</div>
           </div>
         )}
-      </div>
+      </div>}
     </>
   );
 

@@ -1,7 +1,8 @@
 import { IRecord } from './ITableConfig';
 import { DEV_ENV_DEADLINES, DEV_FIELDS, RECOMMENDATION } from './devEnvironments';
 import { displayValue, isMailAddress } from '../utils/format';
-import { IMailTemplateOverrides } from './mailTemplates';
+import { fillText, IMailTemplate, IMailTemplateOverrides, resolveTemplate } from './mailTemplates';
+import { escHtml, mailKit } from './mailHtml';
 
 /**
  * E-Mail an die Maker eines betroffenen Developer-Environments.
@@ -100,21 +101,6 @@ function listOf(r: IRecord, field: string): string[] {
   return String(r[field] || '').split(',').map(x => x.trim()).filter(x => !!x);
 }
 
-const esc = (s: string): string => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-
-/** Kontrastfarbe für Text auf der Akzentfarbe. */
-function onColor(hex: string): string {
-  const m = /^#?([0-9a-f]{6})$/i.exec(hex.trim());
-  if (!m) {
-    return '#ffffff';
-  }
-  const n = parseInt(m[1], 16);
-  const lin = (c: number): number => { const v = c / 255; return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); };
-  const L = 0.2126 * lin((n >> 16) & 255) + 0.7152 * lin((n >> 8) & 255) + 0.0722 * lin(n & 255);
-  // Weiß nur, wenn der Kontrast mindestens 4.5:1 erreicht
-  return L > 0.183 ? '#1b1b1b' : '#ffffff';
-}
-
 /** Alle Inhalte der Mail (einmal bestimmt, dann als Text und als HTML gesetzt). */
 interface IContent {
   formal: boolean;
@@ -131,47 +117,36 @@ interface IContent {
   feedback: string;
   infoUrl: string;
   signature: string;
+  /** Gepflegte Texte (Vorlage „devenv“, Platzhalter bereits ersetzt) */
+  tpl: IMailTemplate;
 }
 
-function texts(c: IContent): {
-  greeting: string; intro: string; change: string; yourEnv: string; replyTitle: string; replyAsk: string;
-  options: [string, string][]; notResponsible: string; noReply: string; backup: string; open: string; formButton: string; closing: string;
-} {
+/** Feste Texte (nicht über die Vorlage pflegbar). */
+function fixedTexts(c: IContent): { yourEnv: string; replyTitle: string; notResponsible: string; backup: string; open: string; formButton: string } {
   const S = c.formal;
   return {
-    greeting: S ? 'Guten Tag,' : 'Hallo,',
-    intro: S
-      ? `Sie sind als Maker im Power-Platform-Developer-Environment „${c.env}“ eingetragen.`
-      : `du bist als Maker im Power-Platform-Developer-Environment „${c.env}“ eingetragen.`,
-    change: c.suspended
-      ? `Microsoft hat nicht verwaltete (unmanaged) Developer-Environments am ${c.block} gesperrt und löscht sie ab ${c.del} – samt Apps, Flows und Daten.`
-      : `Microsoft sperrt ab ${c.block} alle nicht verwalteten (unmanaged) Developer-Environments und löscht sie ab ${c.del} – unabhängig von der Nutzung, samt Apps, Flows und Daten.`,
     yourEnv: S ? 'Ihr Environment' : 'Dein Environment',
     replyTitle: S ? `Ihre Rückmeldung bis ${c.replyBy}` : `Deine Rückmeldung bis ${c.replyBy}`,
-    replyAsk: c.feedback
-      ? (S ? 'Bitte nutzen Sie das Formular oder antworten Sie auf diese E-Mail mit der passenden Zahl:' : 'Bitte nutze das Formular oder antworte auf diese E-Mail mit der passenden Zahl:')
-      : (S ? 'Bitte antworten Sie einfach auf diese E-Mail mit der passenden Zahl:' : 'Bitte antworte einfach auf diese E-Mail mit der passenden Zahl:'),
-    options: [
-      ['1', 'Wird weiter benötigt – das Environment wird auf Managed umgestellt. Wer dort Apps oder Flows nutzt, braucht dann eine Premium-Lizenz.'],
-      ['2', 'Kann gelöscht werden.'],
-      ['3', S ? 'Inhalte kommen in ein anderes Environment – bitte nennen Sie das Ziel.' : 'Inhalte kommen in ein anderes Environment – bitte nenne das Ziel.']
-    ],
     notResponsible: S ? 'Nicht zuständig? Bitte nennen Sie uns die richtige Person.' : 'Nicht zuständig? Bitte nenne uns die richtige Person.',
-    noReply: 'Ohne Rückmeldung unternehmen wir nichts – Microsoft sperrt und löscht das Environment dann automatisch.',
     backup: S ? 'Tipp: Sichern Sie wichtige Arbeit vorab, indem Sie Ihre Solutions exportieren:' : 'Tipp: Sichere wichtige Arbeit vorab, indem du deine Solutions exportierst:',
     open: 'Environment in Power Apps öffnen',
-    formButton: 'Rückmeldung im Formular geben',
-    closing: S ? 'Freundliche Grüße' : 'Viele Grüße'
+    formButton: 'Rückmeldung im Formular geben'
   };
 }
 
+/** Satz zur Änderung durch Microsoft (Platzhalter {Änderung}). */
+function changeSentence(suspended: boolean, block: string, del: string): string {
+  return suspended
+    ? `Microsoft hat nicht verwaltete (unmanaged) Developer-Environments am ${block} gesperrt und löscht sie ab ${del} – samt Apps, Flows und Daten.`
+    : `Microsoft sperrt ab ${block} alle nicht verwalteten (unmanaged) Developer-Environments und löscht sie ab ${del} – unabhängig von der Nutzung, samt Apps, Flows und Daten.`;
+}
+
 function plainText(c: IContent): string {
-  const t = texts(c);
+  const t = fixedTexts(c);
   const lines = [
-    t.greeting,
+    c.tpl.greeting,
     '',
-    t.intro,
-    t.change,
+    c.tpl.intro,
     '',
     `${t.yourEnv.toUpperCase()}`,
     `• Name: ${c.env}`,
@@ -186,126 +161,72 @@ function plainText(c: IContent): string {
     `• Löschung ab ${c.del}`,
     '',
     t.replyTitle.toUpperCase(),
-    t.replyAsk
-  ].concat(t.options.map(o => `${o[0]} – ${o[1]}`)).concat(
+    c.tpl.question
+  ].concat(c.tpl.options.map((o, i) => `${i + 1} – ${o}`)).concat(
     c.feedback ? [`Formular: ${c.feedback}`] : [],
     [
       t.notResponsible,
       '',
-      t.noReply,
+      c.tpl.note,
       '',
-      `${texts(c).backup} ${EXPORT_GUIDE_URL}`,
-    '',
-    `Offizielle Ankündigung von Microsoft: ${c.infoUrl}`,
+      `${t.backup} ${EXPORT_GUIDE_URL}`,
       '',
-      t.closing,
+      `Offizielle Ankündigung von Microsoft: ${c.infoUrl}`,
+      '',
+      c.tpl.closing,
       c.signature
     ]
   );
   return lines.join('\r\n');
 }
 
-/**
- * Formatierte Mail, „Outlook-fest“: Outlook (klassisch) stellt HTML mit der Word-Engine dar und ignoriert
- * dabei vieles (div-Formate, Abstände von Absätzen, runde Ecken, Linkfarben). Deshalb nur Tabellen,
- * Zellen-Innenabstände, eigene Abstandszeilen, Farben direkt am Text (span + font) und keine runden Elemente.
- */
+/** Formatierte, „Outlook-feste“ Mail (Bausteine siehe mailHtml.ts). */
 function htmlMail(c: IContent, accent: string): string {
-  const t = texts(c);
-  const on = onColor(accent);
-  /** Farbe für Links und Akzente auf weißem Grund (helle Akzentfarben → Standardblau). */
-  const ink = on === '#ffffff' ? accent : '#0f6cbd';
-  const FONT = "'Segoe UI', Calibri, Arial, sans-serif";
-  const TEXT = '#242424';
-  const MUTED = '#616161';
-  const BORDER = '#e0e0e0';
+  const t = fixedTexts(c);
+  const k = mailKit(accent);
   const toneColor = { danger: '#c50f1f', warning: '#8a4b00', neutral: '#616161' }[c.assess.tone];
-
-  /** Text mit fester Schrift, Größe und Farbe – span (CSS) und font (für Word) zugleich. */
-  const tx = (html: string, o: { size?: number; color?: string; bold?: boolean; spacing?: number } = {}): string => {
-    const size = o.size || 14;
-    const color = o.color || TEXT;
-    const inner = o.bold ? `<b>${html}</b>` : html;
-    return `<span style="font-family:${FONT};font-size:${size}px;line-height:${Math.round(size * 1.45)}px;color:${color};` +
-      `${o.bold ? 'font-weight:bold;' : ''}${o.spacing ? `letter-spacing:${o.spacing}px;` : ''}"><font face="Segoe UI, Calibri, Arial, sans-serif" color="${color}">${inner}</font></span>`;
-  };
-  const link = (href: string, label: string, color: string, bold?: boolean): string =>
-    `<a href="${esc(href)}" style="color:${color};text-decoration:underline;">${tx(esc(label), { color, bold })}</a>`;
-  const space = (h: number): string =>
-    `<tr><td height="${h}" style="height:${h}px;font-size:1px;line-height:1px;mso-line-height-rule:exactly;">&nbsp;</td></tr>`;
-  /** Inhaltszeile mit seitlichem Abstand. */
-  const block = (html: string): string => `<tr><td style="padding:0 28px;">${html}</td></tr>`;
-  const table = (rows: string, extra?: string): string =>
-    `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;${extra || ''}">${rows}</table>`;
-  const button = (href: string, label: string): string =>
-    `<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="border-collapse:collapse;"><tr>` +
-    `<td bgcolor="${accent}" style="background-color:${accent};padding:11px 22px;">` +
-    `<a href="${esc(href)}" style="color:${on};text-decoration:none;">${tx(`${esc(label)}&nbsp;&#8594;`, { color: on, bold: true })}</a>` +
-    `</td></tr></table>`;
-  const dateCell = (label: string, value: string, color: string, bg: string): string =>
-    `<td width="32%" valign="top" bgcolor="${bg}" style="background-color:${bg};border-left:4px solid ${color};padding:10px 14px;">` +
-    `${tx(esc(label), { size: 12, color: MUTED })}<br>${tx(esc(value), { size: 18, color, bold: true })}</td>`;
-  const gap = '<td width="2%" style="font-size:1px;line-height:1px;">&nbsp;</td>';
-  const fact = (label: string, valueHtml: string, last?: boolean): string => {
-    const line = last ? '' : `border-bottom:1px solid ${BORDER};`;
-    return `<tr><td width="34%" valign="top" style="padding:9px 14px;${line}">${tx(esc(label), { size: 13, color: MUTED })}</td>` +
-      `<td valign="top" style="padding:9px 14px;${line}">${valueHtml}</td></tr>`;
-  };
-  const option = (n: string, text: string): string =>
-    `<tr><td width="30" valign="top" style="padding:0 0 10px 0;">${tx(`${n}.`, { size: 16, color: ink, bold: true })}</td>` +
-    `<td valign="top" style="padding:1px 0 10px 0;">${tx(esc(text))}</td></tr>`;
-  const heading = (text: string): string => block(tx(esc(text), { size: 16, bold: true }));
-  const intro = `${esc(t.intro)} ${esc(t.change)}`
-    .replace(esc(c.block), `<b>${esc(c.block)}</b>`).replace(esc(c.del), `<b>${esc(c.del)}</b>`);
-
-  return [
-    `<table role="presentation" width="640" cellpadding="0" cellspacing="0" border="0" style="width:640px;border-collapse:collapse;border:1px solid ${BORDER};background-color:#ffffff;">`,
-    // Kopfbalken
-    `<tr><td bgcolor="${accent}" style="background-color:${accent};padding:20px 28px 22px 28px;">`,
-    tx('POWER PLATFORM &middot; HANDLUNGSBEDARF', { size: 12, color: on, spacing: 1 }),
-    '<br>',
-    tx(esc(c.suspended ? `Developer-Environment „${c.env}“ wird gelöscht` : `Developer-Environment „${c.env}“ wird am ${c.block} gesperrt`), { size: 20, color: on, bold: true }),
-    `</td></tr>`,
-    space(24),
-    block(tx(esc(t.greeting))),
-    space(12),
-    block(tx(intro)),
-    space(20),
+  const intro = escHtml(c.tpl.intro).replace(escHtml(c.block), `<b>${escHtml(c.block)}</b>`).replace(escHtml(c.del), `<b>${escHtml(c.del)}</b>`);
+  return k.frame([
+    k.header('POWER PLATFORM &middot; HANDLUNGSBEDARF', c.tpl.headline),
+    k.space(24),
+    k.block(k.tx(escHtml(c.tpl.greeting))),
+    k.space(12),
+    k.block(k.tx(intro)),
+    k.space(20),
     // Fristen
-    block(table(`<tr>${dateCell('Rückmeldung bis', c.replyBy, ink, '#f5f5f5')}${gap}${dateCell('Sperre ab', c.block, '#8a4b00', '#fff8f0')}${gap}${dateCell('Löschung ab', c.del, '#c50f1f', '#fdf3f4')}</tr>`)),
-    space(26),
+    k.block(k.table(`<tr>${k.dateCell('Rückmeldung bis', c.replyBy, k.ink, '#f5f5f5')}${k.gap}${k.dateCell('Sperre ab', c.block, '#8a4b00', '#fff8f0')}${k.gap}${k.dateCell('Löschung ab', c.del, '#c50f1f', '#fdf3f4')}</tr>`)),
+    k.space(26),
     // Environment
-    heading(t.yourEnv),
-    space(10),
-    block(table([
-      fact('Name', link(c.makerUrl, c.env, ink, true)),
-      fact('Apps / Flows', tx(`${esc(c.apps)} Apps &middot; ${esc(c.flows)} Flows`)),
-      fact('Letzte Aktivität', tx(esc(c.last))),
-      fact('Einschätzung', tx(esc(c.assess.text), { color: toneColor, bold: true }), true)
-    ].join(''), `border:1px solid ${BORDER};`)),
-    space(28),
+    k.heading(t.yourEnv),
+    k.space(10),
+    k.block(k.table([
+      k.fact('Name', k.link(c.makerUrl, c.env, k.ink, true)),
+      k.fact('Apps / Flows', k.tx(`${escHtml(c.apps)} Apps &middot; ${escHtml(c.flows)} Flows`)),
+      k.fact('Letzte Aktivität', k.tx(escHtml(c.last))),
+      k.fact('Einschätzung', k.tx(escHtml(c.assess.text), { color: toneColor, bold: true }), true)
+    ].join(''), `border:1px solid ${k.BORDER};`)),
+    k.space(28),
     // Rückmeldung
-    heading(t.replyTitle),
-    space(8),
-    block(tx(esc(t.replyAsk))),
-    space(12),
-    block(table(t.options.map(o => option(o[0], o[1])).join(''))),
-    c.feedback ? space(4) + block(button(c.feedback, t.formButton)) + space(14) : '',
-    block(tx(esc(t.notResponsible), { color: MUTED })),
-    space(16),
-    block(table(`<tr><td bgcolor="#f5f5f5" style="background-color:#f5f5f5;border-left:4px solid #8a8886;padding:12px 16px;">${tx(esc(t.noReply), { size: 13, color: '#424242' })}</td></tr>`)),
-    space(18),
+    k.heading(t.replyTitle),
+    k.space(8),
+    k.block(k.tx(escHtml(c.tpl.question))),
+    k.space(12),
+    k.block(k.table(c.tpl.options.map((o, i) => k.option(String(i + 1), o)).join(''))),
+    c.feedback ? k.space(4) + k.block(k.button(c.feedback, t.formButton)) + k.space(14) : '',
+    k.block(k.tx(escHtml(t.notResponsible), { color: k.MUTED })),
+    k.space(16),
+    c.tpl.note ? k.note(c.tpl.note) : '',
+    k.space(18),
     // Schaltfläche zum Environment – unter dem Hinweis „Ohne Rückmeldung …“
-    block(button(c.makerUrl, t.open)),
-    space(22),
-    block(`${tx(esc(t.backup))} ${link(EXPORT_GUIDE_URL, 'Anleitung von Microsoft', ink)}`),
-    space(8),
-    block(`${tx('Offizielle Ankündigung von Microsoft:')} ${link(c.infoUrl, 'Deprecation of unmanaged developer environments (Microsoft Learn)', ink)}`),
-    space(24),
-    block(`${tx(esc(t.closing))}<br>${tx(esc(c.signature), { bold: true })}`),
-    space(28),
-    `</table>`
-  ].join('');
+    k.block(k.button(c.makerUrl, t.open)),
+    k.space(22),
+    k.block(`${k.tx(escHtml(t.backup))} ${k.link(EXPORT_GUIDE_URL, 'Anleitung von Microsoft', k.ink)}`),
+    k.space(8),
+    k.block(`${k.tx('Offizielle Ankündigung von Microsoft:')} ${k.link(c.infoUrl, 'Deprecation of unmanaged developer environments (Microsoft Learn)', k.ink)}`),
+    k.space(24),
+    k.block(`${k.tx(escHtml(c.tpl.closing))}<br>${k.tx(escHtml(c.signature), { bold: true })}`),
+    k.space(28)
+  ]);
 }
 
 /** Mail für ein Environment aus dem Reiter „Betroffen ab 15.12.“. accent = Akzentfarbe des Webparts. */
@@ -316,6 +237,32 @@ export function buildDevEnvMail(r: IRecord, s: INotifySettings, today: Date = ne
   const replyBy = replyDeadline(s.replyDays, today);
   const num = (v: unknown): string => (v === null || v === undefined ? '?' : String(v));
   const makerUrl = makerPortalUrl(r);
+  const suspended = today >= DEV_ENV_DEADLINES.block;
+  const block = fmt(DEV_ENV_DEADLINES.block);
+  const del = fmt(DEV_ENV_DEADLINES.delete);
+  const feedback = (s.feedbackUrl || '').trim()
+    .replace(/\{environment\}/g, encodeURIComponent(env))
+    .replace(/\{id\}/g, encodeURIComponent(environmentPlatformId(r)));
+  const raw = resolveTemplate('devenv', s.formal, !!feedback, s.templates);
+  const vars: { [name: string]: string } = {
+    Name: env,
+    Frist: fmt(replyBy),
+    Sperre: block,
+    Löschung: del,
+    Änderung: changeSentence(suspended, block, del),
+    Zustand: suspended ? 'gelöscht' : 'gesperrt',
+    ZustandMitDatum: suspended ? 'gelöscht' : `am ${block} gesperrt`
+  };
+  const tpl: IMailTemplate = {
+    subject: fillText(raw.subject, vars),
+    headline: fillText(raw.headline, vars),
+    greeting: fillText(raw.greeting, vars),
+    intro: fillText(raw.intro, vars),
+    question: fillText(raw.question, vars),
+    options: raw.options.map(o => fillText(o, vars)),
+    note: fillText(raw.note, vars),
+    closing: fillText(raw.closing, vars)
+  };
   const c: IContent = {
     formal: s.formal,
     env,
@@ -325,22 +272,20 @@ export function buildDevEnvMail(r: IRecord, s: INotifySettings, today: Date = ne
     last: lastDate && !isNaN(lastDate.getTime()) ? fmt(lastDate) : 'keine erfasst',
     assess: assessment(String(r[DEV_FIELDS.recommendation] || '')),
     replyBy: fmt(replyBy),
-    block: fmt(DEV_ENV_DEADLINES.block),
-    del: fmt(DEV_ENV_DEADLINES.delete),
-    suspended: today >= DEV_ENV_DEADLINES.block,
-    feedback: (s.feedbackUrl || '').trim()
-      .replace(/\{environment\}/g, encodeURIComponent(env))
-      .replace(/\{id\}/g, encodeURIComponent(environmentPlatformId(r))),
+    block,
+    del,
+    suspended,
+    feedback,
     infoUrl: (s.infoUrl || DEFAULT_INFO_URL).trim(),
-    signature: s.signature || (s.formal ? 'Ihr Power-Platform-Team' : 'Dein Power-Platform-Team')
+    signature: s.signature || (s.formal ? 'Ihr Power-Platform-Team' : 'Dein Power-Platform-Team'),
+    tpl
   };
-  const color = /^#[0-9a-f]{6}$/i.test(accent) ? accent : '#0f6cbd';
   return {
     to: listOf(r, DEV_FIELDS.makerEmails),
     cc: parseAddresses(s.cc),
-    subject: `Rückmeldung bis ${c.replyBy}: Developer-Environment „${env}“ wird ${c.suspended ? 'gelöscht' : 'gesperrt'}`,
+    subject: tpl.subject,
     body: plainText(c),
-    html: htmlMail(c, color),
+    html: htmlMail(c, accent),
     missing: listOf(r, DEV_FIELDS.makersNoMail),
     replyBy,
     makerUrl

@@ -4,6 +4,8 @@
  * Platzhalter in geschweiften Klammern, z. B. {Name}, werden beim Erstellen der Mail ersetzt.
  */
 export type TemplateKey = 'devenv' | 'usage';
+/** Gespeicherte Vorlagen: „devenv“, „usage“ (gemeinsam) und optional „usage:<Tabelle>“ (z. B. usage:admin_flow) je Komponententyp. */
+export type StoredTemplateKey = TemplateKey | string;
 
 export interface IMailTemplate {
   /** Betreff */
@@ -24,7 +26,12 @@ export interface IMailTemplate {
   closing: string;
 }
 
-export type IMailTemplateOverrides = { [K in TemplateKey]?: Partial<IMailTemplate> };
+export type IMailTemplateOverrides = { [key: string]: Partial<IMailTemplate> | undefined };
+
+/** Schlüssel der typspezifischen Fassung von „Nachfrage Verwendung“. */
+export function usageKey(logicalName: string): string {
+  return `usage:${logicalName}`;
+}
 
 export const TEMPLATE_FIELDS: { key: keyof IMailTemplate; label: string; multiline?: boolean; list?: boolean }[] = [
   { key: 'subject', label: 'Betreff' },
@@ -47,7 +54,8 @@ export const TEMPLATE_INFO: { [K in TemplateKey]: { title: string; description: 
       { name: '{Sperre}', text: 'Datum der Sperre (15.12.2026)' },
       { name: '{Löschung}', text: 'Datum der Löschung (15.01.2027)' },
       { name: '{Änderung}', text: 'Satz zur Änderung durch Microsoft (passt sich nach der Sperre an)' },
-      { name: '{Zustand}', text: '„gesperrt“ bzw. nach der Sperre „gelöscht“' }
+      { name: '{Zustand}', text: '„gesperrt“ bzw. nach der Sperre „gelöscht“' },
+      { name: '{ZustandMitDatum}', text: '„am 15.12.2026 gesperrt“ bzw. nach der Sperre „gelöscht“' }
     ]
   },
   usage: {
@@ -72,7 +80,7 @@ export function defaultTemplate(key: TemplateKey, formal: boolean, feedback: boo
   if (key === 'devenv') {
     return {
       subject: 'Rückmeldung bis {Frist}: Developer-Environment „{Name}“ wird {Zustand}',
-      headline: 'Developer-Environment „{Name}“ wird {Zustand}',
+      headline: 'Developer-Environment „{Name}“ wird {ZustandMitDatum}',
       greeting: S ? 'Guten Tag,' : 'Hallo,',
       intro: (S ? 'Sie sind' : 'du bist') + ' als Maker im Power-Platform-Developer-Environment „{Name}“ eingetragen. {Änderung}',
       question: ask,
@@ -102,11 +110,11 @@ export function defaultTemplate(key: TemplateKey, formal: boolean, feedback: boo
   };
 }
 
-/** Standard + gespeicherte Abweichungen (leere Felder → Standard). */
-export function resolveTemplate(key: TemplateKey, formal: boolean, feedback: boolean, overrides?: IMailTemplateOverrides): IMailTemplate {
-  const base = defaultTemplate(key, formal, feedback);
-  const o = (overrides && overrides[key]) || {};
+function applyOverrides(base: IMailTemplate, o: Partial<IMailTemplate> | undefined): IMailTemplate {
   const out: IMailTemplate = { ...base };
+  if (!o) {
+    return out;
+  }
   (Object.keys(base) as (keyof IMailTemplate)[]).forEach(k => {
     const v = o[k];
     if (k === 'options') {
@@ -121,8 +129,20 @@ export function resolveTemplate(key: TemplateKey, formal: boolean, feedback: boo
   return out;
 }
 
+/**
+ * Standard + gespeicherte Abweichungen (leere Felder → Standard).
+ * Bei „usage“ mit Tabelle: Standard ← gemeinsame Vorlage ← Fassung für diesen Typ.
+ */
+export function resolveTemplate(key: TemplateKey, formal: boolean, feedback: boolean, overrides?: IMailTemplateOverrides, logicalName?: string): IMailTemplate {
+  let t = applyOverrides(defaultTemplate(key, formal, feedback), overrides && overrides[key]);
+  if (key === 'usage' && logicalName) {
+    t = applyOverrides(t, overrides && overrides[usageKey(logicalName)]);
+  }
+  return t;
+}
+
 /** Ist ein Feld der Vorlage gegenüber dem Standard geändert? */
-export function isCustomized(key: TemplateKey, overrides?: IMailTemplateOverrides): boolean {
+export function isCustomized(key: StoredTemplateKey, overrides?: IMailTemplateOverrides): boolean {
   const o = overrides && overrides[key];
   return !!o && Object.keys(o).some(k => {
     const v = (o as { [f: string]: unknown })[k];

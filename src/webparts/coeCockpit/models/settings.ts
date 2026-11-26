@@ -1,4 +1,5 @@
 import { IActionSetupState } from '../services/ActionService';
+import { IMailTemplateOverrides } from './mailTemplates';
 
 /** Alle Webpart-Eigenschaften, die im Bereich „Webpart-Einstellungen“ bearbeitet werden. */
 export interface ISettingsValues {
@@ -24,6 +25,8 @@ export interface ISettingsValues {
   notifyFeedbackUrl: string;
   notifyCc: string;
   notifySignature: string;
+  /** Gepflegte Mail-Texte (nur Abweichungen vom Standard) */
+  mailTemplates: IMailTemplateOverrides;
   showActions: boolean;
   actionsGroup: string;
   deleteRequiresStop: boolean;

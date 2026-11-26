@@ -5,7 +5,7 @@ import { DATABASES } from './data';
 interface IList { exists: boolean; fields: string[]; items: Record<string, unknown>[]; unique: boolean; nextId: number }
 interface IGroup { Id: number; Title: string; members: string[] }
 interface IStore { lists: { [title: string]: IList }; groups: IGroup[]; nextGroupId: number }
-interface ISpWindow { __spStore?: IList; __spAll?: IStore; __spReset?: () => void; __spFlowDelayMs?: number; __spFlowOff?: boolean }
+interface ISpWindow { __spStore?: IList; __spAll?: IStore; __spReset?: () => void; __spFlowDelayMs?: number; __spFlowOff?: boolean; __spNotMember?: boolean }
 
 const NOTIFY = 'CoE Cockpit Benachrichtigungen';
 const ACTIONS = 'CoE Cockpit Aktionen';
@@ -135,7 +135,7 @@ function handle(method: 'GET' | 'POST', url: string, body?: string): IMockRespon
     return respond(200, { Id: 3 });
   }
   if (/\/_api\/web\/currentuser\/groups/.test(u)) {
-    return respond(200, { value: s.groups.filter(g => g.members.indexOf(ME) >= 0).map(g => ({ Title: g.Title })) });
+    return respond(200, { value: w.__spNotMember ? [] : s.groups.filter(g => g.members.indexOf(ME) >= 0).map(g => ({ Title: g.Title })) });
   }
   if (/\/_api\/web\/currentuser/.test(u)) {
     return respond(200, { LoginName: ME, Id: 7 });

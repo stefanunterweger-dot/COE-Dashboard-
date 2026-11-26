@@ -7,7 +7,7 @@ import { IContextualMenuItem } from '@fluentui/react/lib/ContextualMenu';
 import { MessageBar, MessageBarType } from '@fluentui/react/lib/MessageBar';
 import { TooltipHost } from '@fluentui/react/lib/Tooltip';
 import { Icon } from '@fluentui/react/lib/Icon';
-import { AadHttpClientFactory, MSGraphClientFactory, SPHttpClient } from '@microsoft/sp-http';
+import { AadHttpClientFactory, AadTokenProviderFactory, MSGraphClientFactory, SPHttpClient } from '@microsoft/sp-http';
 import { IReadonlyTheme } from '@microsoft/sp-component-base';
 import styles from './CoeCockpit.module.scss';
 import { IColumnConfig, IRecord, ISortConfig, ITableConfig } from '../models/ITableConfig';
@@ -24,7 +24,7 @@ import { GlobalSearch } from './GlobalSearch';
 import { copyText, NotifyDialog } from './NotifyDialog';
 import { BulkNotifyPanel } from './BulkNotifyPanel';
 import { MailService } from '../services/MailService';
-import { INotifyLogMap, NotifyLogService, NotifyMethod } from '../services/NotifyLogService';
+import { describeEntry, INotifyLogMap, NotifyLogService, NotifyMethod } from '../services/NotifyLogService';
 import { ActionService, IActionSetupState } from '../services/ActionService';
 import { ACTION_ICON, ACTION_LABEL, ACTION_LOG_KEY, actionsFor, IActionItem, resourceOf } from '../models/actions';
 import { ActionDialog, IActionTarget } from './ActionDialog';
@@ -32,6 +32,9 @@ import { ActionLogView } from './ActionLogView';
 import { CopilotCreditsView } from './CopilotCreditsView';
 import { SolutionContents } from './SolutionContents';
 import { SettingsPanel } from './SettingsPanel';
+import { RoleBadge } from './RoleBadge';
+import { IUsageTarget, UsageNotify, usageLogKey } from './UsageNotify';
+import { usageSupported } from '../models/usageMail';
 import { IWebPartSettings } from '../models/settings';
 import { BILLING_KEY, CREDITS_KEY, GROUP_LICENSING } from '../models/copilotCredits';
 import { PowerPlatformApiService } from '../services/PowerPlatformApiService';
@@ -62,6 +65,8 @@ export interface ICoeCockpitProps {
   isEditMode: boolean;
   editorRequest: number;
   aadHttpClientFactory: AadHttpClientFactory;
+  /** Für die Prüfung der aktiven Admin-Rolle (PIM) aus dem Anmelde-Token. */
+  aadTokenProviderFactory?: AadTokenProviderFactory;
   /** Für den Mailversand über Microsoft Graph (MSGraphClientV3). */
   msGraphClientFactory: MSGraphClientFactory;
   /** Für das gemeinsame Versandprotokoll (SharePoint-Liste auf dieser Website). */
@@ -284,6 +289,8 @@ const CoeCockpit: React.FC<ICoeCockpitProps> = props => {
   const openSettings = (): void => (props.settings ? setSettingsOpen(true) : props.onConfigure());
   /** Environment, für das die E-Mail an die Maker vorbereitet wird. */
   const [notifyRecord, setNotifyRecord] = React.useState<IRecord | undefined>(undefined);
+  /** Komponente, deren Besitzer nach der Verwendung gefragt wird („Nachfrage Verwendung“). */
+  const [usageTarget, setUsageTarget] = React.useState<IUsageTarget | undefined>(undefined);
   const [addressesCopied, setAddressesCopied] = React.useState<string>('');
   /** Environments für den Serienversand (Panel offen, solange gesetzt). */
   const [bulkRecords, setBulkRecords] = React.useState<IRecord[] | undefined>(undefined);
@@ -294,8 +301,9 @@ const CoeCockpit: React.FC<ICoeCockpitProps> = props => {
   const accentColor = String((themeVars as { [k: string]: unknown })['--coe-accent'] || '#0f6cbd');
   // Cockpit-Aktionen (Aufträge in der SharePoint-Liste, ausgeführt von einem Flow)
   const actionService = React.useMemo(
-    () => (props.showActions && props.spHttpClient && props.webUrl ? new ActionService(props.spHttpClient, props.webUrl) : undefined),
-    [props.showActions, props.spHttpClient, props.webUrl]
+    // Auch bei ausgeschalteten Aktionen nötig: Mitgliedschaft in der Gruppe entscheidet über alle Aktions-Schaltflächen
+    () => (props.spHttpClient && props.webUrl ? new ActionService(props.spHttpClient, props.webUrl) : undefined),
+    [props.spHttpClient, props.webUrl]
   );
   const [actionSetup, setActionSetup] = React.useState<IActionSetupState | undefined>(undefined);
   const [actionItems, setActionItems] = React.useState<IActionItem[] | undefined>(undefined);
@@ -312,7 +320,10 @@ const CoeCockpit: React.FC<ICoeCockpitProps> = props => {
       (e: unknown) => { setActionProblem(`Aktionsprotokoll nicht lesbar: ${e instanceof Error ? e.message : String(e)}`); setActionLoading(false); }
     );
   }, [actionService]);
-  const canAct = !!actionService && !!actionSetup && actionSetup.listExists && actionSetup.isMember;
+  /** Mitglied der SharePoint-Gruppe (Standard „CoE Cockpit Admins“)? Nur dann gibt es Aktions-Schaltflächen – auch für E-Mails. */
+  const isGroupMember = !!actionSetup && !!actionSetup.group && actionSetup.isMember;
+  /** Aufträge (Quarantäne, Löschen …) zusätzlich nur mit eingerichteter Liste und eingeschalteten Aktionen. */
+  const canAct = !!props.showActions && !!actionService && !!actionSetup && actionSetup.listExists && isGroupMember;
   // Gemeinsames Versandprotokoll (wer hat welches Environment wann verständigt)
   const notifyLogService = React.useMemo(
     () => (props.spHttpClient && props.webUrl ? new NotifyLogService(props.spHttpClient, props.webUrl) : undefined),
@@ -343,6 +354,21 @@ const CoeCockpit: React.FC<ICoeCockpitProps> = props => {
     };
     return notifyLogService.add(entry).then(() => {
       setNotifyLog(prev => ({ ...prev, [entry.envId]: entry }));
+      setNotifyLogProblem('');
+    });
+  };
+  /** „Nachfrage Verwendung“ im gemeinsamen Versandprotokoll vermerken (Schlüssel usage:<Tabelle>:<ID>). */
+  const logUsage = (key: string, title: string, method: NotifyMethod, subject: string, to: string[]): Promise<void> => {
+    if (!notifyLogService) {
+      return Promise.reject(new Error('Kein Versandprotokoll verfügbar.'));
+    }
+    const entry = {
+      envId: key, envName: title, at: new Date().toISOString(),
+      by: props.currentUser.displayName, byEmail: props.currentUser.email,
+      method, subject, recipients: to.join('; ')
+    };
+    return notifyLogService.add(entry).then(() => {
+      setNotifyLog(prev => ({ ...prev, [key]: entry }));
       setNotifyLogProblem('');
     });
   };
@@ -1241,6 +1267,7 @@ const CoeCockpit: React.FC<ICoeCockpitProps> = props => {
               <Icon iconName="Clock" /> {countdown}
             </span>
           </div>
+          {isGroupMember && (
           <div className={styles.devActions}>
             <span className={styles.devActionsText}>
               <Icon iconName="Mail" /> Maker verständigen: einzeln über das Brief-Symbol in der Zeile oder alle gefilterten auf einmal – je Environment eine eigene E-Mail.
@@ -1266,6 +1293,7 @@ const CoeCockpit: React.FC<ICoeCockpitProps> = props => {
               })}
             />
           </div>
+          )}
           <div className={`${styles.envStats} ${styles.devStats}`} role="group" aria-label="Schnellfilter">
             {tiles.map(t => (
               <button
@@ -1401,7 +1429,7 @@ const CoeCockpit: React.FC<ICoeCockpitProps> = props => {
           onSetSort={(field, desc) => { setSort({ field, desc }); setPage(0); }}
           onFilterChange={setColumnFilter}
           onOpen={r => activeTable && setPanelStack([{ table: activeTable, record: r, meta: state ? state.meta : undefined }])}
-          rowAction={inDevView ? {
+          rowAction={inDevView && isGroupMember ? {
             icon: 'Mail',
             label: 'Maker per E-Mail verständigen',
             isDisabled: r => !r[DEV_FIELDS.makerEmails],
@@ -1449,8 +1477,21 @@ const CoeCockpit: React.FC<ICoeCockpitProps> = props => {
     if (!panel) {
       return undefined;
     }
+    if (!isGroupMember) {
+      return undefined;
+    }
     const out: { key: string; text: string; icon: string; disabled?: boolean; title?: string; onClick: () => void }[] = [];
     const isDev = panel.table.key === DEV_ENV_KEY;
+    // „Nachfrage Verwendung“: Mail an den Besitzer (für alle Inventar-Bereiche, unabhängig von der Aktionsliste)
+    if (!panel.table.virtual && usageSupported(panel.table.logicalName)) {
+      const pid = (panel.meta && panel.meta.primaryId) || `${panel.table.logicalName}id`;
+      const asked = notifyLog[usageLogKey(panel.table.logicalName, String(panel.record[pid] || ''))];
+      out.push({
+        key: 'usage', text: 'Nachfrage Verwendung', icon: 'Mail',
+        title: asked ? `Bereits nachgefragt – ${describeEntry(asked)}` : 'E-Mail an den Besitzer: Wird die Komponente noch benötigt?',
+        onClick: () => { refreshNotifyLog().catch(() => undefined); setUsageTarget({ table: panel.table, record: panel.record, primaryId: pid }); }
+      });
+    }
     if (isDev) {
       out.push({
         key: 'mail', text: 'Maker per E-Mail verständigen', icon: 'Mail',
@@ -1478,6 +1519,11 @@ const CoeCockpit: React.FC<ICoeCockpitProps> = props => {
 
   /** Warum im Bereich „Aktionen“ nichts angeboten wird. */
   const panelActionsNote = (): string => {
+    if (!isGroupMember) {
+      return isEditMode
+        ? `Aktionen sind nur für Mitglieder der SharePoint-Gruppe „${props.actionsGroup}“ sichtbar (Webpart-Einstellungen → Aktionen). Andere sehen diesen Abschnitt nicht.`
+        : '';
+    }
     if (!panel || !(panel.table.logicalName === 'admin_app' || panel.table.logicalName === 'admin_flow' || panel.table.logicalName === 'admin_solution' || panel.table.key === DEV_ENV_KEY)) {
       return 'Für diesen Bereich gibt es keine Aktionen.';
     }
@@ -1620,7 +1666,7 @@ const CoeCockpit: React.FC<ICoeCockpitProps> = props => {
     navItems.push({ key: CREDITS_KEY, title: 'Copilot-Credits', icon: 'AllCurrency', group: GROUP_LICENSING, active: activeKey === CREDITS_KEY, onClick: () => setActiveKey(CREDITS_KEY) });
     navItems.push({ key: BILLING_KEY, title: 'Abrechnungspläne', icon: 'Bank', group: GROUP_LICENSING, active: activeKey === BILLING_KEY, onClick: () => setActiveKey(BILLING_KEY) });
   }
-  if (props.showActions && actionSetup && actionSetup.listExists) {
+  if (props.showActions && actionSetup && actionSetup.listExists && isGroupMember) {
     navItems.push({ key: ACTION_LOG_KEY, title: 'Aktionsprotokoll', icon: 'History', group: GROUP_GOVERNANCE, active: !!inActionLog, onClick: () => setActiveKey(ACTION_LOG_KEY) });
   }
   pipelineTables.forEach(t => navItems.push({
@@ -1684,6 +1730,13 @@ const CoeCockpit: React.FC<ICoeCockpitProps> = props => {
             />
           )}
           <div className={styles.headerActions}>
+            {props.aadTokenProviderFactory && (
+              <RoleBadge
+                factory={props.aadTokenProviderFactory}
+                resources={[service ? service.baseUrl : '', 'https://graph.microsoft.com', 'https://api.powerplatform.com']}
+                themeVars={themeVars}
+              />
+            )}
             {lastLoaded && <span className={styles.metaText}>Aktualisiert {formatTime(lastLoaded)}</span>}
             {service && (
               <TooltipHost content={linkCopied ? 'Link kopiert' : 'Link zu dieser Ansicht kopieren (inkl. Filter)'}>
@@ -1766,7 +1819,7 @@ const CoeCockpit: React.FC<ICoeCockpitProps> = props => {
           themeVars={themeVars}
           onDismiss={ev => {
             // Ein Klick in einen Dialog über dem Panel (Aktion, E-Mail) schließt das Panel nicht
-            if (actionTarget || notifyRecord) {
+            if (actionTarget || notifyRecord || usageTarget) {
               if (ev && 'preventDefault' in ev) {
                 ev.preventDefault();
               }
@@ -1781,6 +1834,7 @@ const CoeCockpit: React.FC<ICoeCockpitProps> = props => {
           actions={panelActions()}
           headerExtra={panelActionHistory()}
           actionsNote={panelActionsNote()}
+          hideActions={!isGroupMember && !isEditMode}
           extraSection={panel && service && panel.table.logicalName === 'admin_solution' && !panel.table.environmentUrl
             ? {
               title: 'Inhalt der Solution',
@@ -1821,6 +1875,19 @@ const CoeCockpit: React.FC<ICoeCockpitProps> = props => {
           onDismiss={() => setNotifyRecord(undefined)}
         />
 
+        <UsageNotify
+          target={usageTarget}
+          service={usageTarget ? serviceFor(usageTarget.table) : undefined}
+          settings={props.notify}
+          themeVars={themeVars}
+          accent={accentColor}
+          mailService={mailService}
+          log={notifyLog}
+          logProblem={notifyLogProblem}
+          onLogged={logUsage}
+          onDismiss={() => setUsageTarget(undefined)}
+        />
+
         <BulkNotifyPanel
           records={bulkRecords}
           settings={props.notify}
@@ -1852,6 +1919,7 @@ const CoeCockpit: React.FC<ICoeCockpitProps> = props => {
               onOpenPropertyPane: () => { setSettingsOpen(false); props.settings!.onOpenPropertyPane(); }
             }}
             themeVars={themeVars}
+            accent={accentColor}
             onDismiss={() => setSettingsOpen(false)}
           />
         )}

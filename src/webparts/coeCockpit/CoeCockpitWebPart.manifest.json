@@ -34,6 +34,7 @@
         "devEnvManagedField": "",
         "showSecurity": true,
         "showCopilotCredits": true,
+        "mailTemplates": {},
         "pipelinesHostUrl": "",
         "notifyTone": "sie",
         "notifyReplyDays": 14,

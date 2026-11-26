@@ -10,6 +10,8 @@ import { ISettingsValues, IWebPartSettings } from '../models/settings';
 import { ACTION_LIST_TITLE } from '../models/actions';
 import { parseAddresses } from '../models/notification';
 import { isValidEnvironmentUrl } from '../utils/format';
+import { TemplateEditor } from './TemplateEditor';
+import { isCustomized } from '../models/mailTemplates';
 
 /**
  * „Webpart-Einstellungen“: übersichtlicher Ersatz für den langen SharePoint-Eigenschaftenbereich.
@@ -23,6 +25,8 @@ export interface ISettingsPanelProps {
   isOpen: boolean;
   settings: IWebPartSettings;
   themeVars: React.CSSProperties;
+  /** Akzentfarbe (für die Vorschau der Mail-Vorlagen). */
+  accent: string;
   onDismiss: () => void;
 }
 
@@ -94,7 +98,10 @@ export const SettingsPanel: React.FC<ISettingsPanelProps> = props => {
     { key: 'views', label: 'Ansichten', icon: 'ViewDashboard', tone: 'ok', hint: 'Übersicht, Sicherheit, Copilot-Credits' },
     { key: 'default', label: 'Default Environment', icon: 'Home', tone: v.showDefaultEnvironment ? 'ok' : 'off', hint: v.showDefaultEnvironment ? 'eingeblendet' : 'ausgeblendet' },
     { key: 'dev', label: 'Betroffen ab 15.12.', icon: 'Warning', tone: v.showDevEnvironments ? 'ok' : 'off', hint: v.showDevEnvironments ? 'eingeblendet' : 'ausgeblendet' },
-    { key: 'mail', label: 'E-Mail an Maker', icon: 'Mail', tone: v.showDevEnvironments ? 'ok' : 'off', hint: v.notifyAutoSend ? 'Outlook + automatisch' : 'nur Outlook' },
+    {
+      key: 'mail', label: 'E-Mail & Vorlagen', icon: 'Mail', tone: 'ok',
+      hint: Object.keys(v.mailTemplates || {}).some(k => isCustomized(k, v.mailTemplates)) ? 'Vorlagen angepasst' : v.notifyAutoSend ? 'Outlook + automatisch' : 'nur Outlook'
+    },
     {
       key: 'actions', label: 'Aktionen', icon: 'LightningBolt',
       tone: !v.showActions ? 'off' : actionsReady ? 'ok' : st ? 'warn' : 'off',
@@ -111,7 +118,7 @@ export const SettingsPanel: React.FC<ISettingsPanelProps> = props => {
     views: 'Welche Ansichten in der Navigation erscheinen.',
     default: 'Eigener Bereich für das Default Environment: Apps und Flows aus dem CoE, Solutions live aus dem Environment.',
     dev: 'Nicht verwaltete Developer-Environments, die Microsoft ab 15.12.2026 sperrt und ab 15.01.2027 löscht.',
-    mail: 'Vorlage für die E-Mail an die Maker betroffener Developer-Environments.',
+    mail: 'Allgemeine Einstellungen für alle E-Mails und die Texte der Vorlagen „Nachfrage Verwendung“ und „Betroffen ab 15.12.“.',
     actions: 'Aufträge wie Quarantäne, Löschen, Besitzer ändern oder Environment deaktivieren. Das Cockpit legt sie in einer SharePoint-Liste an, '
       + 'der Flow „CoE Cockpit | Aktion ausführen“ im CoE-Environment führt sie mit einem Admin-Dienstkonto aus.',
     alm: 'Bereitstellungen und Pipelines aus dem Dataverse des Pipelines-Host-Environments.',
@@ -195,7 +202,7 @@ export const SettingsPanel: React.FC<ISettingsPanelProps> = props => {
           <>
             <div className={styles.setCard}>
               <Row
-                label="Automatischen Versand anbieten"
+                label="Direkt senden anbieten (Microsoft Graph)"
                 description="„Direkt senden“ und „Automatisch senden“ über Microsoft Graph aus dem eigenen Postfach. Voraussetzung: Berechtigung „Microsoft Graph – Mail.Send“."
               >
                 <Toggle checked={v.notifyAutoSend} onChange={(_e, c) => set({ notifyAutoSend: !!c })} />
@@ -220,6 +227,15 @@ export const SettingsPanel: React.FC<ISettingsPanelProps> = props => {
                 <LazyText label="Grußzeile" value={v.notifySignature} placeholder="Ihr Power-Platform-Team" onCommit={x => set({ notifySignature: x })} />
               </div>
             </div>
+            <TemplateEditor
+              templates={v.mailTemplates || {}}
+              accent={props.accent}
+              notify={{
+                formal: v.notifyTone !== 'du', replyDays: v.notifyReplyDays, infoUrl: v.notifyInfoUrl || s.defaultInfoUrl,
+                feedbackUrl: v.notifyFeedbackUrl, cc: v.notifyCc, signature: v.notifySignature
+              }}
+              onChange={t => set({ mailTemplates: t })}
+            />
           </>
         );
       case 'actions':
@@ -336,6 +352,10 @@ export const SettingsPanel: React.FC<ISettingsPanelProps> = props => {
       headerText="Webpart-Einstellungen"
       closeButtonAriaLabel="Schließen"
       isFooterAtBottom={true}
+      styles={sp => ({
+        footer: { backgroundColor: sp.theme ? sp.theme.semanticColors.bodyBackground : '#ffffff', borderTop: `1px solid ${sp.theme ? sp.theme.semanticColors.bodyDivider : '#edebe9'}` },
+        scrollableContent: { overscrollBehavior: 'contain' }
+      })}
       onRenderFooterContent={() => (
         <div className={styles.setFooter} style={props.themeVars}>
           <span className={styles.setFooterNote}><Icon iconName="Save" /> Änderungen gelten sofort und werden mit der Seite gespeichert („Erneut veröffentlichen“).</span>

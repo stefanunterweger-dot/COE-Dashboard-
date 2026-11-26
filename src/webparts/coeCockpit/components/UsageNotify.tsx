@@ -70,6 +70,7 @@ export const UsageNotify: React.FC<IUsageNotifyProps> = props => {
       const name = displayValue(rec, 'admin_displayname') || displayValue(rec, 'admin_name')
         || (target.table.columns[0] ? displayValue(rec, target.table.columns[0].field) : '') || id;
       const info: IUsageInfo = {
+        logicalName: target.table.logicalName,
         typeLabel: type ? type.label : target.table.title,
         name,
         environment: environmentName(target.table.logicalName, rec),
