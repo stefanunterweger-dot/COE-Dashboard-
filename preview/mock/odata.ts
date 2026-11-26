@@ -291,6 +291,17 @@ function handle(url: string, headers: { [k: string]: string }): IMockResponse {
         let rows = t.rows;
         if (gm[1]) { const pred = parseFilter(t, gm[1]); rows = rows.filter(pred); }
         if (rows.length > 50000) { throw new ODataError(400, 'AggregateQueryRecordLimit exceeded. Cannot perform this operation.'); }
+        const maxM = /^([a-z0-9_]+) with max as ([a-z]+)$/i.exec(gm[3].trim());
+        if (maxM) {
+          attrFor(t, maxM[1]);
+          const best: { [k: string]: string } = {};
+          rows.forEach(r => {
+            const k = String(r[groupField] === undefined ? null : r[groupField]);
+            const v = r[maxM[1]] as string | null;
+            if (v && (!best[k] || v > best[k])) { best[k] = v; }
+          });
+          return respond(200, { value: Object.keys(best).map(k => ({ [groupField]: k === 'null' ? null : k, [maxM[2]]: best[k] })) });
+        }
         const counts: { [k: string]: number } = {};
         rows.forEach(r => { const k = String(r[groupField] === undefined ? null : r[groupField]); counts[k] = (counts[k] || 0) + 1; });
         const ga = attrFor(t, groupField);

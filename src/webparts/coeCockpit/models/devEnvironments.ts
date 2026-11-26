@@ -1,6 +1,6 @@
 import { IRecord, ITableConfig } from './ITableConfig';
 import { DataverseService, environmentType, IAttributeMeta, IRecordResult } from '../services/DataverseService';
-import { displayValue } from '../utils/format';
+import { displayValue, rawValue } from '../utils/format';
 
 /**
  * Reiter „Betroffen ab 15.12.“: nicht verwaltete (unmanaged) Developer-Environments.
@@ -21,8 +21,19 @@ export const DEV_FIELDS = {
   state: 'coe_state',
   managed: 'coe_managed',
   apps: 'coe_apps',
-  flows: 'coe_flows'
+  flows: 'coe_flows',
+  lastActivity: 'coe_lastactivity',
+  recommendation: 'coe_recommendation'
 };
+
+/** Empfehlungen je Environment (Anzeige + Schnellfilter). */
+export const RECOMMENDATION = {
+  inUse: 'In Nutzung – sichern oder auf Managed umstellen',
+  inactive: 'Inaktiv (> 90 Tage) – prüfen',
+  empty: 'Leer – kann auslaufen',
+  disabled: 'Deaktiviert'
+};
+const INACTIVE_DAYS = 90;
 
 const ENV_TABLE = 'admin_environment';
 const SYSTEM_FIELDS = ['createdby', 'createdonbehalfby', 'modifiedby', 'modifiedonbehalfby', 'ownerid', 'owninguser', 'owningteam', 'owningbusinessunit', 'statecode', 'statuscode'];
@@ -40,10 +51,15 @@ export function buildDevEnvTable(): ITableConfig {
     columns: [
       { field: 'admin_displayname', label: 'Environment', type: 'title' },
       { field: DEV_FIELDS.creator, label: 'Ersteller', type: 'person' },
+      {
+        field: DEV_FIELDS.recommendation, label: 'Empfehlung', type: 'status',
+        statusMap: { [RECOMMENDATION.inUse]: 'danger', [RECOMMENDATION.inactive]: 'warning', [RECOMMENDATION.empty]: 'neutral', [RECOMMENDATION.disabled]: 'neutral' }
+      },
       { field: DEV_FIELDS.state, label: 'Zustand', type: 'status', statusMap: { 'Aktiv': 'success', 'Deaktiviert': 'danger', 'Unbekannt': 'neutral' } },
       { field: DEV_FIELDS.apps, label: 'Apps', type: 'number' },
       { field: DEV_FIELDS.flows, label: 'Flows', type: 'number' },
-      { field: 'admin_region', label: 'Region', type: 'choice' },
+      { field: DEV_FIELDS.lastActivity, label: 'Letzte Aktivität', type: 'date' },
+      { field: 'admin_region', label: 'Region', type: 'choice', hidden: true },
       { field: 'admin_environmentcreatedon', label: 'Erstellt', type: 'date' },
       { field: DEV_FIELDS.managed, label: 'Managed', type: 'status', hidden: true, statusMap: { 'Nein': 'warning', 'Ja': 'success', 'Unbekannt': 'neutral' } },
       { field: 'admin_environmentcdsinstanceurl', label: 'Dataverse-URL', type: 'url', hidden: true },
@@ -97,7 +113,7 @@ function isDeveloper(r: IRecord): boolean {
 function managedValue(r: IRecord, field: string): boolean | undefined {
   if (/protectionlevel/i.test(field)) {
     // CoE „Governance Protection Level“: „Basic“ = nicht managed, leer = unbekannt, sonst (z. B. „Standard“) managed
-    const level = displayValue(r, field).trim();
+    const level = rawValue(r, field).trim();
     return !level ? undefined : !/^basic$/i.test(level);
   }
   const raw = r[field];
@@ -133,6 +149,28 @@ function stateLabel(r: IRecord, field: string | undefined): string {
 }
 
 const BATCH = 25;
+
+/** Jüngstes Datum je Environment aus mehreren Spalten (App-Start, App-/Flow-Änderung). */
+async function lastActivityPerEnvironment(service: DataverseService, envIds: string[]): Promise<{ [envId: string]: string }> {
+  const out: { [envId: string]: string } = {};
+  const sources: [string, string, string, string][] = [
+    ['admin_app', '_admin_appenvironment_value', 'admin_appdeleted', 'admin_applastlaunchedon'],
+    ['admin_app', '_admin_appenvironment_value', 'admin_appdeleted', 'admin_appmodifiedon'],
+    ['admin_flow', '_admin_flowenvironment_value', 'admin_flowdeleted', 'admin_flowmodifiedon']
+  ];
+  for (let i = 0; i < envIds.length; i += BATCH) {
+    const ids = envIds.slice(i, i + BATCH);
+    const results = await Promise.all(sources.map(([table, envField, deletedField, dateField]) => service
+      .getGroupedMax(table, envField, `(${deletedField} ne true) and (${ids.map(id => `${envField} eq ${id}`).join(' or ')})`, dateField)
+      .catch(() => ({} as { [k: string]: string }))));
+    results.forEach(r => Object.keys(r).forEach(k => {
+      if (!out[k] || r[k] > out[k]) {
+        out[k] = r[k];
+      }
+    }));
+  }
+  return out;
+}
 
 async function countPerEnvironment(service: DataverseService, table: string, envField: string, deletedField: string, envIds: string[]): Promise<{ [envId: string]: number }> {
   const out: { [envId: string]: number } = {};
@@ -178,7 +216,7 @@ export async function loadAffectedEnvironments(service: DataverseService, manage
   }
 
   const ids = affected.map(r => String(r[res.meta.primaryId] || '')).filter(id => !!id);
-  const [apps, flows] = await Promise.all([
+  const [apps, flows, activity] = await Promise.all([
     countPerEnvironment(service, 'admin_app', '_admin_appenvironment_value', 'admin_appdeleted', ids).catch((e: Error) => {
       warnings.push(`Anzahl Apps konnte nicht ermittelt werden: ${e.message}`);
       return undefined;
@@ -186,19 +224,32 @@ export async function loadAffectedEnvironments(service: DataverseService, manage
     countPerEnvironment(service, 'admin_flow', '_admin_flowenvironment_value', 'admin_flowdeleted', ids).catch((e: Error) => {
       warnings.push(`Anzahl Flows konnte nicht ermittelt werden: ${e.message}`);
       return undefined;
-    })
+    }),
+    lastActivityPerEnvironment(service, ids).catch(() => ({} as { [envId: string]: string }))
   ]);
+  const inactiveBefore = new Date(Date.now() - INACTIVE_DAYS * 86400000).toISOString();
 
   const records = affected.map(r => {
     const id = String(r[res.meta.primaryId] || '').toLowerCase();
     const managed = managedAttr ? managedValue(r, managedAttr.selectName) : undefined;
+    const state = stateLabel(r, stateAttr ? stateAttr.selectName : undefined);
+    const appCount = apps ? apps[id] || 0 : null;
+    const flowCount = flows ? flows[id] || 0 : null;
+    const last = activity[id] || '';
+    const recommendation = state === 'Deaktiviert'
+      ? RECOMMENDATION.disabled
+      : appCount === 0 && flowCount === 0
+        ? RECOMMENDATION.empty
+        : !last || last < inactiveBefore ? RECOMMENDATION.inactive : RECOMMENDATION.inUse;
     return {
       ...r,
+      [DEV_FIELDS.recommendation]: recommendation,
+      [DEV_FIELDS.lastActivity]: last || null,
       [DEV_FIELDS.creator]: creatorAttr ? displayValue(r, creatorAttr.selectName) : '',
-      [DEV_FIELDS.state]: stateLabel(r, stateAttr ? stateAttr.selectName : undefined),
+      [DEV_FIELDS.state]: state,
       [DEV_FIELDS.managed]: managed === undefined ? 'Unbekannt' : managed ? 'Ja' : 'Nein',
-      [DEV_FIELDS.apps]: apps ? apps[id] || 0 : null,
-      [DEV_FIELDS.flows]: flows ? flows[id] || 0 : null
+      [DEV_FIELDS.apps]: appCount,
+      [DEV_FIELDS.flows]: flowCount
     } as IRecord;
   });
   return { records, meta: res.meta, warnings, truncated: res.truncated };

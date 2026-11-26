@@ -1,4 +1,5 @@
 import { IColumnConfig, IRecord } from '../models/ITableConfig';
+import { translateValue } from './valueLabels';
 
 export const FORMATTED = '@OData.Community.Display.V1.FormattedValue';
 
@@ -14,20 +15,29 @@ const AVATAR_COLORS = [
   '#c239b3', '#498205', '#986f0b', '#e3008c', '#005b70'
 ];
 
-/** Anzeigewert eines Feldes (bevorzugt den formatierten Wert von Dataverse). */
+/**
+ * Anzeigewert eines Feldes (bevorzugt den formatierten Wert von Dataverse).
+ * Englische CoE-Werte werden für die Anzeige übersetzt (z. B. „Suspended“ → „Gesperrt“).
+ */
 export function displayValue(record: IRecord, field: string): string {
-  const formatted = record[field + FORMATTED];
-  if (formatted !== undefined && formatted !== null && formatted !== '') {
-    return String(formatted);
-  }
   const raw = record[field];
-  if (raw === undefined || raw === null) {
-    return '';
-  }
   if (typeof raw === 'boolean') {
     return raw ? 'Ja' : 'Nein';
   }
-  return String(raw);
+  const formatted = record[field + FORMATTED];
+  if (formatted !== undefined && formatted !== null && formatted !== '') {
+    return translateValue(field, String(formatted));
+  }
+  if (raw === undefined || raw === null) {
+    return '';
+  }
+  return translateValue(field, String(raw));
+}
+
+/** Originalwert eines Feldes ohne Übersetzung (für Logik und Abfragen). */
+export function rawValue(record: IRecord, field: string): string {
+  const raw = record[field];
+  return raw === undefined || raw === null ? '' : String(raw);
 }
 
 export function toDate(value: unknown): Date | undefined {

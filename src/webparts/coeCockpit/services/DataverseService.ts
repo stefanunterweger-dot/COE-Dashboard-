@@ -1,6 +1,6 @@
 import { AadHttpClient, AadHttpClientFactory, HttpClientResponse } from '@microsoft/sp-http';
 import { IRecord, IRelatedConfig, ITableConfig } from '../models/ITableConfig';
-import { combineFilters, displayValue, templateFields } from '../utils/format';
+import { combineFilters, displayValue, rawValue, templateFields } from '../utils/format';
 
 const API_PATH = '/api/data/v9.2/';
 const MAX_PAGE = 5000;
@@ -90,7 +90,8 @@ export interface IEnvironmentInfo {
 
 /** Typ eines CoE-Environments (Production, Sandbox, Developer, Default …) – „Environment Sku“ bzw. älter „Environment Type“. */
 export function environmentType(r: IRecord): string {
-  return displayValue(r, 'admin_environmentsku') || displayValue(r, 'admin_environmenttype');
+  // Originalwert (nicht übersetzt), damit Logik wie „Default“/„Developer“ unabhängig von der Anzeige bleibt
+  return rawValue(r, 'admin_environmentsku') || displayValue(r, 'admin_environmenttype');
 }
 
 /** Ergänzt https:// und entfernt den abschließenden Schrägstrich. */
@@ -335,6 +336,38 @@ export class DataverseService {
     } catch (e) {
       throw firstError !== undefined && !missingProperty(e) ? firstError : e;
     }
+  }
+
+  /**
+   * Größter Wert (z. B. jüngstes Datum) je Wert einer Spalte, z. B. letzte Aktivität je Environment.
+   * Per OData-Aggregation; Rückfall: Datensätze laden und im Browser auswerten.
+   */
+  public async getGroupedMax(logicalName: string, groupField: string, filter: string | undefined, maxField: string): Promise<{ [value: string]: string }> {
+    const meta = await this.getEntityMeta(logicalName);
+    const apply = `${filter ? `filter(${filter})/` : ''}groupby((${groupField}),aggregate(${maxField} with max as m))`;
+    const out: { [value: string]: string } = {};
+    const keep = (k: unknown, v: unknown): void => {
+      const key = String(k === null || k === undefined ? '' : k).toLowerCase();
+      const val = v === null || v === undefined ? '' : String(v);
+      if (val && (!out[key] || val > out[key])) {
+        out[key] = val;
+      }
+    };
+    try {
+      const res = await this._get<{ value: IRecord[] }>(`${meta.entitySetName}?$apply=${encodeURIComponent(apply)}`);
+      res.value.forEach(r => keep(r[groupField], r.m));
+      return out;
+    } catch (e) {
+      if (missingProperty(e)) {
+        throw e;
+      }
+    }
+    const rec = await this.getRecords({
+      key: '_max', title: logicalName, logicalName, icon: 'Table', filter, strictFilter: true,
+      columns: [{ field: groupField, label: groupField, type: 'text' }, { field: maxField, label: maxField, type: 'date' }]
+    }, AGGREGATE_LIMIT);
+    rec.records.forEach(r => keep(r[groupField], r[maxField]));
+    return out;
   }
 
   /**

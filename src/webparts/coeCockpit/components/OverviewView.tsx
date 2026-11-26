@@ -4,7 +4,8 @@ import styles from './CoeCockpit.module.scss';
 import { IRecord, ITableConfig } from '../models/ITableConfig';
 import { DataverseService, ICountResult } from '../services/DataverseService';
 import { IColumnFilter } from '../utils/filters';
-import { formatNumber } from '../utils/format';
+import { formatNumber, formatTime } from '../utils/format';
+import { translateValue } from '../utils/valueLabels';
 import {
   count, daysAgoIso, distribution, environmentsOverview, IMonth, lastMonths, monthlyCounts, numberOf, textOf, topRecords
 } from '../models/overview';
@@ -31,15 +32,35 @@ interface ISection<T> {
 
 const loading = <T,>(): ISection<T> => ({ status: 'loading' });
 
+/** Zwischenspeicher der Übersicht (pro Browser-Sitzung, 10 Minuten) – „Aktualisieren“ lädt immer neu. */
+const CACHE_TTL = 10 * 60 * 1000;
+interface ICache { time: number; reloadKey: string; data: { [section: string]: unknown } }
+function readCache(key: string): ICache | undefined {
+  try {
+    const raw = window.sessionStorage.getItem(key);
+    return raw ? JSON.parse(raw) as ICache : undefined;
+  } catch {
+    return undefined;
+  }
+}
+function writeCache(key: string, value: ICache): void {
+  try {
+    window.sessionStorage.setItem(key, JSON.stringify(value));
+  } catch {
+    // Speicher voll oder gesperrt – dann eben ohne Zwischenspeicher
+  }
+}
+
 /** Feste Farbzuordnung je Kategorie – die Farbe folgt dem Wert, nicht dem Rang. */
 const APP_TYPE_SLOT: { [k: string]: number } = { 'Canvas': 1, 'Model Driven': 2, 'Custom Page': 3, 'SharePointFormApp': 4, 'Component Library': 5 };
 const ENV_TYPE_SLOT: { [k: string]: number } = { 'Production': 1, 'Sandbox': 2, 'Developer': 3, 'Default': 4, 'Trial': 5, 'Teams': 6 };
 const FLOW_STATE: { [k: string]: { color: string; label: string; darkText?: boolean } } = {
-  'Started': { color: 'var(--coe-status-good)', label: 'Aktiv (Started)' },
-  'Stopped': { color: 'var(--coe-status-neutral)', label: 'Angehalten (Stopped)' },
-  'Suspended': { color: 'var(--coe-status-critical)', label: 'Gesperrt (Suspended)' }
+  'Started': { color: 'var(--coe-status-good)', label: 'Aktiv' },
+  'Stopped': { color: 'var(--coe-status-neutral)', label: 'Angehalten' },
+  'Suspended': { color: 'var(--coe-status-critical)', label: 'Gesperrt' }
 };
-const YES = ['Yes', 'yes', 'Ja'];
+/** Anzeigewert „Ja“ (CoE speichert „Yes“, das Webpart zeigt deutsch an). */
+const YES = ['Ja'];
 
 function slotColor(slot: number | undefined): string {
   return slot ? `var(--coe-series-${slot})` : 'var(--coe-status-neutral)';
@@ -47,12 +68,13 @@ function slotColor(slot: number | undefined): string {
 
 /** Höchstens 6 Teile: Rest wird zu „Andere“. */
 function toParts(
-  dist: { label: string; value: number }[], color: (label: string) => string, onClick: (label: string) => void, max: number = 6
+  dist: { label: string; value: number }[], color: (label: string) => string, onClick: (label: string) => void,
+  display: (label: string) => string = l => l, max: number = 6
 ): IPart[] {
   const head = dist.slice(0, dist.length > max ? max - 1 : max);
   const rest = dist.slice(head.length);
   const parts: IPart[] = head.map(d => ({
-    key: d.label, label: d.label, value: d.value, color: color(d.label),
+    key: d.label, label: display(d.label), value: d.value, color: color(d.label),
     darkText: color(d.label) === 'var(--coe-series-4)', onClick: () => onClick(d.label)
   }));
   if (rest.length) {
@@ -108,9 +130,21 @@ export const OverviewView: React.FC<IOverviewProps> = props => {
   const [topConnectors, setTopConnectors] = React.useState<ISection<{ records: IRecord[]; primaryId: string }>>(loading());
   const [topMakers, setTopMakers] = React.useState<ISection<{ records: IRecord[]; primaryId: string }>>(loading());
   const [gov, setGov] = React.useState<{ [k: string]: ISection<ICountResult> }>({});
+  const [loadedAt, setLoadedAt] = React.useState<{ time: number; cached: boolean } | undefined>(undefined);
+  const cacheKey = `coe-cockpit:overview:${service.baseUrl}`;
 
   React.useEffect(() => {
     let cancelled = false;
+    // Aus dem Zwischenspeicher, wenn er zu diesem Stand passt und jünger als 10 Minuten ist
+    const cache = readCache(cacheKey);
+    if (cache && cache.reloadKey === props.reloadKey && Date.now() - cache.time < CACHE_TTL) {
+      const d = cache.data as { [k: string]: never };
+      setCounts(d.counts || {}); setTrend(d.trend); setAppTypes(d.appTypes); setFlowStates(d.flowStates); setEnvs(d.envs);
+      setTopApps(d.topApps); setTopConnectors(d.topConnectors); setTopMakers(d.topMakers); setGov(d.gov || {});
+      setLoadedAt({ time: cache.time, cached: true });
+      return () => { cancelled = true; };
+    }
+    setLoadedAt(undefined);
     const guard = <T,>(set: (s: ISection<T>) => void, p: Promise<T>): void => {
       set({ status: 'loading' });
       p.then(data => { if (!cancelled) { set({ status: 'ready', data }); } }, (e: Error) => { if (!cancelled) { set({ status: 'error', error: e.message }); } });
@@ -159,6 +193,19 @@ export const OverviewView: React.FC<IOverviewProps> = props => {
     return () => { cancelled = true; };
   }, [service, props.reloadKey, tables.map(t => t.key + t.logicalName).join('|')]);
 
+  // Fertig geladen? Dann Zeitpunkt merken und zwischenspeichern
+  const sectionsDone = [trend, appTypes, flowStates, envs, topApps, topConnectors, topMakers].every(x => x.status !== 'loading')
+    && Object.keys(counts).every(k => counts[k].status !== 'loading') && Object.keys(gov).every(k => gov[k].status !== 'loading')
+    && Object.keys(counts).length > 0;
+  React.useEffect(() => {
+    if (!sectionsDone || (loadedAt && loadedAt.cached)) {
+      return;
+    }
+    const time = Date.now();
+    setLoadedAt({ time, cached: false });
+    writeCache(cacheKey, { time, reloadKey: props.reloadKey, data: { counts, trend, appTypes, flowStates, envs, topApps, topConnectors, topMakers, gov } });
+  }, [sectionsDone]);
+
   const value = (k: string): ICountResult | undefined => (counts[k] && counts[k].status === 'ready' ? counts[k].data : undefined);
   const resources = ['apps', 'flows', 'bots', 'rpa', 'pages'].map(value);
   const resourcesReady = resources.filter(r => !!r).length;
@@ -206,11 +253,11 @@ export const OverviewView: React.FC<IOverviewProps> = props => {
       value: props.devAffected ? props.devAffected.count : undefined, loading: !props.devAffected, failed: false
     });
   }
-  pushGov('suspended', 'Gesperrte Flows', 'Status „Suspended“', 'Blocked2', styles.ovToneCritical, nav(T.flows, { admin_flowstate: { values: ['Suspended'] } }));
+  pushGov('suspended', 'Gesperrte Flows', 'Status „Gesperrt“ (z. B. DLP, ungültige Verbindung)', 'Blocked2', styles.ovToneCritical, nav(T.flows, { admin_flowstate: { values: [translateValue('admin_flowstate', 'Suspended')] } }));
   pushGov('orphanApps', 'Verwaiste Apps', 'Besitzer nicht mehr im Unternehmen', 'UserWarning', styles.ovToneSerious, nav(T.apps, { cr5d5_appisorphaned: { values: YES } }));
   pushGov('orphanFlows', 'Verwaiste Flows', 'Besitzer nicht mehr im Unternehmen', 'UserWarning', styles.ovToneSerious, nav(T.flows, { cr5d5_flowisorphaned: { values: YES } }));
   pushGov('unused', 'Apps seit 90 Tagen nicht gestartet', 'Kandidaten zum Aufräumen', 'HourGlass', styles.ovToneWarning, nav(T.apps, { admin_applastlaunchedon: { date: 'older90' } }));
-  pushGov('guests', 'Gast-Maker', 'Externe Konten, die Ressourcen erstellen', 'Contact', styles.ovToneInfo, nav(T.makers, { admin_userisguest: { values: ['Ja', 'Yes'] } }));
+  pushGov('guests', 'Gast-Maker', 'Externe Konten, die Ressourcen erstellen', 'Contact', styles.ovToneInfo, nav(T.makers, { admin_userisguest: { values: ['Ja'] } }));
 
   return (
     <div className={styles.ov}>
@@ -218,7 +265,10 @@ export const OverviewView: React.FC<IOverviewProps> = props => {
       <section className={styles.ovHero}>
         <div className={styles.ovHeroGlow} aria-hidden="true" />
         <div className={styles.ovHeroMain}>
-          <div className={styles.ovHeroEyebrow}><Icon iconName="ViewDashboard" /> Power Platform · Übersicht des Mandanten</div>
+          <div className={styles.ovHeroEyebrow}>
+            <Icon iconName="ViewDashboard" /> Power Platform · Übersicht des Mandanten
+            {loadedAt && <span className={styles.ovHeroStamp}>Stand {formatTime(new Date(loadedAt.time))}{loadedAt.cached ? ' (zwischengespeichert)' : ''}</span>}
+          </div>
           <div className={styles.ovHeroValue}>
             {resourcesReady === 0 ? <span className={`${styles.skeleton} ${styles.ovHeroSkeleton}`} /> : `${formatNumber(total)}${anyAtLeast ? '+' : ''}`}
           </div>
@@ -333,7 +383,12 @@ export const OverviewView: React.FC<IOverviewProps> = props => {
           {appTypes.status === 'loading' && <Skeleton rows={2} height={28} />}
           {appTypes.status === 'error' && <Failed />}
           {appTypes.data && (
-            <SegmentedBar label="Apps nach Typ" parts={toParts(appTypes.data, l => slotColor(APP_TYPE_SLOT[l]), l => T.apps && onNavigate(T.apps.key, { admin_powerappstype: { values: [l] } }))} />
+            <SegmentedBar label="Apps nach Typ" parts={toParts(
+              appTypes.data,
+              l => slotColor(APP_TYPE_SLOT[l]),
+              l => T.apps && onNavigate(T.apps.key, { admin_powerappstype: { values: [translateValue('admin_powerappstype', l)] } }),
+              l => translateValue('admin_powerappstype', l)
+            )} />
           )}
         </Card>
         <Card title="Flows nach Status" icon="Flow" action={T.flows ? { label: 'Flows', onClick: () => onNavigate(T.flows!.key) } : undefined}>
@@ -347,7 +402,7 @@ export const OverviewView: React.FC<IOverviewProps> = props => {
                 label: FLOW_STATE[d.label] ? FLOW_STATE[d.label].label : d.label,
                 value: d.value,
                 color: FLOW_STATE[d.label] ? FLOW_STATE[d.label].color : 'var(--coe-status-neutral)',
-                onClick: () => T.flows && onNavigate(T.flows.key, { admin_flowstate: { values: [d.label] } })
+                onClick: () => T.flows && onNavigate(T.flows.key, { admin_flowstate: { values: [translateValue('admin_flowstate', d.label)] } })
               }))}
             />
           )}
@@ -356,7 +411,12 @@ export const OverviewView: React.FC<IOverviewProps> = props => {
           {envs.status === 'loading' && <Skeleton rows={2} height={28} />}
           {envs.status === 'error' && <Failed />}
           {envs.data && (
-            <SegmentedBar label="Environments nach Typ" parts={toParts(envs.data.byType, l => slotColor(ENV_TYPE_SLOT[l]), l => T.envs && onNavigate(T.envs.key, { admin_environmentsku: { values: [l] } }))} />
+            <SegmentedBar label="Environments nach Typ" parts={toParts(
+              envs.data.byType,
+              l => slotColor(ENV_TYPE_SLOT[l]),
+              l => T.envs && onNavigate(T.envs.key, { admin_environmentsku: { values: [translateValue('admin_environmentsku', l)] } }),
+              l => translateValue('admin_environmentsku', l)
+            )} />
           )}
         </Card>
       </div>

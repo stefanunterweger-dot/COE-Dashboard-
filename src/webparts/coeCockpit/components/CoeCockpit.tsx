@@ -15,9 +15,10 @@ import {
   DataverseError, DataverseService, environmentLinkId, findDefaultEnvironment, ICountResult, IEntityMeta, IEnvironmentInfo, normalizeDataverseUrl
 } from '../services/DataverseService';
 import { buildDefaultEnvironmentTables, DEFAULT_ENV_PREFIX, isDefaultEnvKey } from '../models/defaultEnvironment';
-import { buildDevEnvTable, DEV_ENV_DEADLINES, DEV_ENV_KEY, DEV_FIELDS, loadAffectedEnvironments } from '../models/devEnvironments';
+import { buildDevEnvTable, DEV_ENV_DEADLINES, DEV_ENV_KEY, DEV_FIELDS, loadAffectedEnvironments, RECOMMENDATION } from '../models/devEnvironments';
 import { OVERVIEW_KEY } from '../models/overview';
 import { OverviewView } from './OverviewView';
+import { copyCurrentLink, IViewState, readViewState, writeViewState } from '../utils/deepLink';
 import {
   displayValue, downloadText, formatCount, formatNumber, formatTime, hostOf, isValidEnvironmentUrl, sortValue, toCsv
 } from '../utils/format';
@@ -137,11 +138,15 @@ const CoeCockpit: React.FC<ICoeCockpitProps> = props => {
   /** Zuletzt angeforderter Ladeschlüssel je Tabelle (verhindert veraltete Ergebnisse). */
   const requestedRef = React.useRef<{ [tableKey: string]: string }>({});
   const mountedRef = React.useRef<boolean>(true);
+  /** Ansicht aus einem geteilten Link (#coe=…) – wird beim Start einmal übernommen. */
+  const initialViewRef = React.useRef<IViewState | undefined>(readViewState());
   const [activeKey, setActiveKey] = React.useState<string | undefined>(
-    props.showOverview ? OVERVIEW_KEY : tables.length ? tables[0].key : undefined
+    (initialViewRef.current && initialViewRef.current.t) || (props.showOverview ? OVERVIEW_KEY : tables.length ? tables[0].key : undefined)
   );
-  /** Filter, die beim nächsten Reiterwechsel gesetzt werden (z. B. Klick in der Übersicht). */
-  const pendingFiltersRef = React.useRef<{ [field: string]: IColumnFilter } | undefined>(undefined);
+  /** Filter/Suche, die beim nächsten Reiterwechsel gesetzt werden (Klick in der Übersicht, geteilter Link). */
+  const pendingFiltersRef = React.useRef<{ [field: string]: IColumnFilter } | undefined>(initialViewRef.current && initialViewRef.current.f);
+  const pendingSearchRef = React.useRef<string | undefined>(initialViewRef.current && initialViewRef.current.q);
+  const [linkCopied, setLinkCopied] = React.useState<boolean>(false);
   const [lastDefaultKey, setLastDefaultKey] = React.useState<string>(`${DEFAULT_ENV_PREFIX}apps`);
   const [defaultEnv, setDefaultEnv] = React.useState<IDefaultEnvState>({ status: 'idle' });
   const [data, setData] = React.useState<{ [key: string]: ITableState }>({});
@@ -244,15 +249,21 @@ const CoeCockpit: React.FC<ICoeCockpitProps> = props => {
     }
   }, [activeKey]);
 
-  // Ansicht zurücksetzen, wenn der Reiter wechselt
+  // Ansicht zurücksetzen, wenn der Reiter (oder dessen Konfiguration) wechselt.
+  // Vorgemerkte Filter/Suche werden erst übernommen, wenn die Tabelle feststeht (Default Environment lädt später).
+  const activeTableSig = activeTable ? JSON.stringify(activeTable) : '';
   React.useEffect(() => {
-    setSearch('');
-    setFilters(pendingFiltersRef.current || {});
-    pendingFiltersRef.current = undefined;
+    const ready = !!activeTable;
+    setSearch(ready ? pendingSearchRef.current || '' : '');
+    setFilters(ready ? pendingFiltersRef.current || {} : {});
+    if (ready) {
+      pendingFiltersRef.current = undefined;
+      pendingSearchRef.current = undefined;
+    }
     setPage(0);
-    setPanelStack([]);
+    setPanelStack(prev => (prev.length && prev[0].table.key === (activeTable && activeTable.key) ? prev : []));
     setSort(activeTable && activeTable.defaultSort ? { ...activeTable.defaultSort } : undefined);
-  }, [activeKey, tablesSig, defaultSig]);
+  }, [activeKey, activeTableSig]);
 
   // Datensätze des aktiven Reiters laden
   React.useEffect(() => {
@@ -716,6 +727,7 @@ const CoeCockpit: React.FC<ICoeCockpitProps> = props => {
 
   /** Wechselt den Reiter und setzt dort Filter (z. B. aus der Übersicht). */
   const navigate = (tableKey: string, nextFilters?: { [field: string]: IColumnFilter }): void => {
+    pendingSearchRef.current = undefined;
     if (tableKey === activeKey) {
       setFilters(nextFilters || {});
       setSearch('');
@@ -746,6 +758,30 @@ const CoeCockpit: React.FC<ICoeCockpitProps> = props => {
         }))
       .catch(() => undefined);
   };
+
+  // Datensatz aus einem geteilten Link einmalig öffnen
+  React.useEffect(() => {
+    const r = initialViewRef.current && initialViewRef.current.r;
+    if (!service || !r || !r.l || !r.id) {
+      return;
+    }
+    initialViewRef.current = { ...initialViewRef.current, r: undefined };
+    openRelated(r.l, r.id);
+  }, [service]);
+
+  // Aktuelle Ansicht in die Adresse schreiben (teilbarer Link)
+  React.useEffect(() => {
+    const f: { [field: string]: IColumnFilter } = {};
+    activeFilterFields.forEach(field => { f[field] = filters[field]; });
+    const top = panelStack.length ? panelStack[panelStack.length - 1] : undefined;
+    const topId = top && top.meta ? String(top.record[top.meta.primaryId] || '') : '';
+    writeViewState({
+      t: activeKey,
+      f,
+      q: search,
+      r: top && topId && !top.table.virtual ? { l: top.table.logicalName, id: topId } : undefined
+    });
+  }, [activeKey, filters, search, panelStack]);
 
   const inOverview = props.showOverview && activeKey === OVERVIEW_KEY;
   const devState = data[DEV_ENV_KEY];
@@ -785,19 +821,21 @@ const CoeCockpit: React.FC<ICoeCockpitProps> = props => {
     const devState = data[DEV_ENV_KEY];
     const ready = !!devState && devState.status === 'ready';
     const rows = ready ? devState.records : [];
-    const empty = rows.filter(r => r[DEV_FIELDS.apps] === 0 && r[DEV_FIELDS.flows] === 0).length;
-    const disabled = rows.filter(r => r[DEV_FIELDS.state] === 'Deaktiviert').length;
     const isFilter = (field: string, value: string): boolean => !!filters[field] && !!filters[field].values && filters[field].values!.length === 1 && filters[field].values![0] === value;
-    const emptyActive = isFilter(DEV_FIELDS.apps, '0') && isFilter(DEV_FIELDS.flows, '0');
-    const disabledActive = isFilter(DEV_FIELDS.state, 'Deaktiviert');
     const allActive = activeFilterFields.length === 0 && !search;
+    const byRec = (rec: string, label: string, icon: string): { key: string; label: string; value: number; icon: string; active: boolean; onClick: () => void } => ({
+      key: rec, label, icon,
+      value: rows.filter(r => r[DEV_FIELDS.recommendation] === rec).length,
+      active: isFilter(DEV_FIELDS.recommendation, rec) && activeFilterFields.length === 1,
+      onClick: () => { setFilters({ [DEV_FIELDS.recommendation]: { values: [rec] } }); setSearch(''); setPage(0); }
+    });
     const tiles = [
       { key: 'all', label: 'Betroffen', value: rows.length, icon: 'Warning', active: allActive,
         onClick: () => { setFilters({}); setSearch(''); setPage(0); } },
-      { key: 'empty', label: 'Leer (keine Apps, keine Flows)', value: empty, icon: 'Inbox', active: emptyActive,
-        onClick: () => { setFilters({ [DEV_FIELDS.apps]: { values: ['0'] }, [DEV_FIELDS.flows]: { values: ['0'] } }); setSearch(''); setPage(0); } },
-      { key: 'disabled', label: 'Deaktiviert', value: disabled, icon: 'Blocked2', active: disabledActive,
-        onClick: () => { setFilters({ [DEV_FIELDS.state]: { values: ['Deaktiviert'] } }); setSearch(''); setPage(0); } }
+      byRec(RECOMMENDATION.inUse, 'In Nutzung', 'Rocket'),
+      byRec(RECOMMENDATION.inactive, 'Inaktiv > 90 Tage', 'Clock'),
+      byRec(RECOMMENDATION.empty, 'Leer', 'Inbox'),
+      byRec(RECOMMENDATION.disabled, 'Deaktiviert', 'Blocked2')
     ];
     return (
       <>
@@ -817,7 +855,7 @@ const CoeCockpit: React.FC<ICoeCockpitProps> = props => {
               <Icon iconName="Clock" /> {countdown}
             </span>
           </div>
-          <div className={styles.envStats} role="group" aria-label="Schnellfilter">
+          <div className={`${styles.envStats} ${styles.devStats}`} role="group" aria-label="Schnellfilter">
             {tiles.map(t => (
               <button
                 key={t.key}
@@ -1058,6 +1096,15 @@ const CoeCockpit: React.FC<ICoeCockpitProps> = props => {
           </div>
           <div className={styles.headerActions}>
             {lastLoaded && <span className={styles.metaText}>Aktualisiert {formatTime(lastLoaded)}</span>}
+            {service && (
+              <TooltipHost content={linkCopied ? 'Link kopiert' : 'Link zu dieser Ansicht kopieren (inkl. Filter)'}>
+                <IconButton
+                  iconProps={{ iconName: linkCopied ? 'CheckMark' : 'Link' }}
+                  ariaLabel="Link kopieren"
+                  onClick={() => copyCurrentLink().then(ok => { if (ok) { setLinkCopied(true); window.setTimeout(() => setLinkCopied(false), 2000); } })}
+                />
+              </TooltipHost>
+            )}
             {service && (
               <TooltipHost content="Daten neu laden">
                 <IconButton iconProps={{ iconName: 'Refresh' }} ariaLabel="Aktualisieren" onClick={() => setReloadTick(t => t + 1)} disabled={loading} />

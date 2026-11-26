@@ -11,8 +11,8 @@ export const GROUP_INVENTORY = 'Inventar';
 export const GROUP_USERS = 'Benutzer';
 export const GROUP_USAGE = 'Nutzung';
 
-const YES_NO_ORPHANED = { 'Yes': 'warning', 'yes': 'warning', 'Ja': 'warning', 'No': 'success', 'no': 'success', 'Nein': 'success' } as const;
-const ROLE_MAP = { 'Owner': 'accent', 'CanEdit': 'info', 'CanView': 'neutral', 'CanViewWithComponentImport': 'neutral' } as const;
+const YES_NO_ORPHANED = { 'Ja': 'warning', 'Nein': 'success' } as const;
+const ROLE_MAP = { 'Besitzer': 'accent', 'Mitbesitzer': 'info', 'Benutzer': 'neutral', 'Benutzer (mit Komponentenimport)': 'neutral' } as const;
 
 // ---------- wiederverwendete Reiter der Detailansicht ----------
 function sharedWith(lookupField: string): IRelatedConfig {
@@ -56,7 +56,7 @@ const RESOURCE_FLOWS = (lookupField: string, title: string = 'Flows'): IRelatedC
     { field: 'admin_displayname', label: 'Flow', type: 'title' },
     { field: '_admin_derivedowner_value', label: 'Besitzer', type: 'person' },
     { field: '_admin_flowenvironment_value', label: 'Environment', type: 'text' },
-    { field: 'admin_flowstate', label: 'Status', type: 'status', statusMap: { 'Started': 'success', 'Stopped': 'neutral', 'Suspended': 'danger' } },
+    { field: 'admin_flowstate', label: 'Status', type: 'status', statusMap: { 'Aktiv': 'success', 'Angehalten': 'neutral', 'Gesperrt': 'danger' } },
     { field: 'admin_flowmodifiedon', label: 'Geändert', type: 'date' }
   ]
 });
@@ -119,7 +119,7 @@ export function getDefaultTables(): ITableConfig[] {
         { field: 'admin_displayname', label: 'Flow', type: 'title' },
         { field: '_admin_derivedowner_value', label: 'Besitzer', type: 'person' },
         { field: '_admin_flowenvironment_value', label: 'Environment', type: 'text' },
-        { field: 'admin_flowstate', label: 'Status', type: 'status', statusMap: { 'Started': 'success', 'Stopped': 'neutral', 'Suspended': 'danger' } },
+        { field: 'admin_flowstate', label: 'Status', type: 'status', statusMap: { 'Aktiv': 'success', 'Angehalten': 'neutral', 'Gesperrt': 'danger' } },
         { field: 'cr5d5_flowisorphaned', label: 'Verwaist', type: 'status', statusMap: { ...YES_NO_ORPHANED } },
         { field: 'admin_flowmodifiedon', label: 'Geändert', type: 'date' },
         { field: '_admin_flowcreator_value', label: 'Ersteller', type: 'person', hidden: true },
@@ -156,11 +156,11 @@ export function getDefaultTables(): ITableConfig[] {
         { field: 'admin_displayname', label: 'Environment', type: 'title' },
         {
           field: 'admin_environmentsku', label: 'Typ', type: 'status',
-          statusMap: { 'Production': 'accent', 'Default': 'info', 'Sandbox': 'neutral', 'Developer': 'warning', 'Trial': 'warning', 'Teams': 'info' }
+          statusMap: { 'Produktion': 'accent', 'Default': 'info', 'Sandbox': 'neutral', 'Developer': 'warning', 'Testversion': 'warning', 'Teams': 'info' }
         },
         { field: '_admin_maker_value', label: 'Ersteller', type: 'person' },
-        { field: 'admin_governanceprotectionlevel', label: 'Managed', type: 'status', statusMap: { 'Standard': 'success', 'Basic': 'neutral' } },
-        { field: 'admin_environmentruntimestate', label: 'Zustand', type: 'status', statusMap: { 'Enabled': 'success', 'Disabled': 'danger' } },
+        { field: 'admin_governanceprotectionlevel', label: 'Managed', type: 'status', statusMap: { 'Managed': 'success', 'Nicht verwaltet': 'neutral' } },
+        { field: 'admin_environmentruntimestate', label: 'Zustand', type: 'status', statusMap: { 'Aktiviert': 'success', 'Deaktiviert': 'danger' } },
         { field: 'admin_numberofapps', label: 'Apps', type: 'number' },
         { field: 'admin_numberofflows', label: 'Flows', type: 'number' },
         { field: 'admin_region', label: 'Region', type: 'choice' },
@@ -238,7 +238,7 @@ export function getDefaultTables(): ITableConfig[] {
       defaultSort: { field: 'admin_displayname', desc: false },
       columns: [
         { field: 'admin_displayname', label: 'Connector', type: 'title' },
-        { field: 'admin_tier', label: 'Stufe', type: 'status', statusMap: { 'Premium': 'warning', 'Standard': 'neutral', 'Custom': 'info' } },
+        { field: 'admin_tier', label: 'Stufe', type: 'status', statusMap: { 'Premium': 'warning', 'Standard': 'neutral', 'Benutzerdefiniert': 'info' } },
         { field: 'admin_publisher', label: 'Herausgeber', type: 'choice' },
         { field: 'admin_iscustomapi', label: 'Benutzerdefiniert', type: 'boolean' },
         { field: 'admin_numapps', label: 'Apps', type: 'number' },
@@ -272,7 +272,7 @@ export function getDefaultTables(): ITableConfig[] {
         { field: 'admin_name', label: 'Bot', type: 'title' },
         { field: '_admin_pvaowner_value', label: 'Besitzer', type: 'person' },
         { field: '_admin_pvaenvironment_value', label: 'Environment', type: 'text' },
-        { field: 'admin_pvastate', label: 'Status', type: 'status', statusMap: { 'Published': 'success', 'Provisioned': 'neutral' } },
+        { field: 'admin_pvastate', label: 'Status', type: 'status', statusMap: { 'Veröffentlicht': 'success', 'Bereitgestellt': 'neutral' } },
         { field: 'admin_pvanumberlaunches', label: 'Unterhaltungen (letzter Monat)', type: 'number' },
         { field: 'admin_pvalastlaunchedon', label: 'Zuletzt verwendet', type: 'date' },
         { field: 'admin_bottemplate', label: 'Vorlage', type: 'text', hidden: true }
@@ -292,7 +292,7 @@ export function getDefaultTables(): ITableConfig[] {
         { field: 'admin_displayname', label: 'Desktop Flow', type: 'title' },
         { field: '_admin_rpaowner_value', label: 'Besitzer', type: 'person' },
         { field: '_admin_desktopflowenvironment_value', label: 'Environment', type: 'text' },
-        { field: 'admin_rpastate', label: 'Status', type: 'status', statusMap: { 'Published': 'success', 'Unpublished': 'neutral', 'Deleted': 'danger' } },
+        { field: 'admin_rpastate', label: 'Status', type: 'status', statusMap: { 'Veröffentlicht': 'success', 'Nicht veröffentlicht': 'neutral', 'Gelöscht': 'danger' } },
         { field: 'admin_rpamodifiedon', label: 'Geändert', type: 'date' }
       ],
       links: []
@@ -331,7 +331,7 @@ export function getDefaultTables(): ITableConfig[] {
         { field: '_admin_businessprocessflowowner_value', label: 'Besitzer', type: 'person' },
         { field: '_admin_businessprocessflowenvironment_value', label: 'Environment', type: 'text' },
         { field: 'admin_businessprocessflowprimaryentity', label: 'Tabelle', type: 'choice' },
-        { field: 'admin_businessprocessflowstatus', label: 'Status', type: 'status', statusMap: { 'Activated': 'success', 'Draft': 'neutral' } },
+        { field: 'admin_businessprocessflowstatus', label: 'Status', type: 'status', statusMap: { 'Aktiviert': 'success', 'Entwurf': 'neutral' } },
         { field: 'admin_businessprocessflowmodifiedon', label: 'Geändert', type: 'date' },
         { field: 'admin_name', label: 'Name', type: 'text', hidden: true }
       ],
@@ -422,7 +422,7 @@ export function getDefaultTables(): ITableConfig[] {
       defaultSort: { field: 'admin_displayname', desc: false },
       columns: [
         { field: 'admin_displayname', label: 'Name', type: 'person' },
-        { field: 'admin_type', label: 'Typ', type: 'status', statusMap: { 'User': 'neutral', 'Group': 'info', 'Tenant': 'warning', 'ServicePrincipal': 'accent' } },
+        { field: 'admin_type', label: 'Typ', type: 'status', statusMap: { 'Benutzer': 'neutral', 'Gruppe': 'info', 'Gesamte Organisation': 'warning', 'Dienstprinzipal': 'accent' } },
         { field: 'admin_userprincipalname', label: 'UPN', type: 'text' },
         { field: 'admin_userisguest', label: 'Gast', type: 'boolean' },
         { field: 'admin_groupsize', label: 'Gruppengröße', type: 'number' },

@@ -2620,3 +2620,17 @@ li:last-child > .govItem {
     grid-template-columns: minmax(0, 1fr);
   }
 }
+
+.devStats {
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+}
+
+.ovHeroStamp {
+  margin-left: 8px;
+  padding: 2px 8px;
+  font-weight: 500;
+  letter-spacing: 0;
+  text-transform: none;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.16);
+}
