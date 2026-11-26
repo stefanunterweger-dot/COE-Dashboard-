@@ -22,6 +22,8 @@ import { OverviewView } from './OverviewView';
 import { SECURITY_KEY, SecurityView } from './SecurityView';
 import { GlobalSearch } from './GlobalSearch';
 import { copyText, NotifyDialog } from './NotifyDialog';
+import { BulkNotifyPanel } from './BulkNotifyPanel';
+import { MailService } from '../services/MailService';
 import { INotifySettings } from '../models/notification';
 import { copyCurrentLink, IViewState, readViewState, writeViewState } from '../utils/deepLink';
 import {
@@ -65,6 +67,8 @@ export interface ICoeCockpitProps {
   pipelinesHostUrl: string;
   /** Vorlage für die E-Mail an die Maker betroffener Developer-Environments. */
   notify: INotifySettings;
+  /** Automatischen Versand über Microsoft Graph (Mail.Send) anbieten. */
+  notifyAutoSend: boolean;
   onTablesChanged: (tables: ITableConfig[]) => void;
   onConfigure: () => void;
 }
@@ -219,6 +223,13 @@ const CoeCockpit: React.FC<ICoeCockpitProps> = props => {
   /** Environment, für das die E-Mail an die Maker vorbereitet wird. */
   const [notifyRecord, setNotifyRecord] = React.useState<IRecord | undefined>(undefined);
   const [addressesCopied, setAddressesCopied] = React.useState<string>('');
+  /** Environments für den Serienversand (Panel offen, solange gesetzt). */
+  const [bulkRecords, setBulkRecords] = React.useState<IRecord[] | undefined>(undefined);
+  const mailService = React.useMemo(
+    () => (props.notifyAutoSend ? new MailService(props.aadHttpClientFactory) : undefined),
+    [props.notifyAutoSend, props.aadHttpClientFactory]
+  );
+  const accentColor = String((themeVars as { [k: string]: unknown })['--coe-accent'] || '#0f6cbd');
   const [collapsedGroups, setCollapsedGroups] = React.useState<{ [group: string]: boolean }>({});
   const storageKey = `coe-cockpit:${props.instanceId}:hidden`;
   const [hidden, setHidden] = React.useState<{ [tableKey: string]: string[] }>(() => readHidden(storageKey) || {});
@@ -1022,8 +1033,15 @@ const CoeCockpit: React.FC<ICoeCockpitProps> = props => {
           </div>
           <div className={styles.devActions}>
             <span className={styles.devActionsText}>
-              <Icon iconName="Mail" /> Maker verständigen: über das Brief-Symbol in der Zeile – die E-Mail öffnet sich mit allen Infos in deinem Outlook.
+              <Icon iconName="Mail" /> Maker verständigen: einzeln über das Brief-Symbol in der Zeile oder alle gefilterten auf einmal – je Environment eine eigene E-Mail.
             </span>
+            <span className={styles.grow} />
+            <PrimaryButton
+              text={`Alle gefilterten verständigen (${formatNumber(ready ? filtered.length : 0)})`}
+              iconProps={{ iconName: 'Send' }}
+              disabled={!ready || filtered.length === 0}
+              onClick={() => setBulkRecords(filtered.slice())}
+            />
             <DefaultButton
               text={addressesCopied || `E-Mail-Adressen kopieren (${formatNumber(mailTargets.length)})`}
               iconProps={{ iconName: addressesCopied ? 'CheckMark' : 'Copy' }}
@@ -1391,8 +1409,18 @@ const CoeCockpit: React.FC<ICoeCockpitProps> = props => {
           record={notifyRecord}
           settings={props.notify}
           themeVars={themeVars}
-          accent={String((themeVars as { [k: string]: unknown })['--coe-accent'] || '#0f6cbd')}
+          accent={accentColor}
+          mailService={mailService}
           onDismiss={() => setNotifyRecord(undefined)}
+        />
+
+        <BulkNotifyPanel
+          records={bulkRecords}
+          settings={props.notify}
+          accent={accentColor}
+          themeVars={themeVars}
+          mailService={mailService}
+          onDismiss={() => setBulkRecords(undefined)}
         />
 
         <TableEditor

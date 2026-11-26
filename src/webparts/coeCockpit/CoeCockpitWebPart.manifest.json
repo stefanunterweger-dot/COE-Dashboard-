@@ -39,7 +39,8 @@
         "notifyInfoUrl": "",
         "notifyFeedbackUrl": "",
         "notifyCc": "",
-        "notifySignature": ""
+        "notifySignature": "",
+        "notifyAutoSend": true
       }
     }
   ]

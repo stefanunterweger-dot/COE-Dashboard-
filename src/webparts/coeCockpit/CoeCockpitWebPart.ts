@@ -60,6 +60,8 @@ export interface ICoeCockpitWebPartProps {
   notifyCc: string;
   /** Grußzeile. */
   notifySignature: string;
+  /** Automatischen Versand über Microsoft Graph anbieten. */
+  notifyAutoSend: boolean;
 }
 
 export default class CoeCockpitWebPart extends BaseClientSideWebPart<ICoeCockpitWebPartProps> {
@@ -117,6 +119,7 @@ export default class CoeCockpitWebPart extends BaseClientSideWebPart<ICoeCockpit
         cc: (this.properties.notifyCc || '').trim(),
         signature: (this.properties.notifySignature || '').trim()
       },
+      notifyAutoSend: this.properties.notifyAutoSend !== false,
       theme: this._theme,
       isEditMode: this.displayMode === DisplayMode.Edit,
       editorRequest: this._editorRequest,
@@ -340,6 +343,13 @@ export default class CoeCockpitWebPart extends BaseClientSideWebPart<ICoeCockpit
             {
               groupName: 'E-Mail an Maker (Betroffen ab 15.12.)',
               groupFields: [
+                PropertyPaneToggle('notifyAutoSend', {
+                  label: 'Automatischen Versand anbieten (Microsoft Graph)',
+                  checked: this.properties.notifyAutoSend !== false
+                }),
+                PropertyPaneLabel('notifyAutoSendInfo', {
+                  text: 'Sendet aus dem Postfach des angemeldeten Benutzers. Voraussetzung: Die API-Berechtigung „Microsoft Graph – Mail.Send“ ist im SharePoint Admin Center genehmigt.'
+                }),
                 PropertyPaneDropdown('notifyTone', {
                   label: 'Anrede',
                   options: [{ key: 'sie', text: 'Sie' }, { key: 'du', text: 'Du' }],

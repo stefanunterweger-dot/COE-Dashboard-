@@ -3014,3 +3014,157 @@ li:last-child > .govItem {
     border-radius: 50%;
   }
 }
+
+// ---------- Serienversand ----------
+.bulk {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding-top: 8px;
+  color: var(--coe-text);
+}
+
+.bulkIntro {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--coe-text-2);
+}
+
+.bulkStats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.bulkBody {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr);
+  gap: 16px;
+  align-items: start;
+}
+
+.bulkList {
+  min-width: 0;
+  max-height: 560px;
+  overflow: auto;
+  border: 1px solid var(--coe-border);
+  border-radius: 8px;
+}
+
+.bulkListTools {
+  display: flex;
+  gap: 12px;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--coe-border);
+}
+
+.bulkTable {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+
+  th {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    padding: 8px 10px;
+    font-weight: 600;
+    text-align: left;
+    color: var(--coe-text-2);
+    background: var(--coe-surface);
+    border-bottom: 1px solid var(--coe-border);
+  }
+
+  td {
+    padding: 6px 10px;
+    border-bottom: 1px solid var(--coe-border-soft);
+    vertical-align: middle;
+  }
+
+  tbody tr {
+    cursor: pointer;
+
+    &:hover {
+      background: var(--coe-hover);
+    }
+  }
+}
+
+.bulkRowActive {
+  background: var(--coe-accent-soft) !important;
+}
+
+.bulkName {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.bulkPreview {
+  min-width: 0;
+
+  .notifyPreview {
+    height: 520px;
+  }
+}
+
+.bulkSubject {
+  margin-bottom: 8px;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.bulkMuted {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--coe-text-3);
+}
+
+.bulkInfo {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--coe-accent);
+}
+
+.bulkOk {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 600;
+  color: var(--coe-success);
+}
+
+.bulkErr {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 600;
+  color: var(--coe-danger);
+}
+
+.bulkFooter {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.bulkStepInfo {
+  flex: 1 1 100%;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.narrow {
+  .bulkBody {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 900px) {
+  .bulkBody {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

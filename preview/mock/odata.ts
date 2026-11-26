@@ -7,6 +7,7 @@ const LOOKUP_NAME = '@Microsoft.Dynamics.CRM.lookuplogicalname';
 export interface IMockResponse {
   ok: boolean;
   status: number;
+  headers?: { get(name: string): string | null };
   json(): Promise<unknown>;
   text(): Promise<string>;
 }

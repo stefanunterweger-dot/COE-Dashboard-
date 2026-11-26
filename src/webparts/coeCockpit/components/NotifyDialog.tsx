@@ -8,6 +8,8 @@ import styles from './CoeCockpit.module.scss';
 import { IRecord } from '../models/ITableConfig';
 import { buildDevEnvMail, emlDraft, INotifySettings, MAILTO_LIMIT, mailtoUrl } from '../models/notification';
 import { displayValue } from '../utils/format';
+import { MailError, MailService, NOT_APPROVED_HINT } from '../services/MailService';
+import { describeLogEntry, readNotifyLog, writeNotifyLog } from '../utils/notifyLog';
 
 /**
  * Vorschau der E-Mail an die Maker eines Environments.
@@ -21,6 +23,8 @@ export interface INotifyDialogProps {
   themeVars: React.CSSProperties;
   /** Akzentfarbe des Webparts (Kopfbalken und Schaltflächen in der Mail). */
   accent: string;
+  /** Automatischer Versand über Microsoft Graph (fehlt, wenn ausgeschaltet). */
+  mailService?: MailService;
   onDismiss: () => void;
 }
 
@@ -94,7 +98,7 @@ export function copyRich(html: string, text: string): Promise<boolean> {
 }
 
 /** Externen Link (mailto) öffnen, ohne dass SharePoint die Navigation abfängt. */
-function launch(url: string): void {
+export function launch(url: string): void {
   const a = document.createElement('a');
   a.href = url;
   a.setAttribute('data-interception', 'off');
@@ -125,7 +129,7 @@ export function safeFileName(name: string): string {
     .replace(/[^A-Za-z0-9 ._-]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 80) || 'Benachrichtigung';
 }
 
-type Done = '' | 'pasted' | 'plain' | 'eml' | 'addresses' | 'copyFailed';
+type Done = '' | 'pasted' | 'plain' | 'eml' | 'addresses' | 'copyFailed' | 'sent';
 
 export const NotifyDialog: React.FC<INotifyDialogProps> = props => {
   const { record, settings } = props;
@@ -133,11 +137,20 @@ export const NotifyDialog: React.FC<INotifyDialogProps> = props => {
   const [subject, setSubject] = React.useState<string>('');
   const [done, setDone] = React.useState<Done>('');
   const [allRecipients, setAllRecipients] = React.useState<boolean>(false);
+  const [confirmSend, setConfirmSend] = React.useState<boolean>(false);
+  const [sending, setSending] = React.useState<boolean>(false);
+  const [sendError, setSendError] = React.useState<string>('');
+  const [logText, setLogText] = React.useState<string>('');
+  const envId = record ? String(record.admin_environmentid || '').toLowerCase() : '';
 
   React.useEffect(() => {
     setSubject(draft ? draft.subject : '');
     setDone('');
     setAllRecipients(false);
+    setConfirmSend(false);
+    setSending(false);
+    setSendError('');
+    setLogText(envId ? describeLogEntry(readNotifyLog()[envId]) : '');
   }, [draft]);
 
   if (!record || !draft) {
@@ -153,6 +166,7 @@ export const NotifyDialog: React.FC<INotifyDialogProps> = props => {
 
   const openOutlook = (): void => {
     copyRich(draft.html, draft.body).then(ok => {
+      writeNotifyLog(envId, 'outlook');
       if (ok) {
         launch(headerUrl);
         setDone('pasted');
@@ -198,6 +212,7 @@ export const NotifyDialog: React.FC<INotifyDialogProps> = props => {
             <span className={styles.notifyValue}>{draft.cc.map(a => <span key={a} className={styles.notifyChip}>{a}</span>)}</span>
           </div>
         )}
+        {logText && <MessageBar messageBarType={MessageBarType.info}>Dieses Environment wurde bereits verständigt ({logText}).</MessageBar>}
         {draft.missing.length > 0 && (
           <MessageBar messageBarType={MessageBarType.warning} isMultiline={true}>
             Ohne E-Mail-Adresse im CoE (nicht angeschrieben): {draft.missing.join(', ')}
@@ -229,9 +244,45 @@ export const NotifyDialog: React.FC<INotifyDialogProps> = props => {
         {done === 'eml' && <MessageBar messageBarType={MessageBarType.success}>Entwurf heruntergeladen – Datei öffnen, sie erscheint in Outlook als neue Mail mit allem.</MessageBar>}
         {done === 'addresses' && <MessageBar messageBarType={MessageBarType.success}>{draft.to.length} Adressen kopiert.</MessageBar>}
         {done === 'copyFailed' && <MessageBar messageBarType={MessageBarType.error}>Kopieren nicht möglich – bitte den Outlook-Entwurf (.eml) verwenden.</MessageBar>}
+        {done === 'sent' && <MessageBar messageBarType={MessageBarType.success}>Gesendet – die Mail liegt in deinen „Gesendeten Elementen“.</MessageBar>}
+        {sendError && <MessageBar messageBarType={MessageBarType.error} isMultiline={true}>{sendError}</MessageBar>}
+        {confirmSend && (
+          <MessageBar messageBarType={MessageBarType.warning} isMultiline={true}>
+            Die Mail wird jetzt aus deinem Postfach an {draft.to.length} Empfänger{draft.cc.length ? ` (CC: ${draft.cc.join(', ')})` : ''} gesendet.
+          </MessageBar>
+        )}
       </div>
+      {confirmSend ? (
+        <DialogFooter>
+          <PrimaryButton
+            text={sending ? 'Wird gesendet …' : 'Ja, jetzt senden'}
+            iconProps={{ iconName: 'Send' }}
+            disabled={sending}
+            onClick={() => {
+              if (!props.mailService) {
+                return;
+              }
+              setSending(true);
+              setSendError('');
+              props.mailService.send({ to: draft.to, cc: draft.cc, subject, html: draft.html }).then(
+                () => { writeNotifyLog(envId, 'sent'); setDone('sent'); setSending(false); setConfirmSend(false); },
+                (e: unknown) => {
+                  const err = e instanceof MailError ? e : undefined;
+                  setSendError(err && err.kind === 'notApproved' ? NOT_APPROVED_HINT : `Senden fehlgeschlagen: ${e instanceof Error ? e.message : String(e)}`);
+                  setSending(false);
+                  setConfirmSend(false);
+                }
+              );
+            }}
+          />
+          <DefaultButton text="Abbrechen" disabled={sending} onClick={() => setConfirmSend(false)} />
+        </DialogFooter>
+      ) : (
       <DialogFooter>
         <PrimaryButton text="In Outlook öffnen" iconProps={{ iconName: 'Mail' }} disabled={noRecipients} onClick={openOutlook} />
+        {props.mailService && (
+          <DefaultButton text="Direkt senden" iconProps={{ iconName: 'Send' }} disabled={noRecipients || done === 'sent'} onClick={() => { setConfirmSend(true); setSendError(''); }} />
+        )}
         <DefaultButton
           text="Als Outlook-Entwurf (.eml)"
           iconProps={{ iconName: 'Download' }}
@@ -251,6 +302,7 @@ export const NotifyDialog: React.FC<INotifyDialogProps> = props => {
         )}
         <DefaultButton text="Schließen" onClick={props.onDismiss} />
       </DialogFooter>
+      )}
     </Dialog>
   );
 };

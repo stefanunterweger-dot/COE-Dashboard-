@@ -1,5 +1,6 @@
 /* Ersatz für @microsoft/sp-http in der Vorschau: leitet Aufrufe an die simulierte Dataverse-API. */
 import { IMockResponse, mockGet } from '../mock/odata';
+import { mockGraphPost } from '../mock/graph';
 
 export type HttpClientResponse = IMockResponse;
 
@@ -8,6 +9,9 @@ export class AadHttpClient {
   constructor(private resource: string) {}
   public get(url: string, _config: unknown, options?: { headers?: { [k: string]: string } }): Promise<HttpClientResponse> {
     return mockGet(url, (options && options.headers) || {});
+  }
+  public post(url: string, _config: unknown, options?: { headers?: { [k: string]: string }; body?: string }): Promise<HttpClientResponse> {
+    return mockGraphPost(url, (options && options.body) || '');
   }
 }
 

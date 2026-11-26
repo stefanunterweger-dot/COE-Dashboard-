@@ -7,6 +7,10 @@ import { ITableConfig } from '../src/webparts/coeCockpit/models/ITableConfig';
 import { AadHttpClientFactory } from './shims/sp-http';
 import { DATABASES, COE_HOST, DEFAULT_HOST, PIPELINES_HOST } from './mock/data';
 import { DEFAULT_INFO_URL } from '../src/webparts/coeCockpit/models/notification';
+import { MAIL_TIMING } from '../src/webparts/coeCockpit/services/MailService';
+
+// Vorschau: Versand ohne Exchange-Wartezeit
+MAIL_TIMING.intervalMs = 250;
 
 initializeIcons();
 
@@ -78,6 +82,8 @@ const App: React.FC = () => {
     feedbackUrl: p.notifyFeedbackUrl, cc: p.notifyCc, signature: p.notifySignature
   }), [p.notifyTone, p.notifyReplyDays, p.notifyFeedbackUrl, p.notifyCc, p.notifySignature]);
   const [noAdmin, setNoAdmin] = React.useState<boolean>(false);
+  const [noMailSend, setNoMailSend] = React.useState<boolean>(false);
+  (window as unknown as { __coeDenyMailSend?: boolean }).__coeDenyMailSend = noMailSend;
   (window as unknown as { __coeDenyHosts?: string[] }).__coeDenyHosts = noAdmin ? [DEFAULT_HOST, PIPELINES_HOST] : [];
   const factory = React.useMemo(() => new AadHttpClientFactory(), []);
   const set = (patch: Partial<typeof p>): void => setP(prev => ({ ...prev, ...patch }));
@@ -92,6 +98,7 @@ const App: React.FC = () => {
         <Toggle inlineLabel label="Dunkler Abschnitt" checked={dark} onChange={(_e, v) => setDark(!!v)} styles={{ root: { margin: 0 } }} />
         <Toggle inlineLabel label="Rotes Theme" checked={red} onChange={(_e, v) => setRed(!!v)} styles={{ root: { margin: 0 } }} />
         <Toggle inlineLabel label="Ohne Adminrolle" checked={noAdmin} onChange={(_e, v) => setNoAdmin(!!v)} styles={{ root: { margin: 0 } }} />
+        <Toggle inlineLabel label="Mail.Send fehlt" checked={noMailSend} onChange={(_e, v) => setNoMailSend(!!v)} styles={{ root: { margin: 0 } }} />
       </div>
       <div className={`section ${dark ? 'sectionDark' : ''}`}>
         <CoeCockpit
@@ -118,6 +125,7 @@ const App: React.FC = () => {
           showSecurity={p.showSecurity}
           pipelinesHostUrl={p.pipelinesHostUrl}
           notify={notify}
+          notifyAutoSend={true}
           onTablesChanged={t => setTables(t)}
           onConfigure={() => setPaneOpen(true)}
         />
