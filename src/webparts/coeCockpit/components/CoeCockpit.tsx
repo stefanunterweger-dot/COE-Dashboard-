@@ -16,6 +16,8 @@ import {
 } from '../services/DataverseService';
 import { buildDefaultEnvironmentTables, DEFAULT_ENV_PREFIX, isDefaultEnvKey } from '../models/defaultEnvironment';
 import { buildDevEnvTable, DEV_ENV_DEADLINES, DEV_ENV_KEY, DEV_FIELDS, loadAffectedEnvironments } from '../models/devEnvironments';
+import { OVERVIEW_KEY } from '../models/overview';
+import { OverviewView } from './OverviewView';
 import {
   displayValue, downloadText, formatCount, formatNumber, formatTime, hostOf, isValidEnvironmentUrl, sortValue, toCsv
 } from '../utils/format';
@@ -47,6 +49,8 @@ export interface ICoeCockpitProps {
   defaultEnvironmentDataverseUrl: string;
   /** Reiter „Betroffen ab 15.12.“ (nicht verwaltete Developer-Environments) anzeigen. */
   showDevEnvironments: boolean;
+  /** Übersicht (Dashboard) als Startseite anzeigen. */
+  showOverview: boolean;
   /** Spalte mit dem Managed-Status im CoE-Inventar (leer = automatisch erkennen). */
   devEnvManagedField: string;
   onTablesChanged: (tables: ITableConfig[]) => void;
@@ -111,6 +115,8 @@ function writeHidden(storageKey: string, value: { [tableKey: string]: string[] }
 const PAGE_SIZES = [10, 25, 50, 100];
 /** Bereich für Tabellen ohne eigene Gruppe. */
 const DEFAULT_GROUP = 'Inventar';
+/** Bereich für die Übersicht (Startseite). */
+const START_GROUP = 'Start';
 /** Bereich für berechnete Ansichten (Default Environment, Betroffen ab 15.12.). */
 const ANALYSIS_GROUP = 'Auswertungen';
 /** Ab so vielen Einträgen wird statt der Reiterzeile die Seitenleiste verwendet. */
@@ -131,7 +137,11 @@ const CoeCockpit: React.FC<ICoeCockpitProps> = props => {
   /** Zuletzt angeforderter Ladeschlüssel je Tabelle (verhindert veraltete Ergebnisse). */
   const requestedRef = React.useRef<{ [tableKey: string]: string }>({});
   const mountedRef = React.useRef<boolean>(true);
-  const [activeKey, setActiveKey] = React.useState<string | undefined>(tables.length ? tables[0].key : undefined);
+  const [activeKey, setActiveKey] = React.useState<string | undefined>(
+    props.showOverview ? OVERVIEW_KEY : tables.length ? tables[0].key : undefined
+  );
+  /** Filter, die beim nächsten Reiterwechsel gesetzt werden (z. B. Klick in der Übersicht). */
+  const pendingFiltersRef = React.useRef<{ [field: string]: IColumnFilter } | undefined>(undefined);
   const [lastDefaultKey, setLastDefaultKey] = React.useState<string>(`${DEFAULT_ENV_PREFIX}apps`);
   const [defaultEnv, setDefaultEnv] = React.useState<IDefaultEnvState>({ status: 'idle' });
   const [data, setData] = React.useState<{ [key: string]: ITableState }>({});
@@ -143,7 +153,9 @@ const CoeCockpit: React.FC<ICoeCockpitProps> = props => {
   const [page, setPage] = React.useState<number>(0);
   const [pageSize, setPageSize] = React.useState<number>(props.pageSize || 25);
   const [compact, setCompact] = React.useState<boolean>(props.density === 'compact');
-  const [selected, setSelected] = React.useState<IRecord | undefined>(undefined);
+  /** Geöffnete Datensätze (Detailansicht); mehrere = durchgeklickt, „Zurück“ führt zum vorherigen. */
+  const [panelStack, setPanelStack] = React.useState<{ table: ITableConfig; record: IRecord; meta?: IEntityMeta }[]>([]);
+  const panel = panelStack.length ? panelStack[panelStack.length - 1] : undefined;
   const [editorOpen, setEditorOpen] = React.useState<boolean>(false);
   const [collapsedGroups, setCollapsedGroups] = React.useState<{ [group: string]: boolean }>({});
   const storageKey = `coe-cockpit:${props.instanceId}:hidden`;
@@ -215,13 +227,16 @@ const CoeCockpit: React.FC<ICoeCockpitProps> = props => {
   React.useEffect(() => { if (props.editorRequest > 0) { setEditorOpen(true); } }, [props.editorRequest]);
 
   React.useEffect(() => {
-    const waitingForDefault = props.showDefaultEnvironment && isDefaultEnvKey(activeKey);
+    const waitingForDefault = (props.showDefaultEnvironment && isDefaultEnvKey(activeKey)) || (props.showOverview && activeKey === OVERVIEW_KEY);
     if (!activeTable && tables.length && !waitingForDefault) {
       setActiveKey(tables[0].key);
     }
     // activeTable/defaultSig gehören dazu: z. B. wird beim Ausschalten von „Default Environment“
     // der aktive Reiter erst im nächsten Render ungültig.
-  }, [tablesSig, props.showDefaultEnvironment, props.showDevEnvironments, defaultSig, !!activeTable]);
+    if (!props.showOverview && activeKey === OVERVIEW_KEY && tables.length) {
+      setActiveKey(tables[0].key);
+    }
+  }, [tablesSig, props.showDefaultEnvironment, props.showDevEnvironments, props.showOverview, defaultSig, !!activeTable]);
 
   React.useEffect(() => {
     if (activeKey && isDefaultEnvKey(activeKey)) {
@@ -232,9 +247,10 @@ const CoeCockpit: React.FC<ICoeCockpitProps> = props => {
   // Ansicht zurücksetzen, wenn der Reiter wechselt
   React.useEffect(() => {
     setSearch('');
-    setFilters({});
+    setFilters(pendingFiltersRef.current || {});
+    pendingFiltersRef.current = undefined;
     setPage(0);
-    setSelected(undefined);
+    setPanelStack([]);
     setSort(activeTable && activeTable.defaultSort ? { ...activeTable.defaultSort } : undefined);
   }, [activeKey, tablesSig, defaultSig]);
 
@@ -334,6 +350,31 @@ const CoeCockpit: React.FC<ICoeCockpitProps> = props => {
     });
     return () => { cancelled = true; };
   }, [service, mainKey, showKpis]);
+
+  // Betroffene Developer-Environments vorab laden (Übersicht + Zähler im Reiter)
+  React.useEffect(() => {
+    if (!service || !props.showDevEnvironments || activeKey === DEV_ENV_KEY) {
+      return;
+    }
+    const devTable = devTables[0];
+    if (!devTable) {
+      return;
+    }
+    const loadKey = keyFor(devTable);
+    const existing = data[DEV_ENV_KEY];
+    if (existing && existing.loadKey === loadKey) {
+      return;
+    }
+    requestedRef.current[DEV_ENV_KEY] = loadKey;
+    loadAffectedEnvironments(service, props.devEnvManagedField, maxRecords).then(
+      res => {
+        if (mountedRef.current && requestedRef.current[DEV_ENV_KEY] === loadKey) {
+          setData(prev => ({ ...prev, [DEV_ENV_KEY]: { status: 'ready', loadKey, records: res.records, meta: res.meta, warnings: res.warnings, truncated: res.truncated, loadedAt: new Date() } }));
+        }
+      },
+      () => undefined
+    );
+  }, [service, mainKey, props.showDevEnvironments, props.devEnvManagedField]);
 
   // Gesamtzahl einer abgeschnittenen Tabelle nachladen (für den Hinweis „… von X Einträgen“)
   React.useEffect(() => {
@@ -673,6 +714,66 @@ const CoeCockpit: React.FC<ICoeCockpitProps> = props => {
     );
   };
 
+  /** Wechselt den Reiter und setzt dort Filter (z. B. aus der Übersicht). */
+  const navigate = (tableKey: string, nextFilters?: { [field: string]: IColumnFilter }): void => {
+    if (tableKey === activeKey) {
+      setFilters(nextFilters || {});
+      setSearch('');
+      setPage(0);
+      return;
+    }
+    pendingFiltersRef.current = nextFilters;
+    setActiveKey(tableKey);
+  };
+
+  /** Konfigurierte Tabelle zu einem logischen Namen (für das Durchklicken). */
+  const tableForLogical = (logical: string): ITableConfig | undefined =>
+    tables.filter(t => t.logicalName === logical && !t.environmentUrl)[0];
+
+  /** Verknüpften Datensatz in der Detailansicht öffnen (vollständig nachladen, dann „durchklicken“). */
+  const openRelated = (logical: string, id: string): void => {
+    const t = tableForLogical(logical);
+    const svc = serviceFor(t);
+    if (!t || !svc) {
+      return;
+    }
+    svc.getEntityMeta(t.logicalName)
+      .then(meta => svc.getRecords({ ...t, key: `_open_${t.key}`, strictFilter: true, filter: `${meta.primaryId} eq ${id}` }, 1)
+        .then(res => {
+          if (res.records.length) {
+            setPanelStack(prev => prev.concat([{ table: t, record: res.records[0], meta: res.meta }]));
+          }
+        }))
+      .catch(() => undefined);
+  };
+
+  const inOverview = props.showOverview && activeKey === OVERVIEW_KEY;
+  const devState = data[DEV_ENV_KEY];
+  const devAffected = devState && devState.status === 'ready'
+    ? {
+      count: devState.records.length,
+      empty: devState.records.filter(r => r[DEV_FIELDS.apps] === 0 && r[DEV_FIELDS.flows] === 0).length,
+      disabled: devState.records.filter(r => r[DEV_FIELDS.state] === 'Deaktiviert').length
+    }
+    : undefined;
+
+  const renderMain = (): JSX.Element => (inOverview && service
+    ? (
+      <OverviewView
+        service={service}
+        tables={tables}
+        reloadKey={mainKey}
+        devAffected={devAffected}
+        showDevEnvironments={props.showDevEnvironments}
+        onNavigate={navigate}
+        onOpenRecord={(t, record, primaryId) => setPanelStack([{
+          table: t, record,
+          meta: { logicalName: t.logicalName, entitySetName: '', primaryId, primaryName: (t.columns[0] && t.columns[0].field) || '', displayName: t.title }
+        }])}
+      />
+    )
+    : inDevView ? renderDevEnvironments() : inDefaultView ? renderDefaultEnvironment() : renderBody());
+
   /** Reiter „Betroffen ab 15.12.“: Hinweis-Banner mit Frist, Kacheln als Schnellfilter, darunter die Tabelle. */
   const renderDevEnvironments = (): JSX.Element => {
     const today = new Date();
@@ -856,7 +957,7 @@ const CoeCockpit: React.FC<ICoeCockpitProps> = props => {
           onSort={onSort}
           onSetSort={(field, desc) => { setSort({ field, desc }); setPage(0); }}
           onFilterChange={setColumnFilter}
-          onOpen={setSelected}
+          onOpen={r => activeTable && setPanelStack([{ table: activeTable, record: r, meta: state ? state.meta : undefined }])}
         />
 
         {!loading && filtered.length === 0 && (
@@ -896,10 +997,12 @@ const CoeCockpit: React.FC<ICoeCockpitProps> = props => {
 
   // ---------- Navigation (Reiter bzw. gruppierte Seitenleiste wie in der CoE Admin View) ----------
   interface INavItem { key: string; title: string; icon: string; group: string; count?: string; active: boolean; danger?: boolean; onClick: () => void }
-  const navItems: INavItem[] = tables.map(t => ({
+  const navItems: INavItem[] = (props.showOverview
+    ? [{ key: OVERVIEW_KEY, title: 'Übersicht', icon: 'ViewDashboard', group: START_GROUP, active: !!inOverview, onClick: () => setActiveKey(OVERVIEW_KEY) }]
+    : [] as INavItem[]).concat(tables.map(t => ({
     key: t.key, title: t.title, icon: t.icon || 'Table', group: t.group || DEFAULT_GROUP,
     count: countFor(t), active: t.key === activeKey, onClick: () => setActiveKey(t.key)
-  }));
+  })));
   if (props.showDefaultEnvironment) {
     navItems.push({ key: '_default', title: 'Default Environment', icon: 'Home', group: ANALYSIS_GROUP, active: !!inDefaultView, onClick: () => setActiveKey(lastDefaultKey) });
   }
@@ -970,7 +1073,7 @@ const CoeCockpit: React.FC<ICoeCockpitProps> = props => {
 
         {service && (
           <>
-            {showKpis && <KpiStrip tables={tables} kpis={kpis} activeKey={activeKey} onSelect={setActiveKey} />}
+            {showKpis && !inOverview && <KpiStrip tables={tables} kpis={kpis} activeKey={activeKey} onSelect={setActiveKey} />}
 
             {navItems.length > 0 && !useSideNav && (
               <nav className={styles.tabs} role="tablist" aria-label="Tabellen">
@@ -1006,21 +1109,25 @@ const CoeCockpit: React.FC<ICoeCockpitProps> = props => {
                     })}
                   </nav>
                   <div className={styles.layoutMain}>
-                    {inDevView ? renderDevEnvironments() : inDefaultView ? renderDefaultEnvironment() : renderBody()}
+                    {renderMain()}
                   </div>
                 </div>
               )
-              : (inDevView ? renderDevEnvironments() : inDefaultView ? renderDefaultEnvironment() : renderBody())}
+              : renderMain()}
           </>
         )}
 
         <RecordPanel
-          record={selected}
-          table={activeTable}
-          meta={state ? state.meta : undefined}
-          service={serviceFor(activeTable)}
+          record={panel ? panel.record : undefined}
+          table={panel ? panel.table : undefined}
+          meta={panel ? panel.meta : undefined}
+          service={serviceFor(panel ? panel.table : undefined)}
           themeVars={themeVars}
-          onDismiss={() => setSelected(undefined)}
+          onDismiss={() => setPanelStack([])}
+          canOpen={logical => !!tableForLogical(logical)}
+          onOpenRelated={openRelated}
+          onBack={panelStack.length > 1 ? () => setPanelStack(prev => prev.slice(0, prev.length - 1)) : undefined}
+          backLabel={panelStack.length > 1 ? panelStack[panelStack.length - 2].table.title : undefined}
         />
 
         <TableEditor

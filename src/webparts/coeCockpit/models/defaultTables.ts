@@ -321,7 +321,7 @@ export function getDefaultTables(): ITableConfig[] {
       key: 'bpf',
       title: 'Business Process Flows',
       logicalName: 'admin_businessprocessflows',
-      icon: 'Flowchart',
+      icon: 'FlowChart',
       group: GROUP_INVENTORY,
       filter: 'admin_businessprocessflowdeleted ne true',
       showInKpis: false,

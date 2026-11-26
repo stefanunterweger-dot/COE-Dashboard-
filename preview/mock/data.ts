@@ -211,7 +211,8 @@ for (let i = 0; i < 6840; i++) {
     admin_appdeleted: chance(0.04),
     admin_appplanclassification: chance(0.28) ? 'Premium' : 'Standard',
     admin_appsharedusers: int(0, 140),
-    admin_appsharedgroups: int(0, 6)
+    admin_appsharedgroups: int(0, 6),
+    admin_launchesinthepast30days: launched !== null && launched < 30 ? Math.round(2400 / Math.pow(int(1, 3000), 0.75)) : 0
   });
 }
 
@@ -247,6 +248,7 @@ for (let i = 0; i < 12460; i++) {
     cr5d5_flowisorphaned: orphan ? 'Yes' : 'No',
     cr5d5_flowtrigger: pick(TRIGGERS),
     admin_flowmodifiedon: daysAgo(modified),
+    admin_flowcreatedon: daysAgo(created),
     admin_flowdeleted: chance(0.04),
     admin_flowispublished: true
   });
@@ -461,13 +463,14 @@ export const DATABASES: IDatabase[] = [
       A('cr5d5_appisorphaned', 'String', 'App is Orphaned'), A('admin_applastlaunchedon', 'DateTime', 'App Last Launched On'),
       A('admin_appmodifiedon', 'DateTime', 'App Modified On'), A('admin_appcreatedon', 'DateTime', 'App Created On'),
       A('admin_appdeleted', 'Boolean', 'App Deleted'), A('admin_appplanclassification', 'String', 'App Plan Classification'),
-      A('admin_appsharedusers', 'Integer', 'App Shared Users'), A('admin_appsharedgroups', 'Integer', 'App Shared Groups')
+      A('admin_appsharedusers', 'Integer', 'App Shared Users'), A('admin_appsharedgroups', 'Integer', 'App Shared Groups'),
+      A('admin_launchesinthepast30days', 'Integer', 'Launches in the past 30 days')
     ], apps),
     table('admin_flow', 'admin_flows', 'Flow', 'admin_flowid', 'admin_displayname', [
       A('admin_displayname', 'String', 'Display Name'), MAKER_LK('admin_flowcreator', 'Maker'), MAKER_LK('admin_derivedowner', 'Derived Owner'),
       ENV_LK('admin_flowenvironment'), A('admin_flowenvironmentid', 'String', 'Flow Environment Id'), A('admin_flowidstring', 'String', 'Flow ID String'),
       A('admin_flowstate', 'String', 'Flow State'), A('cr5d5_flowisorphaned', 'String', 'Flow is Orphaned'), A('cr5d5_flowtrigger', 'String', 'Trigger'),
-      A('admin_flowmodifiedon', 'DateTime', 'Flow Modified On'), A('admin_flowdeleted', 'Boolean', 'Flow Deleted'), A('admin_flowispublished', 'Boolean', 'Flow Is Published')
+      A('admin_flowmodifiedon', 'DateTime', 'Flow Modified On'), A('admin_flowcreatedon', 'DateTime', 'Flow Created On'), A('admin_flowdeleted', 'Boolean', 'Flow Deleted'), A('admin_flowispublished', 'Boolean', 'Flow Is Published')
     ], flows),
     table('admin_environment', 'admin_environments', 'Environment', 'admin_environmentid', 'admin_displayname', [
       A('admin_displayname', 'String', 'Display Name'), A('admin_environmentname', 'String', 'Name'), A('admin_environmentsku', 'String', 'Environment Sku'),

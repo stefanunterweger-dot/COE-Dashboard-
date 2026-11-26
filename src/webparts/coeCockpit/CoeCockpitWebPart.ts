@@ -39,6 +39,8 @@ export interface ICoeCockpitWebPartProps {
   defaultEnvironmentDataverseUrl: string;
   /** Reiter „Betroffen ab 15.12.“ anzeigen. */
   showDevEnvironments: boolean;
+  /** Übersicht (Dashboard) als Startseite. */
+  showOverview: boolean;
   /** Spalte mit dem Managed-Status (leer = automatisch erkennen). */
   devEnvManagedField: string;
 }
@@ -81,6 +83,7 @@ export default class CoeCockpitWebPart extends BaseClientSideWebPart<ICoeCockpit
       defaultEnvironmentId: (this.properties.defaultEnvironmentId || '').trim(),
       defaultEnvironmentDataverseUrl: normalizeDataverseUrl(this.properties.defaultEnvironmentDataverseUrl) || '',
       showDevEnvironments: this.properties.showDevEnvironments !== false,
+      showOverview: this.properties.showOverview !== false,
       devEnvManagedField: (this.properties.devEnvManagedField || '').trim(),
       theme: this._theme,
       isEditMode: this.displayMode === DisplayMode.Edit,
@@ -302,6 +305,7 @@ export default class CoeCockpitWebPart extends BaseClientSideWebPart<ICoeCockpit
               groupFields: [
                 PropertyPaneTextField('title', { label: strings.TitleLabel }),
                 PropertyPaneTextField('subtitle', { label: strings.SubtitleLabel }),
+                PropertyPaneToggle('showOverview', { label: 'Übersicht (Dashboard) als Startseite anzeigen', checked: this.properties.showOverview !== false }),
                 PropertyPaneToggle('showKpis', { label: strings.ShowKpisLabel }),
                 PropertyPaneDropdown('density', {
                   label: strings.DensityLabel,

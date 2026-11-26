@@ -19,11 +19,19 @@ export interface IRecordPanelProps {
   service: DataverseService | undefined;
   themeVars: React.CSSProperties;
   onDismiss: () => void;
+  /** Gibt es für diese Tabelle eine Konfiguration (dann sind Zeilen in den Reitern anklickbar)? */
+  canOpen?: (logicalName: string) => boolean;
+  /** Verknüpften Datensatz öffnen (Durchklicken). */
+  onOpenRelated?: (logicalName: string, id: string) => void;
+  /** Zurück zum vorherigen Datensatz. */
+  onBack?: () => void;
+  backLabel?: string;
 }
 
 interface IRelatedState {
   status: 'loading' | 'ready' | 'error';
   records: IRecord[];
+  primaryId?: string;
   warnings: string[];
   truncated?: boolean;
   error?: string;
@@ -70,7 +78,7 @@ export const RecordPanel: React.FC<IRecordPanelProps> = props => {
     const forId = id;
     setRelated(prev => ({ ...prev, [relKey]: { status: 'loading', records: [], warnings: [] } }));
     service.getRelated(table.logicalName, id, activeRelated, RELATED_LIMIT).then(
-      res => setRelated(prev => (forId !== idRef.current ? prev : { ...prev, [relKey]: { status: 'ready', records: res.records, warnings: res.warnings, truncated: res.truncated } })),
+      res => setRelated(prev => (forId !== idRef.current ? prev : { ...prev, [relKey]: { status: 'ready', records: res.records, primaryId: res.meta.primaryId, warnings: res.warnings, truncated: res.truncated } })),
       (e: Error) => setRelated(prev => (forId !== idRef.current ? prev : { ...prev, [relKey]: { status: 'error', records: [], warnings: [], error: e.message } }))
     );
   }, [tab, id, service, table]);
@@ -244,11 +252,23 @@ export const RecordPanel: React.FC<IRecordPanelProps> = props => {
                   <tr>{cols.map(c => <th key={c.field} className={styles.th} scope="col"><span className={styles.relatedTh}>{c.label}</span></th>)}</tr>
                 </thead>
                 <tbody>
-                  {st.records.map((r, i) => (
-                    <tr key={i}>
-                      {cols.map(c => <td key={c.field}><CellValue record={r} column={c} /></td>)}
-                    </tr>
-                  ))}
+                  {st.records.map((r, i) => {
+                    const relId = st.primaryId ? String(r[st.primaryId] || '') : '';
+                    const clickable = !!relId && !!props.onOpenRelated && !!props.canOpen && props.canOpen(rel.logicalName);
+                    const openIt = (): void => { if (clickable) { props.onOpenRelated!(rel.logicalName, relId); } };
+                    return (
+                      <tr
+                        key={i}
+                        className={clickable ? styles.relatedRow : undefined}
+                        onClick={openIt}
+                        onKeyDown={e => { if (clickable && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); openIt(); } }}
+                        tabIndex={clickable ? 0 : undefined}
+                        title={clickable ? 'Datensatz öffnen' : undefined}
+                      >
+                        {cols.map(c => <td key={c.field}><CellValue record={r} column={c} /></td>)}
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
@@ -317,6 +337,11 @@ export const RecordPanel: React.FC<IRecordPanelProps> = props => {
       }}
     >
       <div style={themeVars} className={`${styles.scope} ${styles.panelBody}`}>
+        {props.onBack && (
+          <button type="button" className={styles.panelBack} onClick={props.onBack}>
+            <Icon iconName="Back" /> Zurück{props.backLabel ? ` zu ${props.backLabel}` : ''}
+          </button>
+        )}
         <div className={styles.panelHeadWrap}>{header()}</div>
         <Pivot selectedKey={tab} onLinkClick={item => setTab((item && item.props.itemKey) || 'overview')} headersOnly={true} overflowBehavior="menu">
           <PivotItem itemKey="overview" headerText="Übersicht" />

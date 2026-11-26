@@ -1775,3 +1775,848 @@
   padding-right: 40px; // Platz für die Schließen-Schaltfläche
   margin-bottom: 12px;
 }
+
+// =====================================================================
+// Übersicht (Dashboard)
+// =====================================================================
+.ov {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 16px 20px 24px;
+  background: var(--coe-surface);
+}
+
+// ---------- Kopfbereich ----------
+.ovHero {
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: stretch;
+  gap: 20px;
+  padding: 28px 28px 24px;
+  border-radius: 16px;
+  color: #ffffff;
+  background:
+    radial-gradient(900px 300px at 85% -40%, rgba(255, 255, 255, 0.22), transparent 60%),
+    linear-gradient(120deg, var(--coe-hero-start) 0%, var(--coe-hero-mid) 55%, var(--coe-hero-end) 100%);
+  box-shadow: 0 10px 30px var(--coe-hero-shadow);
+}
+
+.ovHeroGlow {
+  position: absolute;
+  right: -80px;
+  bottom: -120px;
+  width: 360px;
+  height: 360px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(255, 255, 255, 0.18) 0%, rgba(255, 255, 255, 0) 70%);
+  pointer-events: none;
+}
+
+.ovHeroMain {
+  position: relative;
+  flex: 1 1 420px;
+  min-width: 0;
+}
+
+.ovHeroEyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  opacity: 0.85;
+}
+
+.ovHeroValue {
+  margin-top: 6px;
+  font-size: 56px;
+  line-height: 1.05;
+  font-weight: 650;
+  letter-spacing: -0.02em;
+}
+
+.ovHeroSkeleton {
+  display: inline-block;
+  width: 220px;
+  height: 52px;
+  opacity: 0.35;
+}
+
+.ovHeroLabel {
+  margin-top: 4px;
+  font-size: 16px;
+  opacity: 0.92;
+
+  strong {
+    font-weight: 650;
+  }
+}
+
+.ovHeroChips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 18px;
+}
+
+.ovHeroChip {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 6px 12px;
+  font: inherit;
+  font-size: 13px;
+  color: #ffffff;
+  background: rgba(255, 255, 255, 0.14);
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  border-radius: 999px;
+  cursor: pointer;
+  transition: background 0.15s ease, transform 0.15s ease;
+
+  strong {
+    font-size: 14px;
+  }
+
+  &:hover:not(:disabled) {
+    background: rgba(255, 255, 255, 0.26);
+    transform: translateY(-1px);
+  }
+
+  &:focus-visible {
+    outline: 2px solid #ffffff;
+    outline-offset: 2px;
+  }
+}
+
+.ovCountdown {
+  position: relative;
+  flex: 0 1 280px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  padding: 16px 18px;
+  font: inherit;
+  text-align: left;
+  color: #ffffff;
+  background: rgba(10, 10, 20, 0.22);
+  border: 1px solid rgba(255, 255, 255, 0.24);
+  border-radius: 14px;
+  cursor: pointer;
+  backdrop-filter: blur(6px);
+  transition: background 0.15s ease, transform 0.15s ease;
+
+  &:hover {
+    background: rgba(10, 10, 20, 0.32);
+    transform: translateY(-2px);
+  }
+
+  &:focus-visible {
+    outline: 2px solid #ffffff;
+    outline-offset: 2px;
+  }
+}
+
+.ovCountdownTop {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  opacity: 0.9;
+}
+
+.ovCountdownDays {
+  margin-top: 6px;
+  font-size: 52px;
+  line-height: 1;
+  font-weight: 700;
+}
+
+.ovCountdownUnit {
+  font-size: 14px;
+  opacity: 0.9;
+}
+
+.ovCountdownFoot {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 12px;
+  padding-top: 10px;
+  width: 100%;
+  font-size: 13px;
+  border-top: 1px solid rgba(255, 255, 255, 0.24);
+
+  i {
+    margin-left: auto;
+  }
+}
+
+// ---------- Kacheln ----------
+.ovTiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 12px;
+}
+
+.ovTile {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  padding: 14px 16px;
+  font: inherit;
+  text-align: left;
+  color: var(--coe-text);
+  background: var(--coe-bg);
+  border: 1px solid var(--coe-border);
+  border-radius: 12px;
+  cursor: pointer;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease;
+
+  &:hover:not(:disabled) {
+    border-color: var(--coe-accent-border);
+    box-shadow: 0 6px 18px var(--coe-card-shadow);
+    transform: translateY(-2px);
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--coe-accent);
+    outline-offset: 2px;
+  }
+}
+
+.ovTileTop {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.ovTileIcon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  color: var(--coe-accent);
+  background: var(--coe-accent-soft);
+}
+
+.ovTileLabel {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--coe-text-2);
+}
+
+.ovTileValue {
+  font-size: 28px;
+  line-height: 1.1;
+  font-weight: 650;
+}
+
+.ovTileFoot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 18px;
+}
+
+.ovTileHint {
+  font-size: 12px;
+  color: var(--coe-text-2);
+}
+
+.ovDelta {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--coe-delta-up);
+
+  i {
+    font-size: 10px;
+  }
+}
+
+.sparkline {
+  flex: 0 0 auto;
+  overflow: visible;
+}
+
+.sparkLine {
+  fill: none;
+  stroke: var(--coe-text-3);
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.sparkArea {
+  fill: var(--coe-text-3);
+  opacity: 0.08;
+}
+
+.sparkDot {
+  fill: var(--coe-accent);
+  stroke: var(--coe-bg);
+  stroke-width: 2;
+}
+
+// ---------- Karten ----------
+.ovRow {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(280px, 1fr);
+  gap: 16px;
+}
+
+.ovRow3 {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 16px;
+}
+
+.ovWide {
+  min-width: 0;
+}
+
+.ovCard {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  background: var(--coe-bg);
+  border: 1px solid var(--coe-border);
+  border-radius: 14px;
+  box-shadow: 0 1px 2px var(--coe-card-shadow);
+}
+
+.ovCardHead {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 16px 6px;
+}
+
+.ovCardIcon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  flex: 0 0 auto;
+  border-radius: 8px;
+  color: var(--coe-accent);
+  background: var(--coe-accent-soft);
+}
+
+.ovCardTitle {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 650;
+  color: var(--coe-text);
+}
+
+.ovCardSub {
+  font-size: 12px;
+  color: var(--coe-text-2);
+}
+
+.ovCardAction {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+  font: inherit;
+  font-size: 12px;
+  color: var(--coe-accent);
+  background: none;
+  border: 0;
+  border-radius: 6px;
+  cursor: pointer;
+  white-space: nowrap;
+
+  &:hover {
+    background: var(--coe-accent-soft);
+  }
+}
+
+.ovCardBody {
+  padding: 8px 16px 16px;
+  min-width: 0;
+}
+
+.ovSkeleton {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 6px 0;
+}
+
+.ovFailed {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 12px 0;
+  font-size: 13px;
+  color: var(--coe-text-2);
+}
+
+// ---------- Handlungsbedarf ----------
+.govList {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.govItem {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 10px 8px;
+  font: inherit;
+  text-align: left;
+  color: var(--coe-text);
+  background: none;
+  border: 0;
+  border-bottom: 1px solid var(--coe-border-soft);
+  border-radius: 8px;
+  cursor: pointer;
+
+  &:hover:not(:disabled) {
+    background: var(--coe-hover);
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--coe-accent);
+    outline-offset: -2px;
+  }
+}
+
+li:last-child > .govItem {
+  border-bottom: 0;
+}
+
+.govIcon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  font-size: 16px;
+}
+
+.ovToneCritical {
+  color: #ffffff;
+  background: var(--coe-status-critical);
+}
+
+.ovToneSerious {
+  color: #ffffff;
+  background: var(--coe-status-serious);
+}
+
+.ovToneWarning {
+  color: #0b0b0b;
+  background: var(--coe-status-warning);
+}
+
+.ovToneInfo {
+  color: var(--coe-accent);
+  background: var(--coe-accent-soft);
+}
+
+.govText {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.govLabel {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.govHint {
+  font-size: 12px;
+  color: var(--coe-text-2);
+}
+
+.govValue {
+  font-size: 20px;
+  font-weight: 650;
+}
+
+.govChevron {
+  font-size: 12px;
+  color: var(--coe-text-3);
+}
+
+// ---------- Diagramme ----------
+.chartBox {
+  position: relative;
+  width: 100%;
+}
+
+.chartLegend {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 4px;
+  font-size: 13px;
+  color: var(--coe-text-2);
+
+  > span {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+  }
+}
+
+.chartLegendNote {
+  margin-left: auto;
+  font-size: 12px;
+}
+
+.legendKey {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  flex: 0 0 auto;
+  border-radius: 3px;
+}
+
+.chartGrid {
+  stroke: var(--coe-grid);
+  stroke-width: 1;
+}
+
+.chartBaseline {
+  stroke: var(--coe-axis);
+  stroke-width: 1;
+}
+
+.chartTick {
+  font-size: 11px;
+  fill: var(--coe-text-2);
+  font-variant-numeric: tabular-nums;
+}
+
+.chartLine {
+  fill: none;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.chartArea {
+  opacity: 0.08;
+}
+
+.chartDot {
+  stroke: var(--coe-bg);
+  stroke-width: 2;
+}
+
+.chartEndLabel {
+  font-size: 12px;
+  font-weight: 600;
+  fill: var(--coe-text);
+}
+
+.chartCrosshair {
+  stroke: var(--coe-axis);
+  stroke-width: 1;
+}
+
+.chartTip {
+  position: absolute;
+  z-index: 2;
+  min-width: 160px;
+  padding: 8px 10px;
+  font-size: 12px;
+  color: var(--coe-text);
+  background: var(--coe-bg);
+  border: 1px solid var(--coe-border);
+  border-radius: 8px;
+  box-shadow: 0 6px 18px var(--coe-card-shadow);
+  pointer-events: none;
+}
+
+.chartTipTitle {
+  margin-bottom: 4px;
+  font-weight: 600;
+}
+
+.chartTipRow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+
+  strong {
+    margin-left: auto;
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+// Segmentierter Balken
+.segWrap {
+  width: 100%;
+}
+
+.segBar {
+  display: flex;
+  gap: 2px;
+  overflow: hidden;
+  height: 28px;
+  margin: 8px 0 12px;
+}
+
+.segPart {
+  flex: 0 0 auto;
+  box-sizing: border-box;
+  min-width: 2px;
+  height: 28px;
+  padding: 0;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  border: 0;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: opacity 0.15s ease, filter 0.15s ease;
+
+  &:focus-visible {
+    outline: 2px solid var(--coe-text);
+    outline-offset: 2px;
+  }
+}
+
+.segDim {
+  opacity: 0.35;
+}
+
+.segLegend {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.segLegendItem {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 4px;
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  color: var(--coe-text);
+  background: none;
+  border: 0;
+  border-radius: 6px;
+  cursor: pointer;
+
+  &:hover:not(:disabled) {
+    background: var(--coe-hover);
+  }
+
+  &:disabled {
+    cursor: default;
+  }
+}
+
+.segLegendHover {
+  background: var(--coe-hover);
+}
+
+.segLegendLabel {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.segLegendValue {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+// Rangliste
+.barList {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.barRow {
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1.2fr) minmax(60px, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 7px 6px;
+  font: inherit;
+  text-align: left;
+  color: var(--coe-text);
+  background: none;
+  border: 0;
+  border-radius: 8px;
+  cursor: pointer;
+
+  &:hover:not(:disabled) {
+    background: var(--coe-hover);
+
+    .barFill {
+      filter: brightness(1.08);
+    }
+  }
+
+  &:disabled {
+    cursor: default;
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--coe-accent);
+    outline-offset: -2px;
+  }
+}
+
+.barRank {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--coe-text-3);
+  text-align: center;
+}
+
+.barText {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.barLabel {
+  font-size: 13px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.barSub {
+  font-size: 11px;
+  color: var(--coe-text-2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.barTrack {
+  display: block;
+  height: 10px;
+}
+
+.barFill {
+  display: block;
+  height: 10px;
+  border-radius: 0 4px 4px 0;
+  background: var(--coe-series-1);
+  transition: width 0.6s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.barValue {
+  min-width: 36px;
+  font-size: 13px;
+  font-weight: 650;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+@container (max-width: 860px) {
+  .ovRow {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .ovHeroValue {
+    font-size: 44px;
+  }
+
+  .ov {
+    padding: 12px;
+  }
+}
+
+// Detailansicht: Durchklicken
+.relatedRow {
+  cursor: pointer;
+
+  &:hover td {
+    background: var(--coe-hover);
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--coe-accent);
+    outline-offset: -2px;
+  }
+}
+
+.panelBack {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 10px;
+  padding: 4px 8px 4px 4px;
+  font: inherit;
+  font-size: 13px;
+  color: var(--coe-accent);
+  background: none;
+  border: 0;
+  border-radius: 6px;
+  cursor: pointer;
+
+  &:hover {
+    background: var(--coe-accent-soft);
+  }
+}
+
+.sparkBox {
+  width: 100%;
+  height: 30px;
+}
+
+.chartLinePartial {
+  stroke-dasharray: 4 4;
+}
+
+.legendDash {
+  display: inline-block;
+  width: 16px;
+  height: 0;
+  border-top: 2px dashed var(--coe-text-2);
+}
+
+.ovRow2 {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+@container (max-width: 860px) {
+  .ovRow2 {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

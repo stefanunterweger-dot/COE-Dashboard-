@@ -293,7 +293,14 @@ function handle(url: string, headers: { [k: string]: string }): IMockResponse {
         if (rows.length > 50000) { throw new ODataError(400, 'AggregateQueryRecordLimit exceeded. Cannot perform this operation.'); }
         const counts: { [k: string]: number } = {};
         rows.forEach(r => { const k = String(r[groupField] === undefined ? null : r[groupField]); counts[k] = (counts[k] || 0) + 1; });
-        return respond(200, { value: Object.keys(counts).map(k => ({ [groupField]: k === 'null' ? null : k, n: counts[k] })) });
+        const ga = attrFor(t, groupField);
+        return respond(200, {
+          value: Object.keys(counts).map(k => {
+            const row: Record<string, unknown> = { [groupField]: k === 'null' ? null : (ga.type === 'Picklist' ? Number(k) : k), n: counts[k] };
+            if (ga.type === 'Picklist' && ga.options && k !== 'null') { row[groupField + FORMATTED] = ga.options[Number(k)] || k; }
+            return row;
+          })
+        });
       }
       const am = /^(?:filter\((.*)\)\/)?aggregate\((.*)\)$/.exec(apply);
       if (!am) { throw new ODataError(400, `Unsupported $apply '${apply}'.`); }

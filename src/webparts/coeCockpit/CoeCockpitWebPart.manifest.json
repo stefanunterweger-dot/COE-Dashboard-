@@ -30,6 +30,7 @@
         "defaultEnvironmentId": "",
         "defaultEnvironmentDataverseUrl": "",
         "showDevEnvironments": true,
+        "showOverview": true,
         "devEnvManagedField": ""
       }
     }

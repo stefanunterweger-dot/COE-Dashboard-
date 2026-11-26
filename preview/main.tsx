@@ -84,6 +84,7 @@ const App: React.FC = () => {
           defaultEnvironmentId={p.defaultEnvironmentId}
           defaultEnvironmentDataverseUrl={p.defaultEnvironmentDataverseUrl}
           showDevEnvironments={p.showDevEnvironments}
+          showOverview={true}
           devEnvManagedField={p.devEnvManagedField}
           onTablesChanged={t => setTables(t)}
           onConfigure={() => setPaneOpen(true)}
