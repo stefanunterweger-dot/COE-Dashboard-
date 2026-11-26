@@ -1,11 +1,11 @@
-import { AadHttpClient, AadHttpClientFactory } from '@microsoft/sp-http';
+import { MSGraphClientFactory, MSGraphClientV3 } from '@microsoft/sp-http';
 
 /**
- * Versand über Microsoft Graph im Namen des angemeldeten Benutzers (POST /me/sendMail).
+ * Versand über Microsoft Graph im Namen des angemeldeten Benutzers (POST /me/sendMail) mit dem von
+ * Microsoft für Graph empfohlenen MSGraphClientV3.
  * Benötigt die delegierte Berechtigung „Microsoft Graph – Mail.Send“ (SharePoint Admin Center → API-Zugriff).
  * Die Mails liegen danach in „Gesendete Elemente“ des Benutzers; Antworten gehen an ihn.
  */
-const GRAPH = 'https://graph.microsoft.com';
 
 /** Abstand zwischen zwei Mails – Exchange Online erlaubt etwa 30 Nachrichten pro Minute und Postfach. */
 export const MAIL_TIMING = { intervalMs: 2100, maxRetries: 3 };
@@ -32,9 +32,9 @@ export const NOT_APPROVED_HINT = 'Die Berechtigung „Microsoft Graph – Mail.S
 const wait = (ms: number): Promise<void> => new Promise(resolve => window.setTimeout(resolve, ms));
 
 export class MailService {
-  private _client: Promise<AadHttpClient> | undefined;
+  private _client: Promise<MSGraphClientV3> | undefined;
 
-  constructor(private _factory: AadHttpClientFactory) {}
+  constructor(private _factory: MSGraphClientFactory) {}
 
   /** Eine Mail senden; bei Drosselung (429/503) wird nach „Retry-After“ erneut versucht. */
   public async send(mail: IOutgoingMail): Promise<void> {
@@ -52,9 +52,9 @@ export class MailService {
     }
   }
 
-  private _getClient(): Promise<AadHttpClient> {
+  private _getClient(): Promise<MSGraphClientV3> {
     if (!this._client) {
-      const p = this._factory.getClient(GRAPH);
+      const p = this._factory.getClient('3');
       this._client = p;
       p.catch(() => { this._client = undefined; });
     }
@@ -62,7 +62,7 @@ export class MailService {
   }
 
   private async _sendOnce(mail: IOutgoingMail): Promise<void> {
-    let client: AadHttpClient;
+    let client: MSGraphClientV3;
     try {
       client = await this._getClient();
     } catch (e) {
@@ -77,28 +77,15 @@ export class MailService {
       },
       saveToSentItems: true
     };
-    let res: { ok: boolean; status: number; headers?: { get(name: string): string | null }; text(): Promise<string> };
     try {
-      res = await client.post(`${GRAPH}/v1.0/me/sendMail`, AadHttpClient.configurations.v1, {
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-      });
+      await client.api('/me/sendMail').version('v1.0').post(payload);
     } catch (e) {
-      throw this._toError(0, e instanceof Error ? e.message : String(e));
+      // GraphError: statusCode, code, message, headers
+      const g = e as { statusCode?: number; code?: string; message?: string; headers?: { get?(name: string): string | null } };
+      const retry = g.headers && g.headers.get ? Number(g.headers.get('Retry-After') || 0) : 0;
+      const text = [g.code, g.message].filter(x => !!x && x !== 'null').join(' ') || String(e);
+      throw this._toError(Number(g.statusCode || 0), text, retry > 0 ? retry * 1000 : undefined);
     }
-    if (res.ok || res.status === 202) {
-      return;
-    }
-    const text = await res.text().catch(() => '');
-    let message = text;
-    try {
-      const body = JSON.parse(text) as { error?: { code?: string; message?: string } };
-      message = body.error ? `${body.error.code || ''} ${body.error.message || ''}`.trim() : text;
-    } catch {
-      // kein JSON
-    }
-    const retry = res.headers ? Number(res.headers.get('Retry-After') || 0) : 0;
-    throw this._toError(res.status, message || `HTTP ${res.status}`, retry > 0 ? retry * 1000 : undefined);
   }
 
   private _toError(status: number, message: string, retryAfterMs?: number): MailError {

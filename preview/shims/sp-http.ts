@@ -20,3 +20,25 @@ export class AadHttpClientFactory {
     return Promise.resolve(new AadHttpClient(resource));
   }
 }
+
+/** Ersatz für MSGraphClientV3: leitet POST /me/sendMail an die simulierte Graph-API (wirft wie GraphError). */
+export class MSGraphClientV3 {
+  public api(path: string): { version(v: string): { post(body: unknown): Promise<unknown> }; post(body: unknown): Promise<unknown> } {
+    const send = (version: string, body: unknown): Promise<unknown> =>
+      mockGraphPost(`https://graph.microsoft.com/${version}${path}`, JSON.stringify(body)).then(async res => {
+        if (res.ok) {
+          return {};
+        }
+        const err = JSON.parse((await res.text()) || '{}') as { error?: { code?: string; message?: string } };
+        throw { statusCode: res.status, code: err.error && err.error.code, message: err.error && err.error.message, headers: res.headers };
+      });
+    const req = { version: (v: string) => ({ post: (b: unknown) => send(v, b) }), post: (b: unknown) => send('v1.0', b) };
+    return req;
+  }
+}
+
+export class MSGraphClientFactory {
+  public getClient(_version: string): Promise<MSGraphClientV3> {
+    return Promise.resolve(new MSGraphClientV3());
+  }
+}

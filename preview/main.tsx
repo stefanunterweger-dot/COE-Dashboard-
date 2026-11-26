@@ -4,7 +4,7 @@ import { createTheme, ITheme, Panel, PanelType, TextField, Toggle, Dropdown, Pri
 import CoeCockpit from '../src/webparts/coeCockpit/components/CoeCockpit';
 import { getDefaultTables } from '../src/webparts/coeCockpit/models/defaultTables';
 import { ITableConfig } from '../src/webparts/coeCockpit/models/ITableConfig';
-import { AadHttpClientFactory } from './shims/sp-http';
+import { AadHttpClientFactory, MSGraphClientFactory } from './shims/sp-http';
 import { DATABASES, COE_HOST, DEFAULT_HOST, PIPELINES_HOST } from './mock/data';
 import { DEFAULT_INFO_URL } from '../src/webparts/coeCockpit/models/notification';
 import { MAIL_TIMING } from '../src/webparts/coeCockpit/services/MailService';
@@ -86,6 +86,7 @@ const App: React.FC = () => {
   (window as unknown as { __coeDenyMailSend?: boolean }).__coeDenyMailSend = noMailSend;
   (window as unknown as { __coeDenyHosts?: string[] }).__coeDenyHosts = noAdmin ? [DEFAULT_HOST, PIPELINES_HOST] : [];
   const factory = React.useMemo(() => new AadHttpClientFactory(), []);
+  const graphFactory = React.useMemo(() => new MSGraphClientFactory(), []);
   const set = (patch: Partial<typeof p>): void => setP(prev => ({ ...prev, ...patch }));
 
   return (
@@ -116,6 +117,7 @@ const App: React.FC = () => {
           isEditMode={editMode}
           editorRequest={editorRequest}
           aadHttpClientFactory={factory as never}
+          msGraphClientFactory={graphFactory as never}
           showDefaultEnvironment={p.showDefaultEnvironment}
           defaultEnvironmentId={p.defaultEnvironmentId}
           defaultEnvironmentDataverseUrl={p.defaultEnvironmentDataverseUrl}

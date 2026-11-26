@@ -7,7 +7,7 @@ import { IContextualMenuItem } from '@fluentui/react/lib/ContextualMenu';
 import { MessageBar, MessageBarType } from '@fluentui/react/lib/MessageBar';
 import { TooltipHost } from '@fluentui/react/lib/Tooltip';
 import { Icon } from '@fluentui/react/lib/Icon';
-import { AadHttpClientFactory } from '@microsoft/sp-http';
+import { AadHttpClientFactory, MSGraphClientFactory } from '@microsoft/sp-http';
 import { IReadonlyTheme } from '@microsoft/sp-component-base';
 import styles from './CoeCockpit.module.scss';
 import { IColumnConfig, IRecord, ISortConfig, ITableConfig } from '../models/ITableConfig';
@@ -50,6 +50,8 @@ export interface ICoeCockpitProps {
   isEditMode: boolean;
   editorRequest: number;
   aadHttpClientFactory: AadHttpClientFactory;
+  /** Für den Mailversand über Microsoft Graph (MSGraphClientV3). */
+  msGraphClientFactory: MSGraphClientFactory;
   showDefaultEnvironment: boolean;
   /** Leer = automatisch erkennen (Umgebungstyp „Default“). */
   defaultEnvironmentId: string;
@@ -226,8 +228,8 @@ const CoeCockpit: React.FC<ICoeCockpitProps> = props => {
   /** Environments für den Serienversand (Panel offen, solange gesetzt). */
   const [bulkRecords, setBulkRecords] = React.useState<IRecord[] | undefined>(undefined);
   const mailService = React.useMemo(
-    () => (props.notifyAutoSend ? new MailService(props.aadHttpClientFactory) : undefined),
-    [props.notifyAutoSend, props.aadHttpClientFactory]
+    () => (props.notifyAutoSend ? new MailService(props.msGraphClientFactory) : undefined),
+    [props.notifyAutoSend, props.msGraphClientFactory]
   );
   const accentColor = String((themeVars as { [k: string]: unknown })['--coe-accent'] || '#0f6cbd');
   const [collapsedGroups, setCollapsedGroups] = React.useState<{ [group: string]: boolean }>({});

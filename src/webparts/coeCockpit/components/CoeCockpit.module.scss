@@ -3168,3 +3168,11 @@ li:last-child > .govItem {
     grid-template-columns: minmax(0, 1fr);
   }
 }
+
+.techMessage {
+  margin-top: 4px;
+  font-family: Consolas, 'Courier New', monospace;
+  font-size: 12px;
+  word-break: break-word;
+  opacity: 0.85;
+}

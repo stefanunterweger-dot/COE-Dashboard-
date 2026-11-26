@@ -51,7 +51,8 @@ export const BulkNotifyPanel: React.FC<IBulkNotifyPanelProps> = props => {
   const [previewId, setPreviewId] = React.useState<string>('');
   const [mode, setMode] = React.useState<Mode>('select');
   const [step, setStep] = React.useState<number>(0);
-  const [notApproved, setNotApproved] = React.useState<boolean>(false);
+  /** Technische Meldung, wenn Mail.Send fehlt (leer = kein Problem). */
+  const [notApproved, setNotApproved] = React.useState<string>('');
   const [stepNote, setStepNote] = React.useState<string>('');
   const [run, setRun] = React.useState<{ total: number; done: number }>({ total: 0, done: 0 });
   const stopRef = React.useRef<boolean>(false);
@@ -69,7 +70,7 @@ export const BulkNotifyPanel: React.FC<IBulkNotifyPanelProps> = props => {
     setStatus({});
     setMode('select');
     setStep(0);
-    setNotApproved(false);
+    setNotApproved('');
     setStepNote('');
     setPreviewId((items.filter(i => sel[i.id])[0] || items[0] || { id: '' }).id);
   }, [records]);
@@ -99,7 +100,7 @@ export const BulkNotifyPanel: React.FC<IBulkNotifyPanelProps> = props => {
       return;
     }
     stopRef.current = false;
-    setNotApproved(false);
+    setNotApproved('');
     setRun({ total: list.length, done: 0 });
     setMode('sending');
     for (let n = 0; n < list.length; n++) {
@@ -118,7 +119,7 @@ export const BulkNotifyPanel: React.FC<IBulkNotifyPanelProps> = props => {
         const err = e instanceof MailError ? e : new MailError(e instanceof Error ? e.message : String(e), 'failed', 0);
         setStatus(prev => ({ ...prev, [it.id]: { s: 'failed', error: err.message } }));
         if (err.kind === 'notApproved') {
-          setNotApproved(true);
+          setNotApproved(err.message || `HTTP ${err.status}`);
           break; // ohne Berechtigung scheitern alle weiteren ebenso
         }
       }
@@ -227,7 +228,12 @@ export const BulkNotifyPanel: React.FC<IBulkNotifyPanelProps> = props => {
           {sentCount > 0 && <span className={styles.notifyChip}><b>{formatNumber(sentCount)}</b> gesendet</span>}
         </div>
 
-        {notApproved && <MessageBar messageBarType={MessageBarType.error} isMultiline={true}>{NOT_APPROVED_HINT}</MessageBar>}
+        {notApproved && (
+          <MessageBar messageBarType={MessageBarType.error} isMultiline={true}>
+            {NOT_APPROVED_HINT}
+            <div className={styles.techMessage}>Technische Meldung: {notApproved}</div>
+          </MessageBar>
+        )}
         {mode === 'confirm' && (
           <MessageBar messageBarType={MessageBarType.warning} isMultiline={true}>
             Es werden jetzt <b>{formatNumber(chosen.length)} E-Mails</b> an {formatNumber(Object.keys(recipientCount).length)} Empfänger aus deinem Postfach gesendet –
@@ -279,7 +285,10 @@ export const BulkNotifyPanel: React.FC<IBulkNotifyPanelProps> = props => {
                     </td>
                     <td className={styles.bulkName}>{it.name}</td>
                     <td title={it.draft.to.join('; ')}>{formatNumber(it.draft.to.length)}</td>
-                    <td title={status[it.id] && status[it.id].error ? status[it.id].error : undefined}>{statusCell(it)}</td>
+                    <td title={status[it.id] && status[it.id].error ? status[it.id].error : undefined}>
+                      {statusCell(it)}
+                      {status[it.id] && status[it.id].s === 'failed' && status[it.id].error && <div className={styles.techMessage}>{status[it.id].error}</div>}
+                    </td>
                   </tr>
                 ))}
               </tbody>

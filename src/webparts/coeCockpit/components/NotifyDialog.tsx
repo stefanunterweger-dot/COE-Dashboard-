@@ -268,7 +268,8 @@ export const NotifyDialog: React.FC<INotifyDialogProps> = props => {
                 () => { writeNotifyLog(envId, 'sent'); setDone('sent'); setSending(false); setConfirmSend(false); },
                 (e: unknown) => {
                   const err = e instanceof MailError ? e : undefined;
-                  setSendError(err && err.kind === 'notApproved' ? NOT_APPROVED_HINT : `Senden fehlgeschlagen: ${e instanceof Error ? e.message : String(e)}`);
+                  const msg = e instanceof Error ? e.message : String(e);
+                  setSendError(err && err.kind === 'notApproved' ? `${NOT_APPROVED_HINT} Technische Meldung: ${msg}` : `Senden fehlgeschlagen: ${msg}`);
                   setSending(false);
                   setConfirmSend(false);
                 }
