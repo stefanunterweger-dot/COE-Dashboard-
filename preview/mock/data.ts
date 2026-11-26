@@ -848,3 +848,7 @@ export const DATABASES: IDatabase[] = [
     }
   });
 })();
+
+// ---------- Für die simulierte Graph-API (Lizenzen, Gruppenmitglieder) ----------
+export const GRAPH_PEOPLE = humans.map(h => ({ id: String(h.admin_makerid), upn: String(h.admin_userprincipalname || ''), name: String(h.admin_displayname || '') }));
+export const GRAPH_GROUPS = ppUsers.filter(u => u.admin_type === 'Group').map(g => ({ id: String(g.admin_powerplatformuserid), name: String(g.admin_displayname) }));

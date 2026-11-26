@@ -1,6 +1,6 @@
 /* Ersatz für @microsoft/sp-http in der Vorschau: leitet Aufrufe an die simulierte Dataverse-API. */
 import { IMockResponse, mockGet } from '../mock/odata';
-import { mockGraphPost } from '../mock/graph';
+import { mockGraphGet, mockGraphPost } from '../mock/graph';
 import { mockSharePoint } from '../mock/sharepoint';
 import { mockPpApiGet, ppApiConsentError } from '../mock/ppapi';
 
@@ -27,19 +27,21 @@ export class AadHttpClientFactory {
   }
 }
 
-/** Ersatz für MSGraphClientV3: leitet POST /me/sendMail an die simulierte Graph-API (wirft wie GraphError). */
+/** Ersatz für MSGraphClientV3: leitet Aufrufe an die simulierte Graph-API (wirft wie GraphError). */
 export class MSGraphClientV3 {
-  public api(path: string): { version(v: string): { post(body: unknown): Promise<unknown> }; post(body: unknown): Promise<unknown> } {
-    const send = (version: string, body: unknown): Promise<unknown> =>
-      mockGraphPost(`https://graph.microsoft.com/${version}${path}`, JSON.stringify(body)).then(async res => {
-        if (res.ok) {
-          return {};
-        }
-        const err = JSON.parse((await res.text()) || '{}') as { error?: { code?: string; message?: string } };
-        throw { statusCode: res.status, code: err.error && err.error.code, message: err.error && err.error.message, headers: res.headers };
-      });
-    const req = { version: (v: string) => ({ post: (b: unknown) => send(v, b) }), post: (b: unknown) => send('v1.0', b) };
-    return req;
+  public api(path: string): { version(v: string): { post(body: unknown): Promise<unknown>; get(): Promise<unknown> }; post(body: unknown): Promise<unknown>; get(): Promise<unknown> } {
+    const full = (version: string): string => (/^https:/.test(path) ? path : `https://graph.microsoft.com/${version}${path}`);
+    const handle = async (res: IMockResponse): Promise<unknown> => {
+      const text = await res.text();
+      if (res.ok) {
+        return text ? JSON.parse(text) : {};
+      }
+      const err = JSON.parse(text || '{}') as { error?: { code?: string; message?: string } };
+      throw { statusCode: res.status, code: err.error && err.error.code, message: err.error && err.error.message, headers: res.headers };
+    };
+    const send = (version: string, body: unknown): Promise<unknown> => mockGraphPost(full(version), JSON.stringify(body)).then(handle);
+    const get = (version: string): Promise<unknown> => mockGraphGet(full(version)).then(handle);
+    return { version: (v: string) => ({ post: (b: unknown) => send(v, b), get: () => get(v) }), post: (b: unknown) => send('v1.0', b), get: () => get('v1.0') };
   }
 }
 

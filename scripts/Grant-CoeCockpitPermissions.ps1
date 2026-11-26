@@ -7,6 +7,8 @@
   Erscheinen dort keine Anforderungen, setzt dieses Skript dieselben Berechtigungen direkt (Microsoft Graph PowerShell):
 
     -MailSend          Microsoft Graph „Mail.Send“ – automatischer E-Mail-Versand an Maker (optional)
+    -Licenses          Microsoft Graph „User.Read.All“ und „GroupMember.Read.All“ – Lizenzprüfung in
+                       „Betroffen ab Februar 2027“ (Lizenzen der Berechtigten, Mitglieder freigegebener Gruppen)
     -PowerPlatformApi  Power Platform API „Licensing.Allocations.Read“, „Licensing.BillingPolicies.Read“,
                        „EnvironmentManagement.Environments.Read“ – Ansichten „Copilot-Credits“ und „Abrechnungspläne“
 
@@ -20,13 +22,16 @@
 
 .EXAMPLE
   .\Grant-CoeCockpitPermissions.ps1 -PowerPlatformApi
+.EXAMPLE
+  .\Grant-CoeCockpitPermissions.ps1 -Licenses
 #>
 param(
   [switch]$MailSend,
+  [switch]$Licenses,
   [switch]$PowerPlatformApi
 )
 $ErrorActionPreference = 'Stop'
-if (-not $MailSend -and -not $PowerPlatformApi) { $MailSend = $true; $PowerPlatformApi = $true }
+if (-not $MailSend -and -not $Licenses -and -not $PowerPlatformApi) { $MailSend = $true; $Licenses = $true; $PowerPlatformApi = $true }
 
 # Install-Module Microsoft.Graph.Applications, Microsoft.Graph.Identity.SignIns -Scope CurrentUser   # nur falls noch nicht installiert
 Connect-MgGraph -Scopes 'Application.ReadWrite.All', 'DelegatedPermissionGrant.ReadWrite.All' | Out-Null
@@ -57,9 +62,12 @@ function Grant-Scopes($resource, [string[]]$scopes) {
   }
 }
 
+$graph = Get-MgServicePrincipal -Filter "appId eq '00000003-0000-0000-c000-000000000000'"
 if ($MailSend) {
-  $graph = Get-MgServicePrincipal -Filter "appId eq '00000003-0000-0000-c000-000000000000'"
   Grant-Scopes $graph @('Mail.Send')
+}
+if ($Licenses) {
+  Grant-Scopes $graph @('User.Read.All', 'GroupMember.Read.All')
 }
 
 if ($PowerPlatformApi) {

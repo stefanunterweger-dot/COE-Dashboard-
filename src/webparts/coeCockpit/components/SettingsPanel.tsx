@@ -157,6 +157,12 @@ export const SettingsPanel: React.FC<ISettingsPanelProps> = props => {
             >
               <Toggle checked={v.showCopilotCredits} onChange={(_e, c) => set({ showCopilotCredits: !!c })} />
             </Row>
+            <Row
+              label="Betroffen ab Februar 2027"
+              description="Apps in Managed Environments nur noch mit Premium-Lizenz: alle Berechtigten und ihre Lizenzen. Lizenzprüfung über Microsoft Graph (Berechtigung „User.Read.All“, für Gruppen „GroupMember.Read.All“)."
+            >
+              <Toggle checked={v.showPremium2027} onChange={(_e, c) => set({ showPremium2027: !!c })} />
+            </Row>
             <Row label="Default Environment" description="Eigener Bereich – Details unter „Default Environment“">
               <Toggle checked={v.showDefaultEnvironment} onChange={(_e, c) => set({ showDefaultEnvironment: !!c })} />
             </Row>

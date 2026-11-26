@@ -8,6 +8,7 @@ import { AadHttpClientFactory, AadTokenProviderFactory, MSGraphClientFactory, SP
 import { seedActions, seedNotifyEntry } from './mock/sharepoint';
 import { ACTION_TIMING } from '../src/webparts/coeCockpit/components/ActionDialog';
 import { resetCreditsCache } from '../src/webparts/coeCockpit/components/CopilotCreditsView';
+import { resetPremiumCache } from '../src/webparts/coeCockpit/components/PremiumView';
 import { IWebPartSettings } from '../src/webparts/coeCockpit/models/settings';
 import { IMailTemplateOverrides } from '../src/webparts/coeCockpit/models/mailTemplates';
 import { ActionService, IActionSetupState } from '../src/webparts/coeCockpit/services/ActionService';
@@ -123,6 +124,9 @@ const App: React.FC = () => {
   const [noMailSend, setNoMailSend] = React.useState<boolean>(false);
   const [noPpApi, setNoPpApi] = React.useState<boolean>(false);
   const [notMember, setNotMember] = React.useState<boolean>(false);
+  const [noUserRead, setNoUserRead] = React.useState<boolean>(false);
+  (window as unknown as { __coeDenyUserRead?: boolean }).__coeDenyUserRead = noUserRead;
+  React.useMemo(() => resetPremiumCache(), [noUserRead, noAdmin]);
   (window as unknown as { __spNotMember?: boolean }).__spNotMember = notMember;
   (window as unknown as { __coePpApiDeny?: string }).__coePpApiDeny = noPpApi ? 'consent' : noAdmin ? 'forbidden' : '';
   React.useMemo(() => resetCreditsCache(), [noAdmin, noPpApi]);
@@ -187,10 +191,11 @@ const App: React.FC = () => {
         <Toggle inlineLabel label="Mail.Send fehlt" checked={noMailSend} onChange={(_e, v) => setNoMailSend(!!v)} styles={{ root: { margin: 0 } }} />
         <Toggle inlineLabel label="PP-API nicht freigegeben" checked={noPpApi} onChange={(_e, v) => setNoPpApi(!!v)} styles={{ root: { margin: 0 } }} />
         <Toggle inlineLabel label="Nicht in der Admin-Gruppe" checked={notMember} onChange={(_e, v) => setNotMember(!!v)} styles={{ root: { margin: 0 } }} />
+        <Toggle inlineLabel label="Lizenzen nicht lesbar" checked={noUserRead} onChange={(_e, v) => setNoUserRead(!!v)} styles={{ root: { margin: 0 } }} />
       </div>
       <div className={`section ${dark ? 'sectionDark' : ''}`}>
         <CoeCockpit
-          key={`${noAdmin ? 'noadmin' : 'admin'}-${noPpApi ? 'noppapi' : 'ppapi'}-${notMember ? 'guest' : 'member'}`}
+          key={`${noAdmin ? 'noadmin' : 'admin'}-${noPpApi ? 'noppapi' : 'ppapi'}-${notMember ? 'guest' : 'member'}-${noUserRead ? 'nolic' : 'lic'}`}
           instanceId="preview"
           title={p.title}
           subtitle={p.subtitle}

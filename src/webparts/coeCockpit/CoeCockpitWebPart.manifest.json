@@ -34,6 +34,7 @@
         "devEnvManagedField": "",
         "showSecurity": true,
         "showCopilotCredits": true,
+        "showPremium2027": true,
         "mailTemplates": {},
         "pipelinesHostUrl": "",
         "notifyTone": "sie",

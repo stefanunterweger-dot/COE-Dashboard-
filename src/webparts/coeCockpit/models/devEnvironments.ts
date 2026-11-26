@@ -129,7 +129,7 @@ function isDeveloper(r: IRecord): boolean {
 }
 
 /** true / false / undefined (unbekannt). */
-function managedValue(r: IRecord, field: string): boolean | undefined {
+export function managedValue(r: IRecord, field: string): boolean | undefined {
   if (/protectionlevel/i.test(field)) {
     // CoE „Governance Protection Level“: „Basic“ = nicht managed, leer = unbekannt, sonst (z. B. „Standard“) managed
     const level = rawValue(r, field).trim();

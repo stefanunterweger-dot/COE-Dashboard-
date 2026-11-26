@@ -91,9 +91,9 @@ const FILTERS: { key: CreditFilter; label: string; test: (r: ICreditRow) => bool
   { key: 'none', label: 'Ohne Zuweisung', test: r => r.allocated === undefined }
 ];
 
-interface IColumn<T> { key: string; label: string; numeric?: boolean; sort: (r: T) => string | number; render: (r: T) => React.ReactNode; title?: string }
+export interface IColumn<T> { key: string; label: string; numeric?: boolean; sort: (r: T) => string | number; render: (r: T) => React.ReactNode; title?: string }
 
-function SortTable<T>(props: { columns: IColumn<T>[]; rows: T[]; rowKey: (r: T) => string; initial: { key: string; desc: boolean }; empty: string; expanded?: (r: T) => React.ReactNode; onRow?: (r: T) => void }): JSX.Element {
+export function SortTable<T>(props: { columns: IColumn<T>[]; rows: T[]; rowKey: (r: T) => string; initial: { key: string; desc: boolean }; empty: string; expanded?: (r: T) => React.ReactNode; onRow?: (r: T) => void }): JSX.Element {
   const [sort, setSort] = React.useState(props.initial);
   const col = props.columns.filter(c => c.key === sort.key)[0] || props.columns[0];
   const rows = props.rows.slice().sort((a, b) => {
@@ -147,7 +147,7 @@ function SortTable<T>(props: { columns: IColumn<T>[]; rows: T[]; rowKey: (r: T) 
   );
 }
 
-const Tile: React.FC<{ label: string; hint: string; icon: string; tone: string; value: React.ReactNode; active?: boolean; onClick?: () => void }> = p => (
+export const Tile: React.FC<{ label: string; hint: string; icon: string; tone: string; value: React.ReactNode; active?: boolean; onClick?: () => void }> = p => (
   <button
     type="button"
     className={`${styles.secTile} ${p.active ? styles.ccTileActive : ''}`}

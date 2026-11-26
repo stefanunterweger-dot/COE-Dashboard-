@@ -52,6 +52,8 @@ export interface ICoeCockpitWebPartProps {
   /** Ansicht „Sicherheit & Freigaben“ anzeigen. */
   showSecurity: boolean;
   showCopilotCredits: boolean;
+  /** Auswertung „Betroffen ab Februar 2027“ (Premium-Lizenz in Managed Environments). */
+  showPremium2027: boolean;
   /** Dataverse-URL des Pipelines-Host-Environments (leer = ALM-Pipelines ausblenden). */
   pipelinesHostUrl: string;
   /** E-Mail an Maker: Anrede „sie“ oder „du“. */
@@ -131,6 +133,7 @@ export default class CoeCockpitWebPart extends BaseClientSideWebPart<ICoeCockpit
       devEnvManagedField: (this.properties.devEnvManagedField || '').trim(),
       showSecurity: this.properties.showSecurity !== false,
       showCopilotCredits: this.properties.showCopilotCredits !== false,
+      showPremium2027: this.properties.showPremium2027 !== false,
       pipelinesHostUrl: normalizeDataverseUrl(this.properties.pipelinesHostUrl) || '',
       notify: {
         formal: this.properties.notifyTone !== 'du',
@@ -203,6 +206,7 @@ export default class CoeCockpitWebPart extends BaseClientSideWebPart<ICoeCockpit
         devEnvManagedField: (p.devEnvManagedField || '').trim(),
         showSecurity: p.showSecurity !== false,
         showCopilotCredits: p.showCopilotCredits !== false,
+        showPremium2027: p.showPremium2027 !== false,
         pipelinesHostUrl: normalizeDataverseUrl(p.pipelinesHostUrl) || '',
         notifyAutoSend: p.notifyAutoSend !== false,
         notifyTone: p.notifyTone === 'du' ? 'du' : 'sie',
@@ -652,6 +656,10 @@ export default class CoeCockpitWebPart extends BaseClientSideWebPart<ICoeCockpit
                 PropertyPaneToggle('showSecurity', {
                   label: 'Ansicht „Sicherheit & Freigaben“ anzeigen',
                   checked: this.properties.showSecurity !== false
+                }),
+                PropertyPaneToggle('showPremium2027', {
+                  label: 'Auswertung „Betroffen ab Februar 2027“ anzeigen',
+                  checked: this.properties.showPremium2027 !== false
                 }),
                 PropertyPaneDropdown('pipelinesHostUrl', {
                   label: 'Pipelines-Host-Environment',

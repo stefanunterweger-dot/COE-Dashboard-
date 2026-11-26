@@ -17,6 +17,7 @@ export interface ISettingsValues {
   devEnvManagedField: string;
   showSecurity: boolean;
   showCopilotCredits: boolean;
+  showPremium2027: boolean;
   pipelinesHostUrl: string;
   notifyAutoSend: boolean;
   notifyTone: 'sie' | 'du';

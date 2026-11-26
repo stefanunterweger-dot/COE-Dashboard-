@@ -33,6 +33,8 @@ import { CopilotCreditsView } from './CopilotCreditsView';
 import { SolutionContents } from './SolutionContents';
 import { SettingsPanel } from './SettingsPanel';
 import { RoleBadge } from './RoleBadge';
+import { PremiumView } from './PremiumView';
+import { PREMIUM_KEY } from '../models/premiumLicensing';
 import { IUsageTarget, UsageNotify, usageLogKey } from './UsageNotify';
 import { usageSupported } from '../models/usageMail';
 import { IWebPartSettings } from '../models/settings';
@@ -88,6 +90,8 @@ export interface ICoeCockpitProps {
   showSecurity: boolean;
   /** Ansichten „Copilot-Credits“ und „Abrechnungspläne“ (live über die Power Platform API) anzeigen. */
   showCopilotCredits: boolean;
+  /** Auswertung „Betroffen ab Februar 2027“ (Premium-Lizenz in Managed Environments) anzeigen. */
+  showPremium2027?: boolean;
   /** Dataverse-URL des Pipelines-Host-Environments (leer = ALM-Pipelines ausblenden). */
   pipelinesHostUrl: string;
   /** Vorlage für die E-Mail an die Maker betroffener Developer-Environments. */
@@ -463,7 +467,8 @@ const CoeCockpit: React.FC<ICoeCockpitProps> = props => {
   React.useEffect(() => {
     const waitingForDefault = (props.showDefaultEnvironment && isDefaultEnvKey(activeKey)) || (props.showOverview && activeKey === OVERVIEW_KEY)
       || (props.showSecurity && activeKey === SECURITY_KEY) || (props.showActions && activeKey === ACTION_LOG_KEY)
-      || (props.showCopilotCredits && (activeKey === CREDITS_KEY || activeKey === BILLING_KEY));
+      || (props.showCopilotCredits && (activeKey === CREDITS_KEY || activeKey === BILLING_KEY))
+      || (props.showPremium2027 !== false && activeKey === PREMIUM_KEY);
     if (!activeTable && tables.length && !waitingForDefault) {
       setActiveKey(tables[0].key);
     }
@@ -1175,6 +1180,7 @@ const CoeCockpit: React.FC<ICoeCockpitProps> = props => {
   const inSecurity = props.showSecurity && activeKey === SECURITY_KEY;
   const inActionLog = props.showActions && activeKey === ACTION_LOG_KEY;
   const inCredits = props.showCopilotCredits && (activeKey === CREDITS_KEY || activeKey === BILLING_KEY);
+  const inPremium = props.showPremium2027 !== false && activeKey === PREMIUM_KEY;
   const devState = data[DEV_ENV_KEY];
   const devAffected = devState && devState.status === 'ready'
     ? {
@@ -1184,7 +1190,18 @@ const CoeCockpit: React.FC<ICoeCockpitProps> = props => {
     }
     : undefined;
 
-  const renderMain = (): JSX.Element => (inCredits
+  const renderMain = (): JSX.Element => (inPremium && service
+    ? (
+      <PremiumView
+        service={service}
+        graphFactory={props.msGraphClientFactory}
+        ppApi={props.showCopilotCredits ? ppApi : undefined}
+        managedField={props.devEnvManagedField}
+        reloadKey={String(reloadTick)}
+        onOpenApp={id => openRelated('admin_app', id)}
+      />
+    )
+    : inCredits
     ? (
       <CopilotCreditsView
         api={ppApi}
@@ -1659,6 +1676,9 @@ const CoeCockpit: React.FC<ICoeCockpitProps> = props => {
   devTables.forEach(t => navItems.push({
     key: t.key, title: t.title, icon: 'Warning', group: ANALYSIS_GROUP, count: countFor(t), active: !!inDevView, danger: true, onClick: () => setActiveKey(t.key)
   }));
+  if (props.showPremium2027 !== false) {
+    navItems.push({ key: PREMIUM_KEY, title: 'Betroffen ab Februar 2027', icon: 'Permissions', group: ANALYSIS_GROUP, active: !!inPremium, danger: true, onClick: () => setActiveKey(PREMIUM_KEY) });
+  }
   if (props.showSecurity) {
     navItems.push({ key: SECURITY_KEY, title: 'Sicherheit & Freigaben', icon: 'Shield', group: ANALYSIS_GROUP, active: !!inSecurity, onClick: () => setActiveKey(SECURITY_KEY) });
   }
@@ -1767,7 +1787,7 @@ const CoeCockpit: React.FC<ICoeCockpitProps> = props => {
           <>
             {renderAccessNotice()}
 
-            {showKpis && !inOverview && !inSecurity && !inCredits && <KpiStrip tables={tables} kpis={kpis} activeKey={activeKey} onSelect={setActiveKey} />}
+            {showKpis && !inOverview && !inSecurity && !inCredits && !inPremium && <KpiStrip tables={tables} kpis={kpis} activeKey={activeKey} onSelect={setActiveKey} />}
 
             {navItems.length > 0 && !useSideNav && (
               <nav className={styles.tabs} role="tablist" aria-label="Tabellen">
