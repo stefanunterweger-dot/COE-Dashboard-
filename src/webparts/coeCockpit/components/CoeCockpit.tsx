@@ -7,7 +7,7 @@ import { IContextualMenuItem } from '@fluentui/react/lib/ContextualMenu';
 import { MessageBar, MessageBarType } from '@fluentui/react/lib/MessageBar';
 import { TooltipHost } from '@fluentui/react/lib/Tooltip';
 import { Icon } from '@fluentui/react/lib/Icon';
-import { AadHttpClientFactory, MSGraphClientFactory } from '@microsoft/sp-http';
+import { AadHttpClientFactory, MSGraphClientFactory, SPHttpClient } from '@microsoft/sp-http';
 import { IReadonlyTheme } from '@microsoft/sp-component-base';
 import styles from './CoeCockpit.module.scss';
 import { IColumnConfig, IRecord, ISortConfig, ITableConfig } from '../models/ITableConfig';
@@ -15,7 +15,7 @@ import {
   DataverseError, DataverseService, environmentLinkId, findDefaultEnvironment, ICountResult, IEntityMeta, IEnvironmentInfo, normalizeDataverseUrl
 } from '../services/DataverseService';
 import { buildDefaultEnvironmentTables, DEFAULT_ENV_PREFIX, isDefaultEnvKey } from '../models/defaultEnvironment';
-import { buildDevEnvTable, DEV_ENV_DEADLINES, DEV_ENV_KEY, DEV_FIELDS, loadAffectedEnvironments, RECOMMENDATION } from '../models/devEnvironments';
+import { buildDevEnvTable, DEV_ENV_DEADLINES, DEV_ENV_KEY, DEV_FIELDS, loadAffectedEnvironments, NOTIFIED, RECOMMENDATION } from '../models/devEnvironments';
 import { OVERVIEW_KEY } from '../models/overview';
 import { buildPipelineTables, GROUP_ALM, PIPELINE_KEY_PREFIX } from '../models/pipelines';
 import { OverviewView } from './OverviewView';
@@ -24,6 +24,7 @@ import { GlobalSearch } from './GlobalSearch';
 import { copyText, NotifyDialog } from './NotifyDialog';
 import { BulkNotifyPanel } from './BulkNotifyPanel';
 import { MailService } from '../services/MailService';
+import { INotifyLogMap, NotifyLogService, NotifyMethod } from '../services/NotifyLogService';
 import { INotifySettings } from '../models/notification';
 import { copyCurrentLink, IViewState, readViewState, writeViewState } from '../utils/deepLink';
 import {
@@ -52,6 +53,10 @@ export interface ICoeCockpitProps {
   aadHttpClientFactory: AadHttpClientFactory;
   /** Für den Mailversand über Microsoft Graph (MSGraphClientV3). */
   msGraphClientFactory: MSGraphClientFactory;
+  /** Für das gemeinsame Versandprotokoll (SharePoint-Liste auf dieser Website). */
+  spHttpClient: SPHttpClient;
+  webUrl: string;
+  currentUser: { displayName: string; email: string };
   showDefaultEnvironment: boolean;
   /** Leer = automatisch erkennen (Umgebungstyp „Default“). */
   defaultEnvironmentId: string;
@@ -163,6 +168,13 @@ const MAX_TABS = 7;
 /** Unter dieser Breite (px) wird die schmale Darstellung verwendet. */
 const NARROW_WIDTH = 860;
 const COLLATOR = new Intl.Collator('de', { numeric: true, sensitivity: 'base' });
+const NO_RECORDS: IRecord[] = [];
+
+/** Spalten „Maker verständigt / am / von“ aus dem gemeinsamen Versandprotokoll ergänzen. */
+function withNotifyInfo(r: IRecord, log: INotifyLogMap): IRecord {
+  const e = log[String(r.admin_environmentid || '').toLowerCase()];
+  return { ...r, [DEV_FIELDS.notified]: e ? NOTIFIED.yes : NOTIFIED.no, [DEV_FIELDS.notifiedOn]: e ? e.at : null, [DEV_FIELDS.notifiedBy]: e ? e.by : '' };
+}
 
 const CoeCockpit: React.FC<ICoeCockpitProps> = props => {
   const { tables, theme, isEditMode, showKpis, maxRecords } = props;
@@ -232,6 +244,39 @@ const CoeCockpit: React.FC<ICoeCockpitProps> = props => {
     [props.notifyAutoSend, props.msGraphClientFactory]
   );
   const accentColor = String((themeVars as { [k: string]: unknown })['--coe-accent'] || '#0f6cbd');
+  // Gemeinsames Versandprotokoll (wer hat welches Environment wann verständigt)
+  const notifyLogService = React.useMemo(
+    () => (props.spHttpClient && props.webUrl ? new NotifyLogService(props.spHttpClient, props.webUrl) : undefined),
+    [props.spHttpClient, props.webUrl]
+  );
+  const [notifyLog, setNotifyLog] = React.useState<INotifyLogMap>({});
+  const [notifyLogProblem, setNotifyLogProblem] = React.useState<string>('');
+  const refreshNotifyLog = React.useCallback((): Promise<INotifyLogMap> => {
+    if (!notifyLogService) {
+      return Promise.resolve({});
+    }
+    return notifyLogService.load().then(
+      res => { setNotifyLog(res.map); setNotifyLogProblem(''); return res.map; },
+      (e: unknown) => { setNotifyLogProblem(e instanceof Error ? e.message : String(e)); throw e; }
+    );
+  }, [notifyLogService]);
+  const logNotification = (record: IRecord, method: NotifyMethod, subject: string, to: string[]): Promise<void> => {
+    if (!notifyLogService) {
+      return Promise.reject(new Error('Kein Versandprotokoll verfügbar.'));
+    }
+    const entry = {
+      envId: String(record.admin_environmentid || '').toLowerCase(),
+      envName: displayValue(record, 'admin_displayname'),
+      at: new Date().toISOString(),
+      by: props.currentUser.displayName,
+      byEmail: props.currentUser.email,
+      method, subject, recipients: to.join('; ')
+    };
+    return notifyLogService.add(entry).then(() => {
+      setNotifyLog(prev => ({ ...prev, [entry.envId]: entry }));
+      setNotifyLogProblem('');
+    });
+  };
   const [collapsedGroups, setCollapsedGroups] = React.useState<{ [group: string]: boolean }>({});
   const storageKey = `coe-cockpit:${props.instanceId}:hidden`;
   const [hidden, setHidden] = React.useState<{ [tableKey: string]: string[] }>(() => readHidden(storageKey) || {});
@@ -537,7 +582,18 @@ const CoeCockpit: React.FC<ICoeCockpitProps> = props => {
   const isLocked = (key: string): boolean => !!access[key] && access[key].status === 'denied' && externalTables.some(t => t.key === key);
 
   const state: ITableState | undefined = activeTable ? data[activeTable.key] : undefined;
-  const records = state ? state.records : [];
+  const rawRecords = state ? state.records : NO_RECORDS;
+  const isDevTable = !!activeTable && activeTable.key === DEV_ENV_KEY;
+  const records = React.useMemo(
+    () => (isDevTable ? rawRecords.map(r => withNotifyInfo(r, notifyLog)) : rawRecords),
+    [rawRecords, isDevTable, notifyLog]
+  );
+  // Versandprotokoll laden (beim Start, beim Aktualisieren und beim Öffnen des Reiters)
+  React.useEffect(() => {
+    if (service && props.showDevEnvironments && isDevTable) {
+      refreshNotifyLog().catch(() => undefined);
+    }
+  }, [service, props.showDevEnvironments, isDevTable, reloadTick, refreshNotifyLog]);
   const loading = !!service && !!activeTable && !activeTable.unavailable && (!state || (state.status === 'loading' && !state.partial));
   /** Erste Seiten sind da, weitere werden noch geladen (große Tabellen). */
   const partial = !!state && state.status === 'loading' && !!state.partial;
@@ -1013,7 +1069,13 @@ const CoeCockpit: React.FC<ICoeCockpitProps> = props => {
       byRec(RECOMMENDATION.inUse, 'In Nutzung', 'Rocket'),
       byRec(RECOMMENDATION.inactive, 'Inaktiv > 90 Tage', 'Clock'),
       byRec(RECOMMENDATION.empty, 'Leer', 'Inbox'),
-      byRec(RECOMMENDATION.disabled, 'Deaktiviert', 'Blocked2')
+      byRec(RECOMMENDATION.disabled, 'Deaktiviert', 'Blocked2'),
+      {
+        key: 'notnotified', label: 'Noch nicht verständigt', icon: 'Mail',
+        value: rows.filter(r => !notifyLog[String(r.admin_environmentid || '').toLowerCase()]).length,
+        active: isFilter(DEV_FIELDS.notified, NOTIFIED.no) && activeFilterFields.length === 1,
+        onClick: () => { setFilters({ [DEV_FIELDS.notified]: { values: [NOTIFIED.no] } }); setSearch(''); setPage(0); }
+      }
     ];
     return (
       <>
@@ -1042,7 +1104,10 @@ const CoeCockpit: React.FC<ICoeCockpitProps> = props => {
               text={`Alle gefilterten verständigen (${formatNumber(ready ? filtered.length : 0)})`}
               iconProps={{ iconName: 'Send' }}
               disabled={!ready || filtered.length === 0}
-              onClick={() => setBulkRecords(filtered.slice())}
+              onClick={() => {
+                const list = filtered.slice();
+                refreshNotifyLog().catch(() => undefined).then(() => setBulkRecords(list), () => setBulkRecords(list));
+              }}
             />
             <DefaultButton
               text={addressesCopied || `E-Mail-Adressen kopieren (${formatNumber(mailTargets.length)})`}
@@ -1200,7 +1265,7 @@ const CoeCockpit: React.FC<ICoeCockpitProps> = props => {
             icon: 'Mail',
             label: 'Maker per E-Mail verständigen',
             isDisabled: r => !r[DEV_FIELDS.makerEmails],
-            onClick: r => setNotifyRecord(r)
+            onClick: r => { refreshNotifyLog().catch(() => undefined); setNotifyRecord(r); }
           } : undefined}
         />
 
@@ -1403,7 +1468,7 @@ const CoeCockpit: React.FC<ICoeCockpitProps> = props => {
             text: 'Maker per E-Mail verständigen',
             icon: 'Mail',
             disabled: !panel.record[DEV_FIELDS.makerEmails],
-            onClick: () => setNotifyRecord(panel.record)
+            onClick: () => { refreshNotifyLog().catch(() => undefined); setNotifyRecord(panel.record); }
           } : undefined}
         />
 
@@ -1413,6 +1478,9 @@ const CoeCockpit: React.FC<ICoeCockpitProps> = props => {
           themeVars={themeVars}
           accent={accentColor}
           mailService={mailService}
+          notified={notifyRecord ? notifyLog[String(notifyRecord.admin_environmentid || '').toLowerCase()] : undefined}
+          logProblem={notifyLogProblem}
+          onLogged={logNotification}
           onDismiss={() => setNotifyRecord(undefined)}
         />
 
@@ -1422,6 +1490,10 @@ const CoeCockpit: React.FC<ICoeCockpitProps> = props => {
           accent={accentColor}
           themeVars={themeVars}
           mailService={mailService}
+          log={notifyLog}
+          logProblem={notifyLogProblem}
+          refreshLog={refreshNotifyLog}
+          onLogged={logNotification}
           onDismiss={() => setBulkRecords(undefined)}
         />
 

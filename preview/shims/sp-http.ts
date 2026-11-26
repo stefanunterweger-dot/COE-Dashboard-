@@ -1,6 +1,7 @@
 /* Ersatz für @microsoft/sp-http in der Vorschau: leitet Aufrufe an die simulierte Dataverse-API. */
 import { IMockResponse, mockGet } from '../mock/odata';
 import { mockGraphPost } from '../mock/graph';
+import { mockSharePoint } from '../mock/sharepoint';
 
 export type HttpClientResponse = IMockResponse;
 
@@ -40,5 +41,16 @@ export class MSGraphClientV3 {
 export class MSGraphClientFactory {
   public getClient(_version: string): Promise<MSGraphClientV3> {
     return Promise.resolve(new MSGraphClientV3());
+  }
+}
+
+/** Ersatz für SPHttpClient (SharePoint-REST der eigenen Website). */
+export class SPHttpClient {
+  public static configurations = { v1: {} };
+  public get(url: string, _config: unknown, _options?: unknown): Promise<HttpClientResponse> {
+    return mockSharePoint('GET', url);
+  }
+  public post(url: string, _config: unknown, options?: { body?: string }): Promise<HttpClientResponse> {
+    return mockSharePoint('POST', url, options && options.body);
   }
 }

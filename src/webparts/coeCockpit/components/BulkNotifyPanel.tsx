@@ -9,7 +9,7 @@ import styles from './CoeCockpit.module.scss';
 import { IRecord } from '../models/ITableConfig';
 import { buildDevEnvMail, IMailDraft, INotifySettings, mailtoUrl } from '../models/notification';
 import { MAIL_TIMING, MailError, MailService, NOT_APPROVED_HINT } from '../services/MailService';
-import { describeLogEntry, INotifyLogEntry, readNotifyLog, writeNotifyLog } from '../utils/notifyLog';
+import { describeEntry, INotifyLogMap, NotifyMethod } from '../services/NotifyLogService';
 import { displayValue, formatNumber } from '../utils/format';
 import { copyRich, launch } from './NotifyDialog';
 
@@ -25,10 +25,18 @@ export interface IBulkNotifyPanelProps {
   themeVars: React.CSSProperties;
   /** Fehlt, wenn der automatische Versand in den Eigenschaften ausgeschaltet ist. */
   mailService: MailService | undefined;
+  /** Gemeinsames Versandprotokoll (jüngster Eintrag je Environment). */
+  log: INotifyLogMap;
+  /** Hinweis, wenn das Versandprotokoll nicht verfügbar ist. */
+  logProblem?: string;
+  /** Protokoll neu lesen (vor dem Versand – ein anderer Admin könnte gerade verständigt haben). */
+  refreshLog: () => Promise<INotifyLogMap>;
+  /** Versand im gemeinsamen Protokoll vermerken. */
+  onLogged: (record: IRecord, method: NotifyMethod, subject: string, to: string[]) => Promise<void>;
   onDismiss: () => void;
 }
 
-type Status = 'sending' | 'sent' | 'failed' | 'opened';
+type Status = 'sending' | 'sent' | 'failed' | 'opened' | 'marked' | 'skipped';
 type Mode = 'select' | 'confirm' | 'sending' | 'done' | 'steps';
 
 interface IItem { id: string; record: IRecord; draft: IMailDraft; name: string }
@@ -45,7 +53,11 @@ export const BulkNotifyPanel: React.FC<IBulkNotifyPanelProps> = props => {
     name: displayValue(r, 'admin_displayname')
   })), [records, settings, accent]);
 
-  const [log, setLog] = React.useState<{ [id: string]: INotifyLogEntry }>({});
+  const log = props.log;
+  /** Beim Öffnen bereits Verständigte (bewusst erneut gewählte werden beim Versand nicht übersprungen). */
+  const knownAtOpen = React.useRef<{ [id: string]: boolean }>({});
+  const [stepIds, setStepIds] = React.useState<string[]>([]);
+  const [logError, setLogError] = React.useState<string>('');
   const [selected, setSelected] = React.useState<{ [id: string]: boolean }>({});
   const [status, setStatus] = React.useState<{ [id: string]: { s: Status; error?: string } }>({});
   const [previewId, setPreviewId] = React.useState<string>('');
@@ -62,8 +74,10 @@ export const BulkNotifyPanel: React.FC<IBulkNotifyPanelProps> = props => {
     if (!records) {
       return;
     }
-    const l = readNotifyLog();
-    setLog(l);
+    const l = props.log;
+    knownAtOpen.current = {};
+    Object.keys(l).forEach(k => { knownAtOpen.current[k] = true; });
+    setLogError('');
     const sel: { [id: string]: boolean } = {};
     items.forEach(i => { sel[i.id] = i.draft.to.length > 0 && !l[i.id]; });
     setSelected(sel);
@@ -83,7 +97,9 @@ export const BulkNotifyPanel: React.FC<IBulkNotifyPanelProps> = props => {
   const withoutRecipients = items.filter(i => i.draft.to.length === 0).length;
   const recipientCount = chosen.reduce((set, i) => { i.draft.to.forEach(a => { set[a] = true; }); return set; }, {} as { [a: string]: boolean });
   const preview = items.filter(i => i.id === previewId)[0];
-  const current = mode === 'steps' ? chosen[step] : undefined;
+  const stepItems = stepIds.map(id => items.filter(i => i.id === id)[0]).filter(i => !!i);
+  const current = mode === 'steps' ? stepItems[step] : undefined;
+  const alreadyChosen = chosen.filter(i => !!log[i.id]).length;
   const shown = current || preview;
   const sentCount = items.filter(i => status[i.id] && status[i.id].s === 'sent').length;
   const failed = items.filter(i => status[i.id] && status[i.id].s === 'failed');
@@ -101,20 +117,30 @@ export const BulkNotifyPanel: React.FC<IBulkNotifyPanelProps> = props => {
     }
     stopRef.current = false;
     setNotApproved('');
+    setLogError('');
     setRun({ total: list.length, done: 0 });
     setMode('sending');
+    // Unmittelbar vor dem Versand neu lesen: Hat inzwischen ein anderer Admin verständigt?
+    const fresh = await props.refreshLog().catch(() => log);
     for (let n = 0; n < list.length; n++) {
       if (stopRef.current) {
         break;
       }
       const it = list[n];
+      if (fresh[it.id] && !knownAtOpen.current[it.id]) {
+        setStatus(prev => ({ ...prev, [it.id]: { s: 'skipped', error: `inzwischen ${describeEntry(fresh[it.id])} verständigt` } }));
+        setSelected(prev => ({ ...prev, [it.id]: false }));
+        setRun(prev => ({ ...prev, done: prev.done + 1 }));
+        continue;
+      }
       setPreviewId(it.id);
       setStatus(prev => ({ ...prev, [it.id]: { s: 'sending' } }));
       try {
         await mailService.send({ to: it.draft.to, cc: it.draft.cc, subject: it.draft.subject, html: it.draft.html });
         setStatus(prev => ({ ...prev, [it.id]: { s: 'sent' } }));
-        setLog(writeNotifyLog(it.id, 'sent'));
         setSelected(prev => ({ ...prev, [it.id]: false }));
+        await props.onLogged(it.record, 'graph', it.draft.subject, it.draft.to)
+          .catch((le: unknown) => setLogError(`Versand ok, aber nicht im Versandprotokoll vermerkt: ${le instanceof Error ? le.message : String(le)}`));
       } catch (e) {
         const err = e instanceof MailError ? e : new MailError(e instanceof Error ? e.message : String(e), 'failed', 0);
         setStatus(prev => ({ ...prev, [it.id]: { s: 'failed', error: err.message } }));
@@ -135,9 +161,25 @@ export const BulkNotifyPanel: React.FC<IBulkNotifyPanelProps> = props => {
     copyRich(it.draft.html, it.draft.body).then(ok => {
       launch(mailtoUrl(it.draft.to, it.draft.cc, it.draft.subject, ok ? '' : it.draft.body));
       setStatus(prev => ({ ...prev, [it.id]: { s: 'opened' } }));
-      setLog(writeNotifyLog(it.id, 'outlook'));
-      setStepNote(ok ? 'Outlook wird geöffnet – in den Mailtext klicken, Strg+V, senden. Danach „Weiter“.' : 'Outlook wird mit der Textfassung geöffnet (Zwischenablage gesperrt).');
+      setStepNote(ok ? 'Outlook wird geöffnet – in den Mailtext klicken, Strg+V, senden. Danach „Als versendet markieren“.' : 'Outlook wird mit der Textfassung geöffnet (Zwischenablage gesperrt). Danach „Als versendet markieren“.');
     }, () => setStepNote('Kopieren nicht möglich.'));
+  };
+
+  /** Nach dem Senden in Outlook: im Protokoll vermerken und zum nächsten. */
+  const markSent = (it: IItem): void => {
+    setLogError('');
+    props.onLogged(it.record, 'outlook', it.draft.subject, it.draft.to).then(
+      () => {
+        setStatus(prev => ({ ...prev, [it.id]: { s: 'marked' } }));
+        setStepNote('');
+        if (step + 1 < stepItems.length) {
+          setStep(step + 1);
+        } else {
+          setMode('done');
+        }
+      },
+      (e: unknown) => setLogError(`Konnte nicht im Versandprotokoll vermerkt werden: ${e instanceof Error ? e.message : String(e)}`)
+    );
   };
 
   const statusCell = (it: IItem): JSX.Element => {
@@ -152,23 +194,32 @@ export const BulkNotifyPanel: React.FC<IBulkNotifyPanelProps> = props => {
       return <span className={styles.bulkOk}><Icon iconName="CheckMark" /> gesendet</span>;
     }
     if (st && st.s === 'opened') {
-      return <span className={styles.bulkOk}><Icon iconName="Mail" /> in Outlook geöffnet</span>;
+      return <span className={styles.bulkInfo}><Icon iconName="Mail" /> in Outlook geöffnet</span>;
+    }
+    if (st && st.s === 'marked') {
+      return <span className={styles.bulkOk}><Icon iconName="CheckMark" /> als versendet markiert</span>;
+    }
+    if (st && st.s === 'skipped') {
+      return <span className={styles.bulkWarn}><Icon iconName="Warning" /> übersprungen – {st.error}</span>;
     }
     if (st && st.s === 'failed') {
       return <span className={styles.bulkErr} title={st.error}><Icon iconName="ErrorBadge" /> Fehler</span>;
     }
-    return log[it.id] ? <span className={styles.bulkMuted}>{describeLogEntry(log[it.id])}</span> : <span className={styles.bulkMuted}>offen</span>;
+    return log[it.id]
+      ? <span className={styles.bulkWarn}><Icon iconName="MailCheck" /> verständigt {describeEntry(log[it.id])}</span>
+      : <span className={styles.bulkMuted}>offen</span>;
   };
 
   const footer = (): JSX.Element => {
     if (mode === 'steps') {
       return (
         <div className={styles.bulkFooter}>
-          <span className={styles.bulkStepInfo}>Environment {formatNumber(Math.min(step + 1, chosen.length))} von {formatNumber(chosen.length)}{current ? `: ${current.name}` : ''}</span>
+          <span className={styles.bulkStepInfo}>Environment {formatNumber(Math.min(step + 1, stepItems.length))} von {formatNumber(stepItems.length)}{current ? `: ${current.name}` : ''}</span>
           <PrimaryButton text="In Outlook öffnen" iconProps={{ iconName: 'Mail' }} disabled={!current} onClick={() => current && openInOutlook(current)} />
+          <DefaultButton text="Als versendet markieren" iconProps={{ iconName: 'CheckMark' }} disabled={!current} onClick={() => current && markSent(current)} />
           <DefaultButton text="Zurück" iconProps={{ iconName: 'ChevronLeft' }} disabled={step === 0} onClick={() => { setStep(step - 1); setStepNote(''); }} />
-          <DefaultButton text={step + 1 >= chosen.length ? 'Fertig' : 'Weiter'} iconProps={{ iconName: 'ChevronRight' }}
-            onClick={() => { if (step + 1 >= chosen.length) { setMode('done'); } else { setStep(step + 1); setStepNote(''); } }} />
+          <DefaultButton text={step + 1 >= stepItems.length ? 'Fertig' : 'Weiter'} iconProps={{ iconName: 'ChevronRight' }}
+            onClick={() => { if (step + 1 >= stepItems.length) { setMode('done'); } else { setStep(step + 1); setStepNote(''); } }} />
         </div>
       );
     }
@@ -196,7 +247,7 @@ export const BulkNotifyPanel: React.FC<IBulkNotifyPanelProps> = props => {
           <DefaultButton text={`Fehlgeschlagene erneut senden (${formatNumber(failed.length)})`} iconProps={{ iconName: 'Refresh' }} onClick={() => { sendAll(failed).catch(() => setMode('done')); }} />
         )}
         <DefaultButton text="Nacheinander in Outlook" iconProps={{ iconName: 'OutlookLogo' }} disabled={chosen.length === 0}
-          onClick={() => { setStep(0); setStepNote(''); setMode('steps'); }} />
+          onClick={() => { setStepIds(chosen.map(i => i.id)); setStep(0); setStepNote(''); setMode('steps'); }} />
         <DefaultButton text="Schließen" onClick={props.onDismiss} />
       </div>
     );
@@ -239,8 +290,11 @@ export const BulkNotifyPanel: React.FC<IBulkNotifyPanelProps> = props => {
             Es werden jetzt <b>{formatNumber(chosen.length)} E-Mails</b> an {formatNumber(Object.keys(recipientCount).length)} Empfänger aus deinem Postfach gesendet –
             eine pro Environment, im Abstand von etwa {Math.round(MAIL_TIMING.intervalMs / 1000)} Sekunden (Exchange-Limit).
             Dauer ca. {formatNumber(Math.max(1, Math.ceil(chosen.length * MAIL_TIMING.intervalMs / 60000)))} Min.
+            {alreadyChosen > 0 && <><br /><b>Achtung: {formatNumber(alreadyChosen)} davon wurden bereits verständigt</b> und werden erneut angeschrieben.</>}
           </MessageBar>
         )}
+        {props.logProblem && <MessageBar messageBarType={MessageBarType.warning} isMultiline={true}>Versandprotokoll nicht verfügbar: {props.logProblem}</MessageBar>}
+        {logError && <MessageBar messageBarType={MessageBarType.error} isMultiline={true}>{logError}</MessageBar>}
         {(mode === 'sending' || (mode === 'done' && run.total > 0)) && (
           <ProgressIndicator
             label={mode === 'sending'

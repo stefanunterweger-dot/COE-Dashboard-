@@ -4,7 +4,8 @@ import { createTheme, ITheme, Panel, PanelType, TextField, Toggle, Dropdown, Pri
 import CoeCockpit from '../src/webparts/coeCockpit/components/CoeCockpit';
 import { getDefaultTables } from '../src/webparts/coeCockpit/models/defaultTables';
 import { ITableConfig } from '../src/webparts/coeCockpit/models/ITableConfig';
-import { AadHttpClientFactory, MSGraphClientFactory } from './shims/sp-http';
+import { AadHttpClientFactory, MSGraphClientFactory, SPHttpClient } from './shims/sp-http';
+import { seedNotifyEntry } from './mock/sharepoint';
 import { DATABASES, COE_HOST, DEFAULT_HOST, PIPELINES_HOST } from './mock/data';
 import { DEFAULT_INFO_URL } from '../src/webparts/coeCockpit/models/notification';
 import { MAIL_TIMING } from '../src/webparts/coeCockpit/services/MailService';
@@ -49,6 +50,18 @@ const darkTheme: ITheme = createTheme({
 
 const environments = DATABASES[0].tables.admin_environment.rows.filter(r => !r.admin_environmentdeleted);
 
+// Versandprotokoll: ein Developer-Environment hat ein anderer Admin schon vor zwei Tagen verständigt
+const seededEnv = environments.filter(r => r.admin_environmentsku === 'Developer' && r.admin_governanceprotectionlevel === 'Basic' && r.admin_environmentruntimestate === 'Enabled' && Number(r.admin_numberofapps) > 0)[0];
+// nur für Tests: Name → Environment-ID
+(window as unknown as { __coeEnvIds?: { [name: string]: string } }).__coeEnvIds = environments.reduce((m, r) => { m[String(r.admin_displayname)] = String(r.admin_environmentid).toLowerCase(); return m; }, {} as { [name: string]: string });
+if (seededEnv) {
+  seedNotifyEntry({
+    Title: seededEnv.admin_displayname, EnvironmentId: String(seededEnv.admin_environmentid).toLowerCase(),
+    SentAt: new Date(Date.now() - 2 * 86400000).toISOString(), SentBy: 'Andrea Admin', SentByEmail: 'andrea.admin@contoso.com',
+    Method: 'Automatisch gesendet (Microsoft Graph)', Recipients: '', Subject: 'Rückmeldung bis …'
+  });
+}
+
 const App: React.FC = () => {
   const [tables, setTables] = React.useState<ITableConfig[]>(getDefaultTables());
   const [editMode, setEditMode] = React.useState<boolean>(true);
@@ -87,6 +100,7 @@ const App: React.FC = () => {
   (window as unknown as { __coeDenyHosts?: string[] }).__coeDenyHosts = noAdmin ? [DEFAULT_HOST, PIPELINES_HOST] : [];
   const factory = React.useMemo(() => new AadHttpClientFactory(), []);
   const graphFactory = React.useMemo(() => new MSGraphClientFactory(), []);
+  const spClient = React.useMemo(() => new SPHttpClient(), []);
   const set = (patch: Partial<typeof p>): void => setP(prev => ({ ...prev, ...patch }));
 
   return (
@@ -118,6 +132,9 @@ const App: React.FC = () => {
           editorRequest={editorRequest}
           aadHttpClientFactory={factory as never}
           msGraphClientFactory={graphFactory as never}
+          spHttpClient={spClient as never}
+          webUrl="https://contoso.sharepoint.com/sites/powerplatform"
+          currentUser={{ displayName: 'Alex Admin', email: 'alex.admin@contoso.com' }}
           showDefaultEnvironment={p.showDefaultEnvironment}
           defaultEnvironmentId={p.defaultEnvironmentId}
           defaultEnvironmentDataverseUrl={p.defaultEnvironmentDataverseUrl}

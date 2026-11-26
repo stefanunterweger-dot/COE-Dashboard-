@@ -125,6 +125,9 @@ export default class CoeCockpitWebPart extends BaseClientSideWebPart<ICoeCockpit
       editorRequest: this._editorRequest,
       aadHttpClientFactory: this.context.aadHttpClientFactory,
       msGraphClientFactory: this.context.msGraphClientFactory,
+      spHttpClient: this.context.spHttpClient,
+      webUrl: this.context.pageContext.web.absoluteUrl,
+      currentUser: { displayName: this.context.pageContext.user.displayName, email: this.context.pageContext.user.email },
       onTablesChanged: (tables: ITableConfig[]) => {
         this.properties.tables = tables;
         this.render();

@@ -9,7 +9,7 @@ import { IRecord } from '../models/ITableConfig';
 import { buildDevEnvMail, emlDraft, INotifySettings, MAILTO_LIMIT, mailtoUrl } from '../models/notification';
 import { displayValue } from '../utils/format';
 import { MailError, MailService, NOT_APPROVED_HINT } from '../services/MailService';
-import { describeLogEntry, readNotifyLog, writeNotifyLog } from '../utils/notifyLog';
+import { describeEntry, INotifyEntry, NotifyMethod } from '../services/NotifyLogService';
 
 /**
  * Vorschau der E-Mail an die Maker eines Environments.
@@ -25,6 +25,12 @@ export interface INotifyDialogProps {
   accent: string;
   /** Automatischer Versand über Microsoft Graph (fehlt, wenn ausgeschaltet). */
   mailService?: MailService;
+  /** Letzter Eintrag im gemeinsamen Versandprotokoll für dieses Environment (falls schon verständigt). */
+  notified?: INotifyEntry;
+  /** Hinweis, wenn das Versandprotokoll nicht verfügbar ist. */
+  logProblem?: string;
+  /** Versand im gemeinsamen Protokoll vermerken. */
+  onLogged: (record: IRecord, method: NotifyMethod, subject: string, to: string[]) => Promise<void>;
   onDismiss: () => void;
 }
 
@@ -140,8 +146,8 @@ export const NotifyDialog: React.FC<INotifyDialogProps> = props => {
   const [confirmSend, setConfirmSend] = React.useState<boolean>(false);
   const [sending, setSending] = React.useState<boolean>(false);
   const [sendError, setSendError] = React.useState<string>('');
-  const [logText, setLogText] = React.useState<string>('');
-  const envId = record ? String(record.admin_environmentid || '').toLowerCase() : '';
+  const [logError, setLogError] = React.useState<string>('');
+  const [marked, setMarked] = React.useState<boolean>(false);
 
   React.useEffect(() => {
     setSubject(draft ? draft.subject : '');
@@ -150,8 +156,21 @@ export const NotifyDialog: React.FC<INotifyDialogProps> = props => {
     setConfirmSend(false);
     setSending(false);
     setSendError('');
-    setLogText(envId ? describeLogEntry(readNotifyLog()[envId]) : '');
+    setLogError('');
+    setMarked(false);
   }, [draft]);
+
+  /** Im gemeinsamen Protokoll vermerken (Fehler nur anzeigen, der Versand selbst ist erfolgt). */
+  const log = (method: NotifyMethod): void => {
+    if (!record || !draft) {
+      return;
+    }
+    setLogError('');
+    props.onLogged(record, method, subject, draft.to).then(
+      () => setMarked(true),
+      (e: unknown) => setLogError(`Konnte nicht im Versandprotokoll vermerkt werden: ${e instanceof Error ? e.message : String(e)}`)
+    );
+  };
 
   if (!record || !draft) {
     return null;
@@ -166,7 +185,6 @@ export const NotifyDialog: React.FC<INotifyDialogProps> = props => {
 
   const openOutlook = (): void => {
     copyRich(draft.html, draft.body).then(ok => {
-      writeNotifyLog(envId, 'outlook');
       if (ok) {
         launch(headerUrl);
         setDone('pasted');
@@ -212,7 +230,12 @@ export const NotifyDialog: React.FC<INotifyDialogProps> = props => {
             <span className={styles.notifyValue}>{draft.cc.map(a => <span key={a} className={styles.notifyChip}>{a}</span>)}</span>
           </div>
         )}
-        {logText && <MessageBar messageBarType={MessageBarType.info}>Dieses Environment wurde bereits verständigt ({logText}).</MessageBar>}
+        {props.notified && !marked && (
+          <MessageBar messageBarType={MessageBarType.severeWarning} isMultiline={true}>
+            <b>Bereits verständigt</b> – {describeEntry(props.notified)}. Bitte nur erneut senden, wenn das wirklich nötig ist.
+          </MessageBar>
+        )}
+        {props.logProblem && <MessageBar messageBarType={MessageBarType.warning} isMultiline={true}>Versandprotokoll nicht verfügbar: {props.logProblem}</MessageBar>}
         {draft.missing.length > 0 && (
           <MessageBar messageBarType={MessageBarType.warning} isMultiline={true}>
             Ohne E-Mail-Adresse im CoE (nicht angeschrieben): {draft.missing.join(', ')}
@@ -239,6 +262,17 @@ export const NotifyDialog: React.FC<INotifyDialogProps> = props => {
             „Adressen kopieren“ und in Outlook in das Feld „An“ einfügen, oder den Outlook-Entwurf verwenden.
           </MessageBar>
         )}
+        {(done === 'pasted' || done === 'plain' || done === 'eml') && !marked && (
+          <MessageBar
+            messageBarType={MessageBarType.info}
+            isMultiline={true}
+            actions={<div><DefaultButton text="Als versendet markieren" iconProps={{ iconName: 'CheckMark' }} onClick={() => log('outlook')} /></div>}
+          >
+            Nach dem Senden in Outlook bitte „Als versendet markieren“ – dann sehen alle Admins, dass dieses Environment verständigt ist.
+          </MessageBar>
+        )}
+        {marked && <MessageBar messageBarType={MessageBarType.success}>Im Versandprotokoll vermerkt – alle Admins sehen jetzt, dass dieses Environment verständigt ist.</MessageBar>}
+        {logError && <MessageBar messageBarType={MessageBarType.error} isMultiline={true}>{logError}</MessageBar>}
         {done === 'pasted' && <MessageBar messageBarType={MessageBarType.success}>Outlook wird geöffnet – die formatierte Mail liegt in der Zwischenablage: in den Text klicken und Strg+V.</MessageBar>}
         {done === 'plain' && <MessageBar messageBarType={MessageBarType.info}>Die Zwischenablage ist gesperrt – Outlook wurde mit der Textfassung geöffnet. Für die formatierte Fassung den Outlook-Entwurf verwenden.</MessageBar>}
         {done === 'eml' && <MessageBar messageBarType={MessageBarType.success}>Entwurf heruntergeladen – Datei öffnen, sie erscheint in Outlook als neue Mail mit allem.</MessageBar>}
@@ -249,13 +283,14 @@ export const NotifyDialog: React.FC<INotifyDialogProps> = props => {
         {confirmSend && (
           <MessageBar messageBarType={MessageBarType.warning} isMultiline={true}>
             Die Mail wird jetzt aus deinem Postfach an {draft.to.length} Empfänger{draft.cc.length ? ` (CC: ${draft.cc.join(', ')})` : ''} gesendet.
+            {props.notified ? ` Achtung: Dieses Environment wurde bereits ${describeEntry(props.notified)} verständigt.` : ''}
           </MessageBar>
         )}
       </div>
       {confirmSend ? (
         <DialogFooter>
           <PrimaryButton
-            text={sending ? 'Wird gesendet …' : 'Ja, jetzt senden'}
+            text={sending ? 'Wird gesendet …' : props.notified ? 'Ja, erneut senden' : 'Ja, jetzt senden'}
             iconProps={{ iconName: 'Send' }}
             disabled={sending}
             onClick={() => {
@@ -265,7 +300,7 @@ export const NotifyDialog: React.FC<INotifyDialogProps> = props => {
               setSending(true);
               setSendError('');
               props.mailService.send({ to: draft.to, cc: draft.cc, subject, html: draft.html }).then(
-                () => { writeNotifyLog(envId, 'sent'); setDone('sent'); setSending(false); setConfirmSend(false); },
+                () => { setDone('sent'); setSending(false); setConfirmSend(false); log('graph'); },
                 (e: unknown) => {
                   const err = e instanceof MailError ? e : undefined;
                   const msg = e instanceof Error ? e.message : String(e);

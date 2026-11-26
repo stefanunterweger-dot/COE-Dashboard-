@@ -24,6 +24,10 @@ export const DEV_FIELDS = {
   makerEmails: 'coe_makeremails',
   /** Maker ohne E-Mail-Adresse im CoE. */
   makersNoMail: 'coe_makersnomail',
+  /** Aus dem gemeinsamen Versandprotokoll (SharePoint-Liste): „Verständigt“ / „Offen“, wann, von wem. */
+  notified: 'coe_notified',
+  notifiedOn: 'coe_notifiedon',
+  notifiedBy: 'coe_notifiedby',
   admins: 'coe_sysadmins',
   state: 'coe_state',
   managed: 'coe_managed',
@@ -41,6 +45,9 @@ export const RECOMMENDATION = {
   disabled: 'Deaktiviert'
 };
 const INACTIVE_DAYS = 90;
+
+/** Werte der Spalte „Maker verständigt“. */
+export const NOTIFIED = { yes: 'Verständigt', no: 'Offen' };
 
 const ENV_TABLE = 'admin_environment';
 const SYSTEM_FIELDS = ['createdby', 'createdonbehalfby', 'modifiedby', 'modifiedonbehalfby', 'ownerid', 'owninguser', 'owningteam', 'owningbusinessunit', 'statecode', 'statuscode'];
@@ -65,6 +72,9 @@ export function buildDevEnvTable(): ITableConfig {
         field: DEV_FIELDS.recommendation, label: 'Empfehlung', type: 'status',
         statusMap: { [RECOMMENDATION.inUse]: 'danger', [RECOMMENDATION.inactive]: 'warning', [RECOMMENDATION.empty]: 'neutral', [RECOMMENDATION.disabled]: 'neutral' }
       },
+      { field: DEV_FIELDS.notified, label: 'Maker verständigt', type: 'status', statusMap: { [NOTIFIED.yes]: 'success', [NOTIFIED.no]: 'warning' } },
+      { field: DEV_FIELDS.notifiedOn, label: 'Verständigt am', type: 'datetime' },
+      { field: DEV_FIELDS.notifiedBy, label: 'Verständigt von', type: 'text' },
       { field: DEV_FIELDS.state, label: 'Zustand', type: 'status', statusMap: { 'Aktiv': 'success', 'Deaktiviert': 'danger', 'Unbekannt': 'neutral' } },
       { field: DEV_FIELDS.apps, label: 'Apps', type: 'number' },
       { field: DEV_FIELDS.flows, label: 'Flows', type: 'number' },

@@ -3176,3 +3176,11 @@ li:last-child > .govItem {
   word-break: break-word;
   opacity: 0.85;
 }
+
+.bulkWarn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 600;
+  color: var(--coe-warning);
+}
