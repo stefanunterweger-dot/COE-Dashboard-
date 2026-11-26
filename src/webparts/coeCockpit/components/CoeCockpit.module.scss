@@ -4032,3 +4032,269 @@ button.solItem {
   font-size: 12px;
   color: var(--coe-text-2);
 }
+
+// =====================================================================
+// Live-Daten (Abgleich mit dem CoE, Detailansicht, Diagnose)
+// =====================================================================
+.liveBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 10px;
+  font: inherit;
+  font-size: 12px;
+  white-space: nowrap;
+  color: var(--coe-text-2);
+  background: var(--coe-surface);
+  border: 1px solid var(--coe-border);
+  border-radius: 14px;
+  cursor: default;
+
+  i {
+    font-size: 12px;
+  }
+}
+
+.liveBadgeLive {
+  color: var(--coe-success);
+  background: var(--coe-success-bg);
+  border-color: transparent;
+}
+
+.liveBadgeWarn {
+  color: var(--coe-warning);
+  background: var(--coe-warning-bg);
+  border-color: transparent;
+}
+
+.liveHead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--coe-border-soft);
+  background: var(--coe-surface);
+}
+
+.livePill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 8px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--coe-success);
+  background: var(--coe-success-bg);
+  border-radius: 10px;
+}
+
+.liveHeadNote {
+  font-size: 12px;
+  color: var(--coe-text-2);
+}
+
+.liveFacts {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 10px 16px;
+  padding: 12px 14px;
+}
+
+.liveFact {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.liveFactLabel {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--coe-text-3, var(--coe-text-2));
+}
+
+.liveFactValue {
+  font-size: 13px;
+  color: var(--coe-text);
+  overflow-wrap: anywhere;
+}
+
+.liveSection {
+  border-top: 1px solid var(--coe-border-soft);
+}
+
+.liveSectionTitle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 14px 2px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--coe-text-2);
+}
+
+.liveIconOk {
+  color: var(--coe-success);
+  background: var(--coe-success-bg);
+}
+
+.liveIconBad {
+  color: var(--coe-danger);
+  background: var(--coe-danger-bg);
+}
+
+.liveCounts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 0 14px 12px;
+}
+
+.liveCount {
+  padding: 3px 8px;
+  font-size: 12px;
+  color: var(--coe-text-2);
+  background: var(--coe-border-soft);
+  border-radius: 10px;
+
+  b {
+    color: var(--coe-text);
+  }
+}
+
+// Diagnose „Live-Schnittstellen“
+.diag {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.diagIntro {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 14px 16px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--coe-text-2);
+  background: var(--coe-surface);
+  border: 1px solid var(--coe-border);
+  border-radius: 10px;
+
+  b {
+    color: var(--coe-text);
+  }
+}
+
+.diagButtons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.diagSummary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.diagTable {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+
+  th {
+    padding: 8px 10px;
+    font-size: 12px;
+    font-weight: 600;
+    text-align: left;
+    color: var(--coe-text-2);
+    border-bottom: 1px solid var(--coe-border);
+  }
+
+  td {
+    padding: 9px 10px;
+    vertical-align: top;
+    border-bottom: 1px solid var(--coe-border-soft);
+  }
+}
+
+.diagName {
+  font-weight: 600;
+  color: var(--coe-text);
+}
+
+.diagSub {
+  margin-top: 2px;
+  font-size: 12px;
+  color: var(--coe-text-2);
+  overflow-wrap: anywhere;
+}
+
+.diagState {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 8px;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+  border-radius: 10px;
+}
+
+.diagOk {
+  color: var(--coe-success);
+  background: var(--coe-success-bg);
+}
+
+.diagWarn {
+  color: var(--coe-warning);
+  background: var(--coe-warning-bg);
+}
+
+.diagBad {
+  color: var(--coe-danger);
+  background: var(--coe-danger-bg);
+}
+
+.diagIdle {
+  color: var(--coe-text-2);
+  background: var(--coe-border-soft);
+}
+
+.diagOfficial {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 0 6px;
+  font-size: 11px;
+  font-weight: 600;
+  border-radius: 8px;
+  color: var(--coe-accent);
+  background: var(--coe-accent-soft);
+}
+
+.diagUnofficial {
+  color: var(--coe-warning);
+  background: var(--coe-warning-bg);
+}
+
+.diagSample {
+  max-height: 220px;
+  margin: 6px 0 0;
+  padding: 8px 10px;
+  overflow: auto;
+  font-family: Consolas, 'Courier New', monospace;
+  font-size: 11px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  color: var(--coe-text);
+  background: var(--coe-bg);
+  border: 1px solid var(--coe-border-soft);
+  border-radius: 6px;
+}

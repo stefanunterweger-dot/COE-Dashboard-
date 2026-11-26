@@ -18,6 +18,12 @@ export interface ISettingsValues {
   showSecurity: boolean;
   showCopilotCredits: boolean;
   showPremium2027: boolean;
+  /** Live-Abgleich der Listen (Apps, Flows, Environments) mit dem Power-Platform-Inventar */
+  liveInventory: boolean;
+  /** Abschnitt „Live“ in der Detailansicht */
+  liveDetails: boolean;
+  /** Inoffizielle Admin-Schnittstellen für Details (Freigaben, Flow-Status) */
+  liveAdminApis: boolean;
   pipelinesHostUrl: string;
   notifyAutoSend: boolean;
   notifyTone: 'sie' | 'du';
@@ -61,4 +67,6 @@ export interface IWebPartSettings {
   onOpenTableEditor: () => void;
   /** Klassischen SharePoint-Eigenschaftenbereich öffnen. */
   onOpenPropertyPane: () => void;
+  /** Seite „Live-Schnittstellen“ öffnen (setzt das Cockpit). */
+  onOpenLiveDiagnostics?: () => void;
 }

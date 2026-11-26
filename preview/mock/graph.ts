@@ -53,6 +53,11 @@ function licensesFor(user: string): { status: number; body: unknown } {
 export function mockGraphGet(url: string): Promise<IMockResponse> {
   const w = window as unknown as IGraphWindow;
   return new Promise(resolve => setTimeout(() => {
+    if (/\/v1\.0\/users$/.test(url.split('?')[0])) {
+      resolve(w.__coeDenyUserRead ? respond(403, { error: { code: 'Authorization_RequestDenied', message: 'Insufficient privileges to complete the operation.' } })
+        : respond(200, { value: GRAPH_PEOPLE.slice(0, 1).map(p => ({ id: p.id })) }));
+      return;
+    }
     const user = /\/v1\.0\/users\/([^/?]+)$/.exec(url.split('?')[0]);
     if (user) {
       const key = decodeURIComponent(user[1]).toLowerCase();

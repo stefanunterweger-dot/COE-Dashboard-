@@ -12,6 +12,8 @@
                        „Betroffen ab Februar 2027“ (Lizenzen der Berechtigten, Mitglieder freigegebener Gruppen)
     -PowerPlatformApi  Power Platform API „Licensing.Allocations.Read“, „Licensing.BillingPolicies.Read“,
                        „EnvironmentManagement.Environments.Read“ – Ansichten „Copilot-Credits“ und „Abrechnungspläne“
+    -Live              Power Platform API „ResourceQuery.Resources.Read“ (Inventar: Live-Abgleich von Apps, Flows,
+                       Environments) und „PowerAutomate.Flows.Read“ (letzte Flow-Ausführungen in der Detailansicht)
     -Actions           Aktionen direkt im Webpart (ohne Flow, im Namen der angemeldeten Person):
                          Power Platform API   „EnvironmentManagement.Write“, „EnvironmentManagement.Settings.ReadWrite“
                                               (Environment auf Managed umstellen, deaktivieren, aktivieren)
@@ -35,17 +37,20 @@
   .\Grant-CoeCockpitPermissions.ps1
 .EXAMPLE
   .\Grant-CoeCockpitPermissions.ps1 -Actions
+.EXAMPLE
+  .\Grant-CoeCockpitPermissions.ps1 -Live
 #>
 param(
   [switch]$Dataverse,
   [switch]$MailSend,
   [switch]$Licenses,
   [switch]$PowerPlatformApi,
+  [switch]$Live,
   [switch]$Actions
 )
 $ErrorActionPreference = 'Stop'
-if (-not $Dataverse -and -not $MailSend -and -not $Licenses -and -not $PowerPlatformApi -and -not $Actions) {
-  $Dataverse = $true; $MailSend = $true; $Licenses = $true; $PowerPlatformApi = $true; $Actions = $true
+if (-not $Dataverse -and -not $MailSend -and -not $Licenses -and -not $PowerPlatformApi -and -not $Live -and -not $Actions) {
+  $Dataverse = $true; $MailSend = $true; $Licenses = $true; $PowerPlatformApi = $true; $Live = $true; $Actions = $true
 }
 
 # Install-Module Microsoft.Graph.Applications, Microsoft.Graph.Identity.SignIns -Scope CurrentUser   # nur falls noch nicht installiert
@@ -107,10 +112,13 @@ if ($Licenses) {
   Grant-Scopes $graph @('User.Read.All', 'GroupMember.Read.All')
 }
 
-if ($PowerPlatformApi -or $Actions) {
+if ($PowerPlatformApi -or $Live -or $Actions) {
   $pp = Get-ResourceSp '8578e004-a5c6-46e7-913e-12f58912df43' 'Power Platform API'
   if ($PowerPlatformApi) {
     Grant-Scopes $pp @('Licensing.Allocations.Read', 'Licensing.BillingPolicies.Read', 'EnvironmentManagement.Environments.Read')
+  }
+  if ($Live) {
+    Grant-Scopes $pp @('ResourceQuery.Resources.Read', 'PowerAutomate.Flows.Read', 'EnvironmentManagement.Environments.Read')
   }
   if ($Actions) {
     Grant-Scopes $pp @('EnvironmentManagement.Write', 'EnvironmentManagement.Settings.ReadWrite')

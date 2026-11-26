@@ -54,6 +54,9 @@ export interface ICoeCockpitWebPartProps {
   showCopilotCredits: boolean;
   /** Auswertung „Betroffen ab Februar 2027“ (Premium-Lizenz in Managed Environments). */
   showPremium2027: boolean;
+  liveInventory: boolean;
+  liveDetails: boolean;
+  liveAdminApis: boolean;
   /** Dataverse-URL des Pipelines-Host-Environments (leer = ALM-Pipelines ausblenden). */
   pipelinesHostUrl: string;
   /** E-Mail an Maker: Anrede „sie“ oder „du“. */
@@ -134,6 +137,9 @@ export default class CoeCockpitWebPart extends BaseClientSideWebPart<ICoeCockpit
       showSecurity: this.properties.showSecurity !== false,
       showCopilotCredits: this.properties.showCopilotCredits !== false,
       showPremium2027: this.properties.showPremium2027 !== false,
+      liveInventory: this.properties.liveInventory !== false,
+      liveDetails: this.properties.liveDetails !== false,
+      liveAdminApis: this.properties.liveAdminApis !== false,
       pipelinesHostUrl: normalizeDataverseUrl(this.properties.pipelinesHostUrl) || '',
       notify: {
         formal: this.properties.notifyTone !== 'du',
@@ -207,6 +213,9 @@ export default class CoeCockpitWebPart extends BaseClientSideWebPart<ICoeCockpit
         showSecurity: p.showSecurity !== false,
         showCopilotCredits: p.showCopilotCredits !== false,
         showPremium2027: p.showPremium2027 !== false,
+        liveInventory: p.liveInventory !== false,
+        liveDetails: p.liveDetails !== false,
+        liveAdminApis: p.liveAdminApis !== false,
         pipelinesHostUrl: normalizeDataverseUrl(p.pipelinesHostUrl) || '',
         notifyAutoSend: p.notifyAutoSend !== false,
         notifyTone: p.notifyTone === 'du' ? 'du' : 'sie',
@@ -660,6 +669,18 @@ export default class CoeCockpitWebPart extends BaseClientSideWebPart<ICoeCockpit
                 PropertyPaneToggle('showPremium2027', {
                   label: 'Auswertung „Betroffen ab Februar 2027“ anzeigen',
                   checked: this.properties.showPremium2027 !== false
+                }),
+                PropertyPaneToggle('liveInventory', {
+                  label: 'Listen live abgleichen (Power-Platform-Inventar)',
+                  checked: this.properties.liveInventory !== false
+                }),
+                PropertyPaneToggle('liveDetails', {
+                  label: 'Abschnitt „Live“ in der Detailansicht',
+                  checked: this.properties.liveDetails !== false
+                }),
+                PropertyPaneToggle('liveAdminApis', {
+                  label: 'Freigaben und Flow-Status über die Admin-Schnittstellen',
+                  checked: this.properties.liveAdminApis !== false
                 }),
                 PropertyPaneDropdown('pipelinesHostUrl', {
                   label: 'Pipelines-Host-Environment',

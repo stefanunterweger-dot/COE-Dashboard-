@@ -9,8 +9,9 @@ Apps, Flows, Environments und Maker sind vorkonfiguriert, weitere Tabellen lasse
 
 ## Funktionen
 
-Nachbau der CoE-App **„Power Platform Admin View“** (CoE Starter Kit, Core Components) als SharePoint-Webpart. Die Daten kommen
-direkt aus den Dataverse-Tabellen des CoE; nur **Copilot-Credits / Abrechnungspläne** werden live über die Power Platform API gelesen.
+Nachbau der CoE-App **„Power Platform Admin View“** (CoE Starter Kit, Core Components) als SharePoint-Webpart. Grundlage sind die
+Dataverse-Tabellen des CoE. **Live über die Power Platform API** kommen dazu: Abgleich der Listen (Apps, Flows, Environments) mit dem
+offiziellen Power-Platform-Inventar, ein Abschnitt „Live“ in der Detailansicht sowie Copilot-Credits und Abrechnungspläne (siehe „Live-Daten“).
 Ändernde Aktionen führt das Cockpit direkt mit den Rechten der angemeldeten Person aus (aktive Rolle „Power Platform Administrator“) und
 protokolliert jede in einer SharePoint-Liste; nur „Solution löschen“ läuft über einen Flow mit Dienstkonto (siehe „Aktionen“).
 
@@ -27,6 +28,9 @@ protokolliert jede in einer SharePoint-Liste; nur „Solution löschen“ läuft
 | Hinweis Adminrolle | Bereiche außerhalb des CoE-Environments (Solutions im Default Environment, ALM-Pipelines) werden beim Start geprüft. Fehlt der Zugriff, erscheint **vorab** ein Hinweis, welche Bereiche nicht sichtbar sind und dass die Rolle „Power Platform-Administrator“ (PIM) aktiviert werden muss; die Einträge sind in der Navigation mit einem Schloss markiert. |
 | Tabellenansicht | Volltextsuche, Sortierung, Seitenumbruch, kompakte/normale Zeilenhöhe, Spaltenauswahl, CSV-Export für Excel. **Trefferzahl direkt neben dem Suchfeld**: „571 Einträge“, nach Suche/Filter hervorgehoben „9 von 571 Einträgen“. |
 | Betroffen ab Februar 2027 | Ab **Februar 2027** öffnen Apps in **Managed Environments** nur noch für Personen mit Premium-Lizenz (Power Apps Premium, Power Automate Premium oder Dynamics 365 Enterprise mit Power-Apps-Rechten) – auch Standard-Apps ([Microsoft](https://learn.microsoft.com/en-us/power-platform/admin/managed-environment-licensing)). Die Auswertung zeigt **alle Berechtigten** der Apps in Managed Environments – Besitzer, Mitbesitzer, Benutzer und Mitglieder freigegebener Gruppen (auch verschachtelt, über Microsoft Graph `transitiveMembers`) –, ihre **Lizenzen live über Microsoft Graph** und wer die Apps in den letzten 30 Tagen geöffnet hat (CoE-Audit-Log). Reiter Personen / Environments / Apps, Filter „Ohne Premium“, CSV-Export, Countdown. Environments mit Pay-as-you-go für Power Apps werden erkannt, wenn die Power Platform API freigegeben ist. Benötigt die Graph-Berechtigungen `User.Read.All` und `GroupMember.Read.All` (Skript `-Licenses`). |
+| Live-Abgleich | Apps, Flows, Environments und „Betroffen ab 15.12.“ werden mit dem **offiziellen Power-Platform-Inventar** abgeglichen (höchstens 15 Minuten alt): Name, Quarantäne, Besitzer, Managed und Zustand kommen live, **neue** Ressourcen erscheinen sofort („Neu (nur live)“), gelöschte bleiben sichtbar und sind markiert („Nicht im Live-Inventar“). Abzeichen neben der Trefferzahl („Live 14:05 · 3 geändert · 2 neu“ bzw. „Nur CoE-Daten“ mit Grund), Spalte „Live-Abgleich“ zum Filtern. Nutzung, Verlauf und alle anderen Spalten kommen weiter aus dem CoE. |
+| Detailansicht „Live“ | Apps: Connectors mit Vorgängen, Quarantäne, Freigaben live; Flows: Status, Auslöser, Connectors, **letzte Ausführungen**; Environments: Zustand, Managed, Region, Anzahl Apps/Flows/Agents live. |
+| Live-Schnittstellen | Diagnoseseite (Governance → „Live-Schnittstellen“, für Gruppenmitglieder und im Bearbeitungsmodus): prüft im eigenen Tenant jede Schnittstelle (offiziell/inoffiziell), zeigt Ergebnis, Anzahl, Vergleich mit dem CoE und ein Beispiel; „Ergebnis kopieren“ zum Weitergeben. |
 | Copilot-Credits (live) | Copilot-Studio-Kapazität je Environment wie im Admin Center (Lizenzierung → Copilot Studio): gekauft, zugewiesen, noch zuweisbar, Prepaid- und Pay-as-you-go-Verbrauch, Status (im Rahmen / überschritten / überschritten – gedeckt), „Aus der Tenant-Kapazität ziehen“, verknüpfter Abrechnungsplan, Typ, Managed. Filter (Mit Zuweisung, Über Kapazität, Pay-as-you-go, Ohne Zuweisung), Suche, Sortierung; „Alle Environments prüfen“ fragt jedes Environment einzeln ab. **Ohne CoE/Dataverse** – direkt aus der Power Platform API. |
 | Abrechnungspläne (live) | Alle Pay-as-you-go-Abrechnungspläne mit Status, Produkten, Azure-Abonnement, Ressourcengruppe (Link ins Azure-Portal), Region, Erstelldatum; aufklappbar mit den verknüpften Environments und deren Copilot-Verbrauch. |
 | Inhalt der Solution | In der Detailansicht einer Solution: Reiter **Apps, Flows, Bots, Desktop Flows, Power Pages** mit Anzahl. Apps und Flows aus dem CoE-Inventar (Beziehungen „admin_PPSolution_Apps“ / „admin_PPSolution_Flow“, anklickbar), Bots, Desktop Flows und Power Pages live aus dem Environment der Solution (Tabelle `solutioncomponents`), außerdem Link „Solution in Power Apps öffnen“. |
@@ -88,7 +92,8 @@ Ergebnis: `sharepoint/solution/coe-cockpit.sppkg`
    Abrechnungspläne** die drei Lese-Anforderungen der **Power Platform API** genehmigen (optional). Für die **Aktionen** (Quarantäne,
    Löschen, Besitzer, Freigaben, Flows ein/aus, Environments) **PowerApps Service – User**, **Microsoft Flow Service – User,
    Flows.Read.All, Flows.Manage.All** und **Power Platform API – EnvironmentManagement.Write, EnvironmentManagement.Settings.ReadWrite**
-   genehmigen (optional; Skript `-Actions`). Achtung: API-Genehmigungen für
+   genehmigen (optional; Skript `-Actions`). Für die **Live-Daten** **Power Platform API – ResourceQuery.Resources.Read** und
+   **PowerAutomate.Flows.Read** genehmigen (optional; Skript `-Live`). Achtung: API-Genehmigungen für
    SharePoint-Webparts gelten für alle SPFx-Lösungen im Tenant. **Erscheinen unter „API-Zugriff“ keine Anforderungen**, setzt das
    Skript [`scripts/Grant-CoeCockpitPermissions.ps1`](scripts/Grant-CoeCockpitPermissions.ps1) dieselben Berechtigungen
    (Microsoft Graph PowerShell, als Globaler Administrator bzw. Administrator für privilegierte Rollen).
@@ -193,6 +198,43 @@ Admins V2, Office 365 Users) danach in der Lösung bzw. unter *Verbindungsrefere
 **Hinweise:**
 - Mitgliedschaft wird direkt in der SharePoint-Gruppe geprüft; Personen, die nur über eine darin enthaltene Entra-Gruppe Mitglied sind, werden abgelehnt.
 - Die Flow-Definition konnte hier nicht gegen einen echten Tenant getestet werden – bitte zuerst mit einer Test-Solution prüfen.
+
+## Live-Daten (CoE bleibt Grundlage)
+
+Das Cockpit ergänzt die CoE-Daten um den aktuellen Stand direkt von Microsoft – **ohne eine Funktion zu verlieren**: Das CoE bleibt die
+Grundlage (alle Spalten, Nutzung, Verlauf, Beziehungen); was live nicht geht, kommt weiter aus dem CoE; ist live gar nichts möglich (keine
+Rolle, keine Freigabe, Fehler), zeigt das Cockpit genau die CoE-Daten wie bisher.
+
+| Bereich | Live-Quelle | offiziell? | Rückfall |
+|---|---|---|---|
+| Listen Apps / Flows (Abgleich) | Power Platform API `resourcequery/resources/query` (Inventar, Tabelle `PowerPlatformResources`) | ja | CoE |
+| Environments, „Betroffen ab 15.12.“ (Zustand, Managed) | `environmentmanagement/environments` + Inventar | ja | CoE |
+| Detail: Connectors, Quarantäne, Auslöser | Inventar (einzelner Eintrag) | ja | – |
+| Detail: letzte Flow-Ausführungen | `powerautomate/environments/{env}/flowRuns` | ja | – |
+| Detail: Environment (Zustand, Managed, Region, Anzahl Ressourcen) | `environmentmanagement/environments/{id}` + Inventar | ja | CoE-Eigenschaften |
+| Detail: Freigaben einer App, Status eines Flows | Admin-Schnittstellen von Power Apps / Power Automate | nein | CoE-Reiter „Freigegeben für“ |
+| Nutzung (zuletzt gestartet, Starts), Verlauf, gelöschte Ressourcen, Desktop Flows, Solutions, Sicherheitsrollen, DLP | – | – | **CoE** |
+| Übersicht, Kennzahlen, Suche über alles | bleibt vorerst CoE (Inventar kann das später übernehmen – siehe „Live-Schnittstellen“) | – | CoE |
+
+**Abgleich in den Listen:** Name, Quarantäne, Besitzer (Apps), Geändert, Managed und Zustand (Environments) kommen live. Ressourcen, die das
+CoE noch nicht kennt, werden ergänzt („Neu (nur live)“); CoE-Einträge, die es live nicht mehr gibt, bleiben sichtbar und sind markiert
+(„Nicht im Live-Inventar“). Ergänzt bzw. markiert wird nur in den vollständigen Inventarlisten (nicht in gefilterten Tabellen wie dem Default
+Environment) und nur, wenn beide Seiten vollständig geladen sind. Nach einer eigenen Aktion zeigt das Cockpit 20 Minuten lang den Stand nach der
+Aktion (das Inventar ist bis zu 15 Minuten alt). Das Inventar wird 10 Minuten zwischengespeichert; „Daten neu laden“ (Kopf) holt es neu.
+
+**Voraussetzungen**
+- Rolle: **Power Platform Administrator** oder **Globaler Administrator** aktiv (PIM) – für das Inventar reichen auch **Globaler Leser** oder
+  **Dynamics 365 Administrator** (laut Microsoft). Ohne passende Rolle: „Nur CoE-Daten“.
+- Freigaben für SharePoint: Power Platform API `ResourceQuery.Resources.Read`, `PowerAutomate.Flows.Read`, `EnvironmentManagement.Environments.Read`
+  (Skript `-Live`); für Freigaben/Flow-Status in der Detailansicht zusätzlich die Rechte aus `-Actions`.
+- Microsoft: „Requires MFA for Azure Resource Manager“ per bedingtem Zugriff kann das Inventar blockieren (siehe Microsoft-Doku zum Inventar).
+
+**Einstellungen** (Webpart-Einstellungen → „Live-Daten“): Listen live abgleichen, Abschnitt „Live“ in der Detailansicht, Freigaben und
+Flow-Status über die Admin-Schnittstellen – alle standardmäßig an, einzeln abschaltbar. Abgeschaltet verhält sich das Cockpit exakt wie bisher.
+
+**Testen im eigenen Tenant:** Governance → **„Live-Schnittstellen“** → „Alle prüfen“. Die Seite ruft jede Schnittstelle einmal auf (ohne etwas
+zu ändern), zeigt „Funktioniert“ / „Geht nicht“ mit Grund, die Anzahl live vs. CoE und ein Beispiel. „Ergebnis kopieren“ liefert einen Text zum
+Weitergeben (ohne Tokens oder Geheimnisse).
 
 ## Copilot-Credits und Abrechnungspläne (live)
 

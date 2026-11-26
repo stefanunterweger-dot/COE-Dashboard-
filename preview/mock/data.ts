@@ -461,6 +461,7 @@ const pipelinesEnv: Record<string, unknown> = {
   admin_region: 'europe', admin_environmentcdsinstanceurl: `https://${PIPELINES_HOST}/`, admin_environmentcreatedon: daysAgo(380),
   admin_environmentdeleted: false, admin_excusefrominventory: false, admin_securitygroupname: 'SG-PP-ALM', admin_numberofapps: 0, admin_numberofflows: 0
 };
+pipelinesEnv.admin_environmentname = pipelinesEnv.admin_environmentid;
 environments.push(pipelinesEnv as typeof environments[0]);
 envById[String(pipelinesEnv.admin_environmentid)] = pipelinesEnv;
 const envNamed = (n: string): Record<string, unknown> => environments.filter(e => e.admin_displayname === n)[0];
