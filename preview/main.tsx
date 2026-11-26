@@ -6,6 +6,7 @@ import { getDefaultTables } from '../src/webparts/coeCockpit/models/defaultTable
 import { ITableConfig } from '../src/webparts/coeCockpit/models/ITableConfig';
 import { AadHttpClientFactory } from './shims/sp-http';
 import { DATABASES, COE_HOST, DEFAULT_HOST, PIPELINES_HOST } from './mock/data';
+import { DEFAULT_INFO_URL } from '../src/webparts/coeCockpit/models/notification';
 
 initializeIcons();
 
@@ -73,7 +74,7 @@ const App: React.FC = () => {
     notifySignature: ''
   });
   const notify = React.useMemo(() => ({
-    formal: p.notifyTone !== 'du', replyDays: p.notifyReplyDays, infoUrl: 'https://learn.microsoft.com/de-de/power-platform/important-changes-coming',
+    formal: p.notifyTone !== 'du', replyDays: p.notifyReplyDays, infoUrl: DEFAULT_INFO_URL,
     feedbackUrl: p.notifyFeedbackUrl, cc: p.notifyCc, signature: p.notifySignature
   }), [p.notifyTone, p.notifyReplyDays, p.notifyFeedbackUrl, p.notifyCc, p.notifySignature]);
   const [noAdmin, setNoAdmin] = React.useState<boolean>(false);

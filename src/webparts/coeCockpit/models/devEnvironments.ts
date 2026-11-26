@@ -73,10 +73,12 @@ export function buildDevEnvTable(): ITableConfig {
       { field: 'admin_environmentcreatedon', label: 'Erstellt', type: 'date' },
       { field: DEV_FIELDS.managed, label: 'Managed', type: 'status', hidden: true, statusMap: { 'Nein': 'warning', 'Ja': 'success', 'Unbekannt': 'neutral' } },
       { field: 'admin_environmentcdsinstanceurl', label: 'Dataverse-URL', type: 'url', hidden: true },
-      { field: 'admin_environmentid', label: 'Umgebungs-ID', type: 'text', hidden: true }
+      { field: 'admin_environmentid', label: 'Umgebungs-ID', type: 'text', hidden: true },
+      { field: 'admin_environmentname', label: 'Environment-ID (Power Platform)', type: 'text', hidden: true }
     ],
     links: [
-      { label: 'Im Power Platform Admin Center öffnen', url: 'https://admin.powerplatform.microsoft.com/environments/{admin_environmentid}/hub' }
+      { label: 'Im Power Platform Admin Center öffnen', url: 'https://admin.powerplatform.microsoft.com/environments/{admin_environmentid}/hub' },
+      { label: 'In Power Apps öffnen', url: 'https://make.powerapps.com/environments/{admin_environmentid}/home' }
     ],
     // Reiter der Detailansicht wie in der Admin View (Apps, Flows, Bots, … des Environments)
     related: (getDefaultTables().filter(t => t.logicalName === ENV_TABLE)[0] || { related: [] }).related

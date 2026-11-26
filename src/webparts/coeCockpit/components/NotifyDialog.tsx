@@ -6,21 +6,24 @@ import { MessageBar, MessageBarType } from '@fluentui/react/lib/MessageBar';
 import { Icon } from '@fluentui/react/lib/Icon';
 import styles from './CoeCockpit.module.scss';
 import { IRecord } from '../models/ITableConfig';
-import { buildDevEnvMail, INotifySettings, MAILTO_LIMIT, mailtoUrl } from '../models/notification';
+import { buildDevEnvMail, emlDraft, INotifySettings, MAILTO_LIMIT, mailtoUrl } from '../models/notification';
 import { displayValue } from '../utils/format';
 
 /**
- * Vorschau der E-Mail an die Maker eines Environments. „In Outlook öffnen“ übergibt An, CC, Betreff
- * und Text per mailto an das lokale Outlook; gesendet wird dort vom Admin selbst.
+ * Vorschau der E-Mail an die Maker eines Environments.
+ * „In Outlook öffnen“: Empfänger und Betreff kommen per mailto ins lokale Outlook, die formatierte Mail
+ * liegt in der Zwischenablage (Strg+V). „Als Outlook-Entwurf“: fertige .eml-Datei mit allem.
+ * Gesendet wird immer erst in Outlook vom Admin selbst.
  */
 export interface INotifyDialogProps {
   record: IRecord | undefined;
   settings: INotifySettings;
   themeVars: React.CSSProperties;
+  /** Akzentfarbe des Webparts (Kopfbalken und Schaltflächen in der Mail). */
+  accent: string;
   onDismiss: () => void;
 }
 
-const PASTE_HINT = '[Text wurde in die Zwischenablage kopiert – hier mit Strg+V einfügen]';
 /** So viele Empfänger werden im Dialog einzeln gezeigt, der Rest als „+N“. */
 const SHOW_RECIPIENTS = 12;
 
@@ -50,17 +53,89 @@ export function copyText(text: string): Promise<boolean> {
   return Promise.resolve(fallback());
 }
 
+/** Formatierten Text (HTML + Text) in die Zwischenablage – wird in Outlook mit Strg+V formatiert eingefügt. */
+export function copyRich(html: string, text: string): Promise<boolean> {
+  const fallback = (): boolean => {
+    // Markierten, formatierten Inhalt kopieren (älterer Weg, von allen Browsern unterstützt)
+    const div = document.createElement('div');
+    div.setAttribute('contenteditable', 'true');
+    div.style.position = 'fixed';
+    div.style.left = '-10000px';
+    div.style.top = '0';
+    div.innerHTML = html; // selbst erzeugtes HTML, alle Werte maskiert
+    document.body.appendChild(div);
+    const range = document.createRange();
+    range.selectNodeContents(div);
+    const sel = window.getSelection();
+    let ok = false;
+    if (sel) {
+      sel.removeAllRanges();
+      sel.addRange(range);
+      try {
+        ok = document.execCommand('copy');
+      } catch {
+        ok = false;
+      }
+      sel.removeAllRanges();
+    }
+    document.body.removeChild(div);
+    return ok;
+  };
+  const w = window as unknown as { ClipboardItem?: new (items: { [type: string]: Blob }) => unknown };
+  const nav = navigator as Navigator & { clipboard?: { write?: (items: unknown[]) => Promise<void> } };
+  if (w.ClipboardItem && nav.clipboard && nav.clipboard.write) {
+    const item = new w.ClipboardItem({
+      'text/html': new Blob([html], { type: 'text/html' }),
+      'text/plain': new Blob([text], { type: 'text/plain' })
+    });
+    return nav.clipboard.write([item]).then(() => true, () => fallback());
+  }
+  return Promise.resolve(fallback());
+}
+
+/** Externen Link (mailto) öffnen, ohne dass SharePoint die Navigation abfängt. */
+function launch(url: string): void {
+  const a = document.createElement('a');
+  a.href = url;
+  a.setAttribute('data-interception', 'off');
+  a.style.display = 'none';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+}
+
+/** Datei herunterladen (der Browser bietet „Öffnen“ an → Outlook). */
+function download(name: string, content: string, type: string): void {
+  const url = URL.createObjectURL(new Blob([content], { type }));
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = name;
+  a.setAttribute('data-interception', 'off');
+  a.style.display = 'none';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  window.setTimeout(() => URL.revokeObjectURL(url), 10000);
+}
+
+/** Dateiname nur aus einfachen Zeichen (Umlaute umschreiben) – sonst nennen manche Browser die Datei „download“. */
+export function safeFileName(name: string): string {
+  const map: { [c: string]: string } = { 'ä': 'ae', 'ö': 'oe', 'ü': 'ue', 'Ä': 'Ae', 'Ö': 'Oe', 'Ü': 'Ue', 'ß': 'ss', '–': '-', '—': '-' };
+  return name.replace(/[äöüÄÖÜß–—]/g, c => map[c])
+    .replace(/[^A-Za-z0-9 ._-]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 80) || 'Benachrichtigung';
+}
+
+type Done = '' | 'pasted' | 'plain' | 'eml' | 'addresses' | 'copyFailed';
+
 export const NotifyDialog: React.FC<INotifyDialogProps> = props => {
   const { record, settings } = props;
-  const draft = React.useMemo(() => (record ? buildDevEnvMail(record, settings) : undefined), [record, settings]);
+  const draft = React.useMemo(() => (record ? buildDevEnvMail(record, settings, new Date(), props.accent) : undefined), [record, settings, props.accent]);
   const [subject, setSubject] = React.useState<string>('');
-  const [body, setBody] = React.useState<string>('');
-  const [done, setDone] = React.useState<'' | 'opened' | 'pasted' | 'copied' | 'addresses' | 'copyFailed'>('');
+  const [done, setDone] = React.useState<Done>('');
   const [allRecipients, setAllRecipients] = React.useState<boolean>(false);
 
   React.useEffect(() => {
     setSubject(draft ? draft.subject : '');
-    setBody(draft ? draft.body : '');
     setDone('');
     setAllRecipients(false);
   }, [draft]);
@@ -69,20 +144,33 @@ export const NotifyDialog: React.FC<INotifyDialogProps> = props => {
     return null;
   }
   const env = displayValue(record, 'admin_displayname');
-  const fullUrl = mailtoUrl(draft.to, draft.cc, subject, body);
-  const tooLong = fullUrl.length > MAILTO_LIMIT;
-  const href = tooLong ? mailtoUrl(draft.to, draft.cc, subject, PASTE_HINT) : fullUrl;
   const noRecipients = draft.to.length === 0;
-  /** Schon die Empfänger allein sprengen die Länge – dann Adressen über die Zwischenablage. */
-  const tooManyRecipients = !noRecipients && href.length > MAILTO_LIMIT;
+  const headerUrl = mailtoUrl(draft.to, draft.cc, subject, '');
+  /** Schon Empfänger + Betreff sprengen die Länge – dann Adressen über die Zwischenablage. */
+  const tooManyRecipients = !noRecipients && headerUrl.length > MAILTO_LIMIT;
   const shownTo = allRecipients ? draft.to : draft.to.slice(0, SHOW_RECIPIENTS);
+  const fileName = safeFileName(`Benachrichtigung ${env}`) + '.eml';
+
+  const openOutlook = (): void => {
+    copyRich(draft.html, draft.body).then(ok => {
+      if (ok) {
+        launch(headerUrl);
+        setDone('pasted');
+        return;
+      }
+      // Zwischenablage gesperrt: reinen Text direkt übergeben (sofern kurz genug)
+      const plain = mailtoUrl(draft.to, draft.cc, subject, draft.body);
+      launch(plain.length <= MAILTO_LIMIT ? plain : headerUrl);
+      setDone(plain.length <= MAILTO_LIMIT ? 'plain' : 'copyFailed');
+    }, () => setDone('copyFailed'));
+  };
 
   return (
     <Dialog
       hidden={false}
       onDismiss={props.onDismiss}
-      minWidth={640}
-      maxWidth={760}
+      minWidth={720}
+      maxWidth={820}
       dialogContentProps={{
         type: DialogType.normal,
         title: 'Maker per E-Mail verständigen',
@@ -116,45 +204,42 @@ export const NotifyDialog: React.FC<INotifyDialogProps> = props => {
           </MessageBar>
         )}
         <TextField label="Betreff" value={subject} onChange={(_e, v) => setSubject(v || '')} />
-        <TextField
-          label={`Text (Rückmeldung bis ${new Intl.DateTimeFormat('de-AT').format(draft.replyBy)})`}
-          multiline={true}
-          rows={14}
-          value={body}
-          onChange={(_e, v) => setBody(v || '')}
-          styles={{ field: { fontFamily: 'inherit', fontSize: 13, lineHeight: '1.45' } }}
-        />
+        <div>
+          <div className={styles.notifyPreviewLabel}>Vorschau – so kommt die Mail an (in Outlook noch änderbar)</div>
+          <iframe
+            className={styles.notifyPreview}
+            title="Vorschau der E-Mail"
+            sandbox=""
+            srcDoc={`<!DOCTYPE html><html><head><meta charset="utf-8"></head><body style="margin:0;padding:12px;background:#ffffff;">${draft.html}</body></html>`}
+          />
+        </div>
+        <div className={styles.notifySteps}>
+          <span><b>1</b> „In Outlook öffnen“ – Empfänger und Betreff sind schon eingetragen.</span>
+          <span><b>2</b> In den Mailtext klicken und <b>Strg+V</b> – die formatierte Mail wird eingefügt.</span>
+          <span><b>3</b> Prüfen und senden.</span>
+        </div>
         {tooManyRecipients && (
           <MessageBar messageBarType={MessageBarType.warning} isMultiline={true}>
             Sehr viele Empfänger – Outlook übernimmt sie über den Link eventuell nicht vollständig. Am sichersten:
-            „Adressen kopieren“ und in Outlook in das Feld „An“ einfügen.
+            „Adressen kopieren“ und in Outlook in das Feld „An“ einfügen, oder den Outlook-Entwurf verwenden.
           </MessageBar>
         )}
-        {tooLong && (
-          <MessageBar messageBarType={MessageBarType.info} isMultiline={true}>
-            Der Text ist für die direkte Übergabe an Outlook zu lang. Beim Öffnen wird er in die Zwischenablage kopiert –
-            in Outlook einfach mit Strg+V einfügen.
-          </MessageBar>
-        )}
-        {done === 'opened' && <MessageBar messageBarType={MessageBarType.success}>Outlook wurde geöffnet – bitte prüfen und senden.</MessageBar>}
-        {done === 'pasted' && <MessageBar messageBarType={MessageBarType.success}>Outlook wurde geöffnet und der Text kopiert – in der Mail mit Strg+V einfügen.</MessageBar>}
-        {done === 'copied' && <MessageBar messageBarType={MessageBarType.success}>Text kopiert.</MessageBar>}
+        {done === 'pasted' && <MessageBar messageBarType={MessageBarType.success}>Outlook wird geöffnet – die formatierte Mail liegt in der Zwischenablage: in den Text klicken und Strg+V.</MessageBar>}
+        {done === 'plain' && <MessageBar messageBarType={MessageBarType.info}>Die Zwischenablage ist gesperrt – Outlook wurde mit der Textfassung geöffnet. Für die formatierte Fassung den Outlook-Entwurf verwenden.</MessageBar>}
+        {done === 'eml' && <MessageBar messageBarType={MessageBarType.success}>Entwurf heruntergeladen – Datei öffnen, sie erscheint in Outlook als neue Mail mit allem.</MessageBar>}
         {done === 'addresses' && <MessageBar messageBarType={MessageBarType.success}>{draft.to.length} Adressen kopiert.</MessageBar>}
-        {done === 'copyFailed' && <MessageBar messageBarType={MessageBarType.error}>Kopieren nicht möglich – bitte den Text oben markieren und kopieren.</MessageBar>}
+        {done === 'copyFailed' && <MessageBar messageBarType={MessageBarType.error}>Kopieren nicht möglich – bitte den Outlook-Entwurf (.eml) verwenden.</MessageBar>}
       </div>
       <DialogFooter>
-        <PrimaryButton
-          text="In Outlook öffnen"
-          iconProps={{ iconName: 'Mail' }}
-          href={noRecipients ? undefined : href}
+        <PrimaryButton text="In Outlook öffnen" iconProps={{ iconName: 'Mail' }} disabled={noRecipients} onClick={openOutlook} />
+        <DefaultButton
+          text="Als Outlook-Entwurf (.eml)"
+          iconProps={{ iconName: 'Download' }}
           disabled={noRecipients}
-          data-interception="off"
+          title="Fertige Mail mit Empfängern, Betreff und formatiertem Text – öffnet sich in Outlook als Entwurf"
           onClick={() => {
-            if (tooLong) {
-              copyText(body).then(ok => setDone(ok ? 'pasted' : 'copyFailed'), () => setDone('copyFailed'));
-            } else {
-              setDone('opened');
-            }
+            download(fileName, emlDraft({ to: draft.to, cc: draft.cc, subject, body: draft.body, html: draft.html }), 'message/rfc822');
+            setDone('eml');
           }}
         />
         {tooManyRecipients && (
@@ -164,11 +249,6 @@ export const NotifyDialog: React.FC<INotifyDialogProps> = props => {
             onClick={() => copyText(draft.to.join('; ')).then(ok => setDone(ok ? 'addresses' : 'copyFailed'), () => setDone('copyFailed'))}
           />
         )}
-        <DefaultButton
-          text="Text kopieren"
-          iconProps={{ iconName: 'Copy' }}
-          onClick={() => copyText(`${subject}\r\n\r\n${body}`).then(ok => setDone(ok ? 'copied' : 'copyFailed'), () => setDone('copyFailed'))}
-        />
         <DefaultButton text="Schließen" onClick={props.onDismiss} />
       </DialogFooter>
     </Dialog>

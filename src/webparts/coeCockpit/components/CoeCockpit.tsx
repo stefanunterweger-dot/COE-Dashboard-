@@ -1391,6 +1391,7 @@ const CoeCockpit: React.FC<ICoeCockpitProps> = props => {
           record={notifyRecord}
           settings={props.notify}
           themeVars={themeVars}
+          accent={String((themeVars as { [k: string]: unknown })['--coe-accent'] || '#0f6cbd')}
           onDismiss={() => setNotifyRecord(undefined)}
         />
 

@@ -22,7 +22,7 @@ import { getDefaultTables } from './models/defaultTables';
 import { isValidEnvironmentUrl } from './utils/format';
 import { DataverseService, normalizeDataverseUrl } from './services/DataverseService';
 import { detectManagedAttribute, managedCandidates } from './models/devEnvironments';
-import { DEFAULT_INFO_URL, parseAddresses } from './models/notification';
+import { DEFAULT_INFO_URL, OLD_INFO_URLS, parseAddresses } from './models/notification';
 
 export interface ICoeCockpitWebPartProps {
   title: string;
@@ -79,6 +79,10 @@ export default class CoeCockpitWebPart extends BaseClientSideWebPart<ICoeCockpit
     if (!this.properties.tables || this.properties.tables.length === 0) {
       this.properties.tables = getDefaultTables();
     }
+    // Früheren Standard-Link (allgemeine deutsche Seite) auf den direkten Abschnitt umstellen
+    if (OLD_INFO_URLS.indexOf((this.properties.notifyInfoUrl || '').trim()) >= 0) {
+      this.properties.notifyInfoUrl = '';
+    }
 
     const themeProvider: ThemeProvider = this.context.serviceScope.consume(ThemeProvider.serviceKey);
     this._themeProvider = themeProvider;
@@ -108,7 +112,7 @@ export default class CoeCockpitWebPart extends BaseClientSideWebPart<ICoeCockpit
       notify: {
         formal: this.properties.notifyTone !== 'du',
         replyDays: this.properties.notifyReplyDays || 14,
-        infoUrl: /^https:\/\//i.test((this.properties.notifyInfoUrl || '').trim()) ? this.properties.notifyInfoUrl.trim() : DEFAULT_INFO_URL,
+        infoUrl: this._infoUrl(),
         feedbackUrl: /^https:\/\//i.test((this.properties.notifyFeedbackUrl || '').trim()) ? this.properties.notifyFeedbackUrl.trim() : '',
         cc: (this.properties.notifyCc || '').trim(),
         signature: (this.properties.notifySignature || '').trim()
@@ -220,6 +224,12 @@ export default class CoeCockpitWebPart extends BaseClientSideWebPart<ICoeCockpit
       options.push({ key: current, text: current });
     }
     return options;
+  }
+
+  /** Link zur Microsoft-Ankündigung; leere, ungültige und frühere Standardwerte → aktueller Standard. */
+  private _infoUrl(): string {
+    const v = (this.properties.notifyInfoUrl || '').trim();
+    return /^https:\/\/\S+$/i.test(v) && OLD_INFO_URLS.indexOf(v) < 0 ? v : DEFAULT_INFO_URL;
   }
 
   /** Auswahl des Pipelines-Host-Environments (Schlüssel = Dataverse-URL). */
