@@ -1732,12 +1732,9 @@
   color: var(--coe-text-2);
 }
 
-// Schmale Abschnitte / Handy: Seitenleiste wird zur waagrechten Leiste
-.root {
-  container-type: inline-size;
-}
 
-@container (max-width: 860px) {
+// Schmale Abschnitte/Handy: Klasse .narrow wird vom Webpart gesetzt (SPFx entfernt @container-Regeln)
+.narrow {
   .layout {
     display: block;
   }
@@ -2546,7 +2543,8 @@ li:last-child > .govItem {
   font-variant-numeric: tabular-nums;
 }
 
-@container (max-width: 860px) {
+// Schmale Abschnitte/Handy: Klasse .narrow wird vom Webpart gesetzt (SPFx entfernt @container-Regeln)
+.narrow {
   .ovRow {
     grid-template-columns: minmax(0, 1fr);
   }
@@ -2615,7 +2613,8 @@ li:last-child > .govItem {
   gap: 16px;
 }
 
-@container (max-width: 860px) {
+// Schmale Abschnitte/Handy: Klasse .narrow wird vom Webpart gesetzt (SPFx entfernt @container-Regeln)
+.narrow {
   .ovRow2 {
     grid-template-columns: minmax(0, 1fr);
   }

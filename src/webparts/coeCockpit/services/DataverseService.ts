@@ -375,7 +375,9 @@ export class DataverseService {
    * Nutzt OData-Aggregation; wird sie nicht unterstützt oder ist die Datenmenge zu groß,
    * werden die Datensätze geladen und im Browser gezählt.
    */
-  public async getGroupedCounts(logicalName: string, groupField: string, filter?: string, sumField?: string): Promise<{ [value: string]: number }> {
+  public async getGroupedCounts(
+    logicalName: string, groupField: string, filter?: string, sumField?: string, aggregateOnly?: boolean
+  ): Promise<{ [value: string]: number }> {
     const meta = await this.getEntityMeta(logicalName);
     const aggregate = sumField ? `${sumField} with sum as n` : '$count as n';
     const apply = `${filter ? `filter(${filter})/` : ''}groupby((${groupField}),aggregate(${aggregate}))`;
@@ -390,8 +392,8 @@ export class DataverseService {
       res.value.forEach(r => { out[keyOf(r)] = (out[keyOf(r)] || 0) + Number(r.n || 0); });
       return out;
     } catch (e) {
-      if (missingProperty(e)) {
-        throw e;
+      if (missingProperty(e) || aggregateOnly) {
+        throw e; // aggregateOnly: bei großen Tabellen (z. B. Audit-Log) nicht auf Laden aller Datensätze ausweichen
       }
     }
     const table: ITableConfig = {

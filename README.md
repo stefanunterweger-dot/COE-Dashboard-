@@ -28,7 +28,8 @@ alle Daten direkt aus den Dataverse-Tabellen des CoE (keine Power-Platform-Admin
 
 - **`sppkg/coe-cockpit.sppkg`** – fertig gebautes Paket für den App Catalog (siehe „Bereitstellung“).
 - **`preview/coe-cockpit-vorschau.html`** – Vorschau im Browser mit Beispieldaten (über 5.000 Apps/Flows).
-  Verwendet den echten Webpart-Code; nur die Dataverse-API ist simuliert. Neu bauen: `cd preview && npm install && npm run build`.
+  Verwendet den echten Webpart-Code und **das vom SPFx-Build kompilierte CSS** (wie in SharePoint); nur die Dataverse-API ist simuliert.
+  Neu bauen: im Projekt `npx gulp bundle`, danach `cd preview && npm install && npm run build`.
 
 ## Große Tabellen (mehr als 5.000 Einträge)
 

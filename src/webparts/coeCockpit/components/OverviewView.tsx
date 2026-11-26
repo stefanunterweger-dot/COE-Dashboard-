@@ -7,7 +7,7 @@ import { IColumnFilter } from '../utils/filters';
 import { formatNumber, formatTime } from '../utils/format';
 import { translateValue } from '../utils/valueLabels';
 import {
-  count, daysAgoIso, distribution, environmentsOverview, IMonth, lastMonths, monthlyCounts, numberOf, textOf, topRecords
+  count, daysAgoIso, distribution, environmentsOverview, IMonth, lastMonths, monthlyCounts, numberOf, textOf, topAppsByLaunches, topRecords
 } from '../models/overview';
 import { DEV_ENV_DEADLINES } from '../models/devEnvironments';
 import { BarList, compactNumber, IBarItem, IPart, SegmentedBar, Sparkline, TrendChart } from './Charts';
@@ -126,7 +126,7 @@ export const OverviewView: React.FC<IOverviewProps> = props => {
   const [appTypes, setAppTypes] = React.useState<ISection<{ label: string; value: number }[]>>(loading());
   const [flowStates, setFlowStates] = React.useState<ISection<{ label: string; value: number }[]>>(loading());
   const [envs, setEnvs] = React.useState<ISection<{ records: IRecord[]; primaryId: string; byType: { label: string; value: number }[] }>>(loading());
-  const [topApps, setTopApps] = React.useState<ISection<{ records: IRecord[]; primaryId: string }>>(loading());
+  const [topApps, setTopApps] = React.useState<ISection<{ records: IRecord[]; primaryId: string; valueField: string; source: 'field' | 'audit'; days: number }>>(loading());
   const [topConnectors, setTopConnectors] = React.useState<ISection<{ records: IRecord[]; primaryId: string }>>(loading());
   const [topMakers, setTopMakers] = React.useState<ISection<{ records: IRecord[]; primaryId: string }>>(loading());
   const [gov, setGov] = React.useState<{ [k: string]: ISection<ICountResult> }>({});
@@ -173,7 +173,7 @@ export const OverviewView: React.FC<IOverviewProps> = props => {
     if (T.flows) { guard(setFlowStates, distribution(service, T.flows, 'admin_flowstate')); } else { setFlowStates({ status: 'error' }); }
     if (T.envs) { guard(setEnvs, environmentsOverview(service, T.envs)); } else { setEnvs({ status: 'error' }); }
     // Ranglisten
-    if (T.apps) { guard(setTopApps, topRecords(service, T.apps, 'admin_launchesinthepast30days', 8, ['admin_launchesinthepast30days'])); } else { setTopApps({ status: 'error' }); }
+    if (T.apps) { guard(setTopApps, topAppsByLaunches(service, T.apps, 8)); } else { setTopApps({ status: 'error' }); }
     if (T.connectors) { guard(setTopConnectors, topRecords(service, T.connectors, 'admin_numapps', 8, ['admin_numapps', 'admin_numflows'])); } else { setTopConnectors({ status: 'error' }); }
     if (T.makers) { guard(setTopMakers, topRecords(service, T.makers, 'admin_numberofapps', 8, ['admin_numberofapps', 'admin_numberofflows'])); } else { setTopMakers({ status: 'error' }); }
     // Handlungsbedarf
@@ -423,15 +423,26 @@ export const OverviewView: React.FC<IOverviewProps> = props => {
 
       {/* ---------- Ranglisten ---------- */}
       <div className={styles.ovRow2}>
-        <Card title="Meistgenutzte Apps" subtitle="Starts in den letzten 30 Tagen" icon="Trophy2">
+        <Card
+          title="Meistgenutzte Apps"
+          subtitle={topApps.data
+            ? `Starts in den letzten ${topApps.data.days} Tagen${topApps.data.source === 'audit' ? ' (aus dem CoE-Audit-Log)' : ''}`
+            : 'Starts in den letzten 30 Tagen'}
+          icon="Trophy2"
+        >
           {topApps.status === 'loading' && <Skeleton rows={6} />}
           {topApps.status === 'error' && <Failed />}
+          {topApps.data && topApps.data.records.filter(r => numberOf(r, topApps.data!.valueField) > 0).length === 0 && (
+            <div className={styles.ovFailed}>
+              <Icon iconName="Info" /> Keine Startdaten im CoE – die Zählung braucht den CoE-Audit-Log-Sync bzw. die Spalte „Launches in the past 30 days“.
+            </div>
+          )}
           {topApps.data && (
-            <BarList unit="Starts" items={topApps.data.records.filter(r => numberOf(r, 'admin_launchesinthepast30days') > 0).map((r, i): IBarItem => ({
+            <BarList unit="Starts" items={topApps.data.records.filter(r => numberOf(r, topApps.data!.valueField) > 0).map((r, i): IBarItem => ({
               key: String(r[topApps.data!.primaryId] || i),
               label: textOf(r, 'admin_displayname'),
               sub: `${textOf(r, '_admin_appowner_value')} · ${textOf(r, '_admin_appenvironment_value')}`,
-              value: numberOf(r, 'admin_launchesinthepast30days'),
+              value: numberOf(r, topApps.data!.valueField),
               onClick: open(T.apps, r, topApps.data!.primaryId)
             }))} />
           )}

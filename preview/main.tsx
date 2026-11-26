@@ -19,6 +19,17 @@ const lightTheme: ITheme = createTheme({
   }
 });
 
+/** Rotes SharePoint-Theme (wie bei euch im Intranet) */
+const redTheme: ITheme = createTheme({
+  palette: {
+    themePrimary: '#c8102e', themeLighterAlt: '#fdf4f5', themeLighter: '#f6d3d9', themeLight: '#eeaeb9', themeTertiary: '#de6578',
+    themeSecondary: '#ce2641', themeDarkAlt: '#b40f29', themeDark: '#980d23', themeDarker: '#700919',
+    neutralLighterAlt: '#faf9f8', neutralLighter: '#f3f2f1', neutralLight: '#edebe9', neutralQuaternaryAlt: '#e1dfdd',
+    neutralQuaternary: '#d0d0d0', neutralTertiaryAlt: '#c8c6c4', neutralTertiary: '#a19f9d', neutralSecondary: '#605e5c',
+    neutralPrimaryAlt: '#3b3a39', neutralPrimary: '#323130', neutralDark: '#201f1e', black: '#000000', white: '#ffffff'
+  }
+});
+
 const darkTheme: ITheme = createTheme({
   isInverted: true,
   palette: {
@@ -37,6 +48,7 @@ const App: React.FC = () => {
   const [tables, setTables] = React.useState<ITableConfig[]>(getDefaultTables());
   const [editMode, setEditMode] = React.useState<boolean>(true);
   const [dark, setDark] = React.useState<boolean>(false);
+  const [red, setRed] = React.useState<boolean>(false);
   const [paneOpen, setPaneOpen] = React.useState<boolean>(false);
   const [editorRequest, setEditorRequest] = React.useState<number>(0);
   const [p, setP] = React.useState({
@@ -64,6 +76,7 @@ const App: React.FC = () => {
         <span className="grow" />
         <Toggle inlineLabel label="Bearbeitungsmodus" checked={editMode} onChange={(_e, v) => setEditMode(!!v)} styles={{ root: { margin: 0 } }} />
         <Toggle inlineLabel label="Dunkler Abschnitt" checked={dark} onChange={(_e, v) => setDark(!!v)} styles={{ root: { margin: 0 } }} />
+        <Toggle inlineLabel label="Rotes Theme" checked={red} onChange={(_e, v) => setRed(!!v)} styles={{ root: { margin: 0 } }} />
       </div>
       <div className={`section ${dark ? 'sectionDark' : ''}`}>
         <CoeCockpit
@@ -76,7 +89,7 @@ const App: React.FC = () => {
           maxRecords={p.maxRecords}
           showKpis={p.showKpis}
           density={p.density}
-          theme={(dark ? darkTheme : lightTheme) as never}
+          theme={(dark ? darkTheme : red ? redTheme : lightTheme) as never}
           isEditMode={editMode}
           editorRequest={editorRequest}
           aadHttpClientFactory={factory as never}

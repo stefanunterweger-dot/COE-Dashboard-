@@ -74,6 +74,42 @@ export async function topRecords(
   return { records: res.records.slice(0, limit), table, primaryId: res.meta.primaryId };
 }
 
+/**
+ * Meistgenutzte Apps. Quelle 1: CoE-Spalte „Launches in the past 30 days“.
+ * Ist sie leer, werden die App-Starts im CoE-Audit-Log gezählt (30 Tage, bei sehr vielen Einträgen 7 Tage).
+ */
+export async function topAppsByLaunches(service: DataverseService, apps: ITableConfig, limit: number): Promise<{
+  records: IRecord[]; primaryId: string; valueField: string; source: 'field' | 'audit'; days: number;
+}> {
+  const viaField = await topRecords(service, apps, 'admin_launchesinthepast30days', limit, ['admin_launchesinthepast30days']).catch(() => undefined);
+  if (viaField && viaField.records.some(r => numberOf(r, 'admin_launchesinthepast30days') > 0)) {
+    return { records: viaField.records, primaryId: viaField.primaryId, valueField: 'admin_launchesinthepast30days', source: 'field', days: 30 };
+  }
+  for (const days of [30, 7]) {
+    let counts: { [appId: string]: number };
+    try {
+      counts = await service.getGroupedCounts('admin_auditlog', '_admin_applookup_value',
+        `admin_operation eq 'LaunchPowerApp' and admin_creationtime ge ${daysAgoIso(days)}`, undefined, true);
+    } catch {
+      continue;
+    }
+    const ids = Object.keys(counts).filter(id => /^[0-9a-f-]{36}$/i.test(id)).sort((a, b) => counts[b] - counts[a]).slice(0, limit);
+    if (!ids.length) {
+      break;
+    }
+    const meta = await service.getEntityMeta(apps.logicalName);
+    const res = await service.getRecords({
+      ...apps, key: `_top_${apps.key}`, strictFilter: true,
+      filter: combineFilters(apps.filter, ids.map(id => `${meta.primaryId} eq ${id}`).join(' or '))
+    }, limit);
+    const records = res.records
+      .map(r => ({ ...r, coe_launches: counts[String(r[meta.primaryId]).toLowerCase()] || counts[String(r[meta.primaryId])] || 0 }))
+      .sort((a, b) => numberOf(b, 'coe_launches') - numberOf(a, 'coe_launches'));
+    return { records, primaryId: meta.primaryId, valueField: 'coe_launches', source: 'audit', days };
+  }
+  return { records: [], primaryId: 'admin_appid', valueField: 'admin_launchesinthepast30days', source: 'field', days: 30 };
+}
+
 /** Environments (kleine Tabelle) komplett – für Typ-Verteilung und Rangliste. */
 export async function environmentsOverview(service: DataverseService, table: ITableConfig): Promise<{
   records: IRecord[]; primaryId: string; byType: { label: string; value: number }[];

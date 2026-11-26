@@ -122,6 +122,8 @@ const START_GROUP = 'Start';
 const ANALYSIS_GROUP = 'Auswertungen';
 /** Ab so vielen Einträgen wird statt der Reiterzeile die Seitenleiste verwendet. */
 const MAX_TABS = 7;
+/** Unter dieser Breite (px) wird die schmale Darstellung verwendet. */
+const NARROW_WIDTH = 860;
 const COLLATOR = new Intl.Collator('de', { numeric: true, sensitivity: 'base' });
 
 const CoeCockpit: React.FC<ICoeCockpitProps> = props => {
@@ -147,6 +149,26 @@ const CoeCockpit: React.FC<ICoeCockpitProps> = props => {
   const pendingFiltersRef = React.useRef<{ [field: string]: IColumnFilter } | undefined>(initialViewRef.current && initialViewRef.current.f);
   const pendingSearchRef = React.useRef<string | undefined>(initialViewRef.current && initialViewRef.current.q);
   const [linkCopied, setLinkCopied] = React.useState<boolean>(false);
+  // Breite des Webparts messen: schmale Abschnitte/Handy bekommen die Klasse „narrow“
+  // (CSS-Container-Abfragen werden vom SPFx-Build entfernt, daher per Script)
+  const rootRef = React.useRef<HTMLElement>(null);
+  const [narrow, setNarrow] = React.useState<boolean>(false);
+  React.useEffect(() => {
+    const el = rootRef.current;
+    if (!el) {
+      return;
+    }
+    const update = (): void => setNarrow(el.getBoundingClientRect().width < NARROW_WIDTH);
+    update();
+    const RO = (window as unknown as { ResizeObserver?: new (cb: () => void) => { observe: (e: Element) => void; disconnect: () => void } }).ResizeObserver;
+    if (RO) {
+      const ro = new RO(update);
+      ro.observe(el);
+      return () => ro.disconnect();
+    }
+    window.addEventListener('resize', update);
+    return () => window.removeEventListener('resize', update);
+  }, []);
   const [lastDefaultKey, setLastDefaultKey] = React.useState<string>(`${DEFAULT_ENV_PREFIX}apps`);
   const [defaultEnv, setDefaultEnv] = React.useState<IDefaultEnvState>({ status: 'idle' });
   const [data, setData] = React.useState<{ [key: string]: ITableState }>({});
@@ -1079,7 +1101,7 @@ const CoeCockpit: React.FC<ICoeCockpitProps> = props => {
 
   return (
     <ThemeProvider theme={theme as unknown as PartialTheme} applyTo="none">
-      <section className={styles.root} style={themeVars}>
+      <section ref={rootRef} className={`${styles.root} ${narrow ? styles.narrow : ''}`} style={themeVars}>
         <header className={styles.header}>
           <div className={styles.brand}>
             <div className={styles.brandMark}><Icon iconName="Org" /></div>

@@ -212,7 +212,8 @@ for (let i = 0; i < 6840; i++) {
     admin_appplanclassification: chance(0.28) ? 'Premium' : 'Standard',
     admin_appsharedusers: int(0, 140),
     admin_appsharedgroups: int(0, 6),
-    admin_launchesinthepast30days: launched !== null && launched < 30 ? Math.round(2400 / Math.pow(int(1, 3000), 0.75)) : 0
+    // wie in eurem CoE: Spalte bleibt leer – die Übersicht zählt dann die Starts im Audit-Log
+    admin_launchesinthepast30days: null
   });
 }
 
@@ -355,10 +356,10 @@ const auditLog = lazyRows(() => {
   const out: Record<string, unknown>[] = [];
   apps.slice(0, 3000).forEach(a => {
     if (!a.admin_applastlaunchedon) { return; }
-    const n = int(0, 6);
+    const n = Math.round(60 / Math.pow(int(1, 400), 0.8));
     for (let i = 0; i < n; i++) {
       const u = pick(humans);
-      out.push({ ...COMMON(), admin_auditlogid: guid(), admin_title: `LaunchPowerApp – ${a.admin_displayname}`, _admin_applookup_value: a.admin_appid, admin_appenvironment: envById[String(a._admin_appenvironment_value)].admin_displayname, admin_operation: 'LaunchPowerApp', admin_workload: 'PowerApps', admin_userupn: u.admin_userprincipalname, admin_creationtime: daysAgo(recentish(120)) });
+      out.push({ ...COMMON(), admin_auditlogid: guid(), admin_title: `LaunchPowerApp – ${a.admin_displayname}`, _admin_applookup_value: a.admin_appid, admin_appenvironment: envById[String(a._admin_appenvironment_value)].admin_displayname, admin_operation: 'LaunchPowerApp', admin_workload: 'PowerApps', admin_userupn: u.admin_userprincipalname, admin_creationtime: daysAgo(int(0, 60)) });
     }
   });
   return out;

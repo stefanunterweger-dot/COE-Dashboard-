@@ -1,5 +1,4 @@
 import * as esbuild from 'esbuild';
-import { sassPlugin } from 'esbuild-sass-plugin';
 import fs from 'node:fs';
 import path from 'node:path';
 
@@ -16,6 +15,25 @@ const resolvePlugin = {
       if (args.pluginData === 'x') { return undefined; }
       const r = await build.resolve(args.path, { resolveDir: here, kind: args.kind, pluginData: 'x' });
       return r;
+    });
+  }
+};
+
+/**
+ * Styles genau so verwenden, wie SharePoint sie ausliefert: statt die .scss selbst zu übersetzen,
+ * wird das vom SPFx-Build kompilierte CSS-Modul aus lib/ genommen (vorher „npx gulp bundle“ im Projekt).
+ * So zeigt die Vorschau dieselben Klassennamen und dieselben CSS-Optimierungen wie in SharePoint.
+ */
+const spfxCssPlugin = {
+  name: 'spfx-compiled-css',
+  setup(build) {
+    build.onResolve({ filter: /\.module\.scss$/ }, args => {
+      const srcFile = path.resolve(args.resolveDir, args.path);
+      const libFile = srcFile.replace(`${path.sep}src${path.sep}`, `${path.sep}lib${path.sep}`) + '.js';
+      if (!fs.existsSync(libFile)) {
+        throw new Error(`Kompiliertes CSS fehlt: ${libFile} – zuerst „npx gulp bundle“ im Projektordner ausführen.`);
+      }
+      return { path: libFile };
     });
   }
 };
@@ -46,7 +64,9 @@ await esbuild.build({
   define: { 'process.env.NODE_ENV': '"production"' },
   nodePaths: [nm],
   tsconfigRaw: { compilerOptions: { jsx: 'react' } },
-  plugins: [resolvePlugin, fontPlugin, sassPlugin({ filter: /\.module\.scss$/, type: 'local-css' })],
+  // SPFx hat die CSS-Klassen bereits eindeutig benannt – unverändert übernehmen
+  loader: { '.module.css': 'global-css' },
+  plugins: [resolvePlugin, fontPlugin, spfxCssPlugin],
   logLevel: 'warning'
 });
 
