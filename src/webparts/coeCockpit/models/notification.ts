@@ -280,8 +280,6 @@ function htmlMail(c: IContent, accent: string): string {
       fact('Letzte Aktivität', tx(esc(c.last))),
       fact('Einschätzung', tx(esc(c.assess.text), { color: toneColor, bold: true }), true)
     ].join(''), `border:1px solid ${BORDER};`)),
-    space(16),
-    block(button(c.makerUrl, t.open)),
     space(28),
     // Rückmeldung
     heading(t.replyTitle),
@@ -293,7 +291,10 @@ function htmlMail(c: IContent, accent: string): string {
     block(tx(esc(t.notResponsible), { color: MUTED })),
     space(16),
     block(table(`<tr><td bgcolor="#f5f5f5" style="background-color:#f5f5f5;border-left:4px solid #8a8886;padding:12px 16px;">${tx(esc(t.noReply), { size: 13, color: '#424242' })}</td></tr>`)),
-    space(20),
+    space(18),
+    // Schaltfläche zum Environment – unter dem Hinweis „Ohne Rückmeldung …“
+    block(button(c.makerUrl, t.open)),
+    space(22),
     block(`${tx(esc(t.backup))} ${link(EXPORT_GUIDE_URL, 'Anleitung von Microsoft', ink)}`),
     space(8),
     block(`${tx('Offizielle Ankündigung von Microsoft:')} ${link(c.infoUrl, 'Deprecation of unmanaged developer environments (Microsoft Learn)', ink)}`),
