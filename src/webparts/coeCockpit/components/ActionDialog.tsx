@@ -40,7 +40,7 @@ export const ACTION_TIMING = { pollMs: 5000, maxMs: 5 * 60000 };
 
 interface IPrincipal { id: string; name: string; sub: string; isGroup: boolean }
 
-const DANGER: ActionCode[] = ['delete', 'quarantine', 'flowoff', 'envdisable', 'envmanaged'];
+const DANGER: ActionCode[] = ['delete', 'quarantine', 'flowoff', 'envdisable', 'envmanaged', 'soldelete'];
 
 export const ActionDialog: React.FC<IActionDialogProps> = props => {
   const { target } = props;
@@ -213,7 +213,7 @@ export const ActionDialog: React.FC<IActionDialogProps> = props => {
       onDismiss={props.onDismiss}
       minWidth={560}
       maxWidth={640}
-      dialogContentProps={{ type: DialogType.normal, title: `${ACTION_LABEL[code]}`, subText: `${res.type === 'app' ? 'App' : res.type === 'flow' ? 'Flow' : 'Environment'} „${res.name}“` }}
+      dialogContentProps={{ type: DialogType.normal, title: `${ACTION_LABEL[code]}`, subText: `${res.type === 'app' ? 'App' : res.type === 'flow' ? 'Flow' : res.type === 'solution' ? 'Solution' : 'Environment'} „${res.name}“` }}
       modalProps={{ isBlocking: phase === 'sending' || phase === 'waiting' }}
     >
       <div className={styles.notify} style={props.themeVars}>

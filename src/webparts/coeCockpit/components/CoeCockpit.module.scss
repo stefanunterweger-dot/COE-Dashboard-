@@ -2904,6 +2904,298 @@ li:last-child > .govItem {
 }
 
 // =====================================================================
+// Webpart-Einstellungen
+// =====================================================================
+.setShell {
+  display: flex;
+  gap: 24px;
+  min-height: 100%;
+  padding-top: 8px;
+  color: var(--coe-text);
+}
+
+.setNav {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 0 0 232px;
+}
+
+.setNavItem {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 10px;
+  font: inherit;
+  text-align: left;
+  color: var(--coe-text);
+  background: none;
+  border: 0;
+  border-radius: 8px;
+  cursor: pointer;
+
+  &:hover {
+    background: var(--coe-hover);
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--coe-accent);
+    outline-offset: -2px;
+  }
+}
+
+.setNavItemActive {
+  background: var(--coe-accent-soft);
+
+  .setNavLabel {
+    font-weight: 600;
+    color: var(--coe-accent);
+  }
+
+  .setNavIcon {
+    color: var(--coe-accent);
+  }
+}
+
+.setNavIcon {
+  flex: 0 0 auto;
+  width: 18px;
+  font-size: 15px;
+  color: var(--coe-text-2);
+}
+
+.setNavText {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.setNavLabel {
+  font-size: 13px;
+}
+
+.setNavHint {
+  overflow: hidden;
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--coe-text-2);
+}
+
+.setDot {
+  flex: 0 0 auto;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+.setDotOk {
+  background: var(--coe-status-good);
+}
+
+.setDotWarn {
+  background: var(--coe-status-warning);
+}
+
+.setDotErr {
+  background: var(--coe-status-critical);
+}
+
+.setDotOff {
+  background: var(--coe-status-neutral);
+}
+
+.setContent {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.setTitle {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0;
+  font-size: 20px;
+  font-weight: 650;
+}
+
+.setIntro {
+  margin: 0;
+  font-size: 13px;
+  color: var(--coe-text-2);
+}
+
+.setCard {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px;
+  background: var(--coe-bg);
+  border: 1px solid var(--coe-border);
+  border-radius: 12px;
+}
+
+.setCardTitle {
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.setRow {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+
+  & + & {
+    padding-top: 12px;
+    border-top: 1px solid var(--coe-border-soft);
+  }
+}
+
+.setRowText {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.setRowLabel {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.setRowDesc {
+  margin-top: 2px;
+  font-size: 12px;
+  color: var(--coe-text-2);
+}
+
+.setRowControl {
+  flex: 0 0 auto;
+
+  :global(.ms-Toggle) {
+    margin: 0;
+  }
+}
+
+.setStatus {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--coe-text-2);
+}
+
+.setCheck {
+  display: inline-flex;
+  flex: 0 0 auto;
+  font-size: 14px;
+}
+
+.setCheckOk {
+  color: var(--coe-status-good);
+}
+
+.setCheckWarn {
+  color: var(--coe-status-warning);
+}
+
+.setCheckErr {
+  color: var(--coe-status-critical);
+}
+
+.setChecklist {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 13px;
+
+  li {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+}
+
+.setButtons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.setNote {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--coe-text-2);
+
+  code {
+    font-size: 11px;
+  }
+}
+
+.setGrid2 {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+}
+
+.setGrid3 {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 12px;
+}
+
+.setFooter {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 16px;
+}
+
+.setFooterButtons {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-left: auto;
+}
+
+.setFooterNote {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--coe-text-2);
+}
+
+@media (max-width: 760px) {
+  .setShell {
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .setNav {
+    flex: 0 0 auto;
+    flex-direction: row;
+    overflow-x: auto;
+  }
+
+  .setNavItem {
+    flex: 0 0 auto;
+  }
+
+  .setNavHint {
+    display: none;
+  }
+}
+
+// =====================================================================
 // Inhalt der Solution (Detailbereich)
 // =====================================================================
 .solBox {

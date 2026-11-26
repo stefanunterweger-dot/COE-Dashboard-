@@ -16,7 +16,7 @@ import os
 import zipfile
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-VERSION = '1.0.0.0'
+VERSION = '1.1.0.0'
 SOLUTION = 'CoECockpitAktionen'
 FLOW_ID = '7c0c0c4a-3b1e-4f6a-9d2e-5a1b2c3d4e01'
 FLOW_NAME = 'CoE Cockpit | Aktion ausführen'
@@ -329,6 +329,36 @@ def case_env(kind):
     }}
 
 
+def case_soldelete():
+    """Nicht verwaltete Solution löschen (nur der Container – Komponenten bleiben). EnvironmentId = Dataverse-URL des Environments."""
+    org = "@triggerOutputs()?['body/EnvironmentId']"
+    acts = {
+        'Solution_lesen': op('dv', 'GetItemWithOrganization', {
+            'organization': org, 'entityName': 'solutions', 'recordId': RID, '$select': 'uniquename,ismanaged,isvisible'}),
+        'Solution_lesen_Fehler': set_var('Fehler', err_of('Solution_lesen'), {'Solution_lesen': ['Failed', 'TimedOut']}),
+        'Loeschen_erlaubt': {
+            'type': 'If',
+            'runAfter': {'Solution_lesen': ['Succeeded']},
+            'expression': {'and': [
+                {'equals': ["@body('Solution_lesen')?['ismanaged']", False]},
+                {'not': {'contains': ["@createArray('default','active','basic','system','crmservicesolution')", "@toLower(coalesce(body('Solution_lesen')?['uniquename'], ''))"]}}
+            ]},
+            'actions': guarded(
+                [('Solution_loeschen', op('dv', 'DeleteRecordWithOrganization', {'organization': org, 'entityName': 'solutions', 'recordId': RID}, retry=True))],
+                'Die Solution wurde gelöscht. Ihre Komponenten (Apps, Flows, Tabellen …) bleiben im Environment erhalten.',
+                [('CoE_Solution_geloescht', op('dv', 'UpdateRecord', {
+                    'entityName': 'admin_solutions', 'recordId': COEID, 'item/admin_solutiondeleted': True, 'item/admin_solutiondeletedon': '@utcNow()'}))]),
+            'else': {'actions': {
+                'Abgelehnt_verwaltet': set_var('Abgelehnt', 'Verwaltete Solutions und System-Solutions werden nicht gelöscht (Deinstallation nur über das Admin Center bzw. ALM).')
+            }}
+        }
+    }
+    return {'Nur_Solution': {
+        'type': 'If', 'expression': is_type('solution'), 'actions': acts,
+        'else': {'actions': {'Abgelehnt_keine_Solution': set_var('Abgelehnt', 'Diese Aktion gibt es nur für Solutions.')}}
+    }}
+
+
 CASES = {
     'quarantine': case_quarantine(True),
     'unquarantine': case_quarantine(False),
@@ -342,6 +372,7 @@ CASES = {
     'envmanaged': case_env('managed'),
     'envdisable': case_env('disable'),
     'envenable': case_env('enable'),
+    'soldelete': case_soldelete(),
 }
 
 
@@ -548,7 +579,7 @@ def customizations_xml():
       <statecode>0</statecode>
       <statuscode>1</statuscode>
     </connectionreference>''' for k in CONN)
-    desc = 'Führt Aufträge aus der SharePoint-Liste „CoE Cockpit Aktionen“ aus (Quarantäne, Löschen, Besitzer, Freigaben, Flow ein/aus, Environment Managed/deaktivieren/aktivieren).'
+    desc = 'Führt Aufträge aus der SharePoint-Liste „CoE Cockpit Aktionen“ aus (Quarantäne, Löschen, Besitzer, Freigaben, Flow ein/aus, Environment Managed/deaktivieren/aktivieren, Solution löschen).'
     return f'''<?xml version="1.0" encoding="utf-8"?>
 <ImportExportXml xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" OrganizationVersion="9.2.25123.166" OrganizationSchemaType="Standard" CRMServerServiceabilityVersion="9.2.25123.00166">
   <Entities />

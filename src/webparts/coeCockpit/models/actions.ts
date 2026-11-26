@@ -12,8 +12,8 @@ export const ACTION_LOG_KEY = 'actions:log';
 
 /** Technische Codes (werden vom Flow ausgewertet – nicht übersetzen). */
 export type ActionCode = 'quarantine' | 'unquarantine' | 'delete' | 'setowner' | 'addviewer' | 'addeditor' | 'removeuser' | 'flowoff' | 'flowon'
-  | 'envmanaged' | 'envdisable' | 'envenable';
-export type ResourceType = 'app' | 'flow' | 'environment';
+  | 'envmanaged' | 'envdisable' | 'envenable' | 'soldelete';
+export type ResourceType = 'app' | 'flow' | 'environment' | 'solution';
 
 export const ACTION_LABEL: { [c in ActionCode]: string } = {
   quarantine: 'In Quarantäne stellen',
@@ -27,13 +27,14 @@ export const ACTION_LABEL: { [c in ActionCode]: string } = {
   flowon: 'Flow einschalten',
   envmanaged: 'Auf Managed umstellen',
   envdisable: 'Environment deaktivieren',
-  envenable: 'Environment aktivieren'
+  envenable: 'Environment aktivieren',
+  soldelete: 'Solution löschen'
 };
 
 export const ACTION_ICON: { [c in ActionCode]: string } = {
   quarantine: 'Blocked2', unquarantine: 'Unlock', delete: 'Delete', setowner: 'Contact',
   addviewer: 'AddFriend', addeditor: 'AddFriend', removeuser: 'UserRemove', flowoff: 'Pause', flowon: 'Play',
-  envmanaged: 'Shield', envdisable: 'Blocked2', envenable: 'Play'
+  envmanaged: 'Shield', envdisable: 'Blocked2', envenable: 'Play', soldelete: 'Delete'
 };
 
 /** Hinweis im Dialog – was die Aktion bewirkt. */
@@ -49,7 +50,9 @@ export const ACTION_HINT: { [c in ActionCode]: string } = {
   flowon: 'Der Flow startet wieder bei seinem Auslöser bzw. nach Zeitplan.',
   envmanaged: 'Das Environment wird zum Managed Environment und bleibt nach dem 15.12.2026 erhalten. Wer dort Apps oder Flows nutzt, braucht dann eine Premium-Lizenz (ab Februar 2027 werden Apps für Benutzer ohne Lizenz blockiert).',
   envdisable: 'Das Environment wird deaktiviert: Apps, Flows und Bots darin laufen nicht mehr, niemand kann es verwenden. Die Daten bleiben erhalten – ein Admin kann es wieder aktivieren.',
-  envenable: 'Das Environment wird wieder aktiviert; Apps, Flows und Bots laufen wieder.'
+  envenable: 'Das Environment wird wieder aktiviert; Apps, Flows und Bots laufen wieder.',
+  soldelete: 'Gelöscht wird nur die Solution selbst (der „Container“). Apps, Flows, Tabellen und alle anderen Komponenten bleiben im Environment erhalten '
+    + 'und gehören danach nur noch zur Default Solution. Das lässt sich nicht rückgängig machen.'
 };
 
 export type ActionStatus = 'Angefordert' | 'In Arbeit' | 'Erledigt' | 'Fehler' | 'Abgelehnt';
@@ -92,6 +95,13 @@ export function resourceOf(logicalName: string, r: IRecord): { type: ResourceTyp
     const pid = rawValue(r, 'admin_environmentname');
     const id = /^(default-)?[0-9a-f]{8}-/i.test(pid) ? pid : coeId;
     return { type: 'environment', id, coeId, name: displayValue(r, 'admin_displayname'), env: id };
+  }
+  if (logicalName === 'admin_solution') {
+    const coeId = String(r.admin_solutionid || '');
+    const obj = String(r.admin_solutionenvtobjectguidstring || '');
+    const id = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(obj) ? obj : coeId;
+    // Environment = Dataverse-URL des Environments (wird beim Öffnen nachgeladen: __envurl)
+    return { type: 'solution', id, coeId, name: displayValue(r, 'admin_solutiondisplayname') || displayValue(r, 'admin_name'), env: String(r.__envurl || '') };
   }
   if (logicalName === 'admin_flow') {
     const coeId = String(r.admin_flowid || '');
@@ -152,8 +162,34 @@ export function deleteBlocked(type: ResourceType, r: IRecord, deleteRequiresStop
   return '';
 }
 
+/** System- und Microsoft-Solutions (nie löschen). */
+const SYSTEM_SOLUTIONS = ['default', 'active', 'basic', 'system', 'crmservicesolution'];
+
+/** Grund, warum eine Solution nicht gelöscht werden darf (leer = darf). Nur nicht verwaltete Solutions. */
+export function solutionDeleteBlocked(r: IRecord): string {
+  const managed = r.admin_solutionismanaged;
+  const name = String(r.admin_name || '').toLowerCase();
+  const publisher = String(r.admin_solutionpublisher || '');
+  if (SYSTEM_SOLUTIONS.indexOf(name) >= 0 || /^microsoft/i.test(publisher) || /^msdyn|^msft/i.test(name)) {
+    return 'System- bzw. Microsoft-Solution – wird nicht gelöscht.';
+  }
+  if (managed === true) {
+    return 'Verwaltete Solution: Löschen wäre eine Deinstallation mit allen Komponenten und Daten – bitte über das Admin Center bzw. die ALM-Pipeline.';
+  }
+  if (managed !== false) {
+    return 'Ob die Solution verwaltet ist, ist im CoE nicht erfasst – Löschen deshalb gesperrt.';
+  }
+  if (!r.__envurl) {
+    return 'Für das Environment der Solution ist im CoE keine Dataverse-URL erfasst.';
+  }
+  return '';
+}
+
 /** Verfügbare Aktionen je Ressource und Zustand. */
 export function actionsFor(type: ResourceType, r: IRecord, deleteRequiresStop: boolean): { code: ActionCode; disabled?: string }[] {
+  if (type === 'solution') {
+    return [{ code: 'soldelete', disabled: solutionDeleteBlocked(r) || undefined }];
+  }
   if (type === 'environment') {
     const managed = isManagedEnv(r);
     return [

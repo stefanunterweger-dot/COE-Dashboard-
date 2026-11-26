@@ -51,7 +51,7 @@ export const ActionLogView: React.FC<IActionLogViewProps> = props => {
               <tr key={i.id} className={styles.row}>
                 <td className={styles.td}>{fmt(i.created)}</td>
                 <td className={styles.td}><Icon iconName={ACTION_ICON[i.action] || 'Settings'} /> {ACTION_LABEL[i.action] || i.action}</td>
-                <td className={styles.td}><b>{i.resourceName}</b><div className={styles.metaText}>{i.resourceType === 'flow' ? 'Flow' : i.resourceType === 'environment' ? 'Environment' : 'App'}</div></td>
+                <td className={styles.td}><b>{i.resourceName}</b><div className={styles.metaText}>{i.resourceType === 'flow' ? 'Flow' : i.resourceType === 'environment' ? 'Environment' : i.resourceType === 'solution' ? 'Solution' : 'App'}</div></td>
                 <td className={styles.td}>{i.targetName || i.targetUser || '—'}</td>
                 <td className={styles.td}><Pill tone={TONE[i.status] || 'neutral'}>{i.status}</Pill></td>
                 <td className={styles.td}>{i.result || (i.completedAt ? fmt(i.completedAt) : '—')}</td>

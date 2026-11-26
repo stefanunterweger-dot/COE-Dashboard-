@@ -4,6 +4,7 @@ import { DisplayMode, Version } from '@microsoft/sp-core-library';
 import {
   IPropertyPaneConfiguration,
   IPropertyPaneDropdownOption,
+  IPropertyPaneGroup,
   PropertyPaneButton,
   PropertyPaneButtonType,
   PropertyPaneDropdown,
@@ -19,6 +20,7 @@ import * as strings from 'CoeCockpitWebPartStrings';
 import CoeCockpit, { ICoeCockpitProps } from './components/CoeCockpit';
 import { ITableConfig } from './models/ITableConfig';
 import { getDefaultTables } from './models/defaultTables';
+import { ISettingsValues, IWebPartSettings } from './models/settings';
 import { isValidEnvironmentUrl } from './utils/format';
 import { DataverseService, normalizeDataverseUrl } from './services/DataverseService';
 import { detectManagedAttribute, managedCandidates } from './models/devEnvironments';
@@ -77,6 +79,7 @@ export default class CoeCockpitWebPart extends BaseClientSideWebPart<ICoeCockpit
   private _themeProvider: ThemeProvider | undefined;
   private _theme: IReadonlyTheme | undefined;
   private _editorRequest: number = 0;
+  private _settingsRequest: number = 0;
   private _envOptions: IPropertyPaneDropdownOption[] | undefined;
   private _hostOptions: IPropertyPaneDropdownOption[] | undefined;
   private _groups: ISiteGroup[] | undefined;
@@ -152,7 +155,9 @@ export default class CoeCockpitWebPart extends BaseClientSideWebPart<ICoeCockpit
         this.render();
         this.context.propertyPane.refresh();
       },
-      onConfigure: () => this.context.propertyPane.open()
+      onConfigure: () => this.context.propertyPane.open(),
+      settings: this.displayMode === DisplayMode.Edit ? this._settings() : undefined,
+      settingsRequest: this._settingsRequest
     });
 
     ReactDom.render(element, this.domElement);
@@ -171,6 +176,90 @@ export default class CoeCockpitWebPart extends BaseClientSideWebPart<ICoeCockpit
 
   private _onThemeChanged(args: ThemeChangedEventArgs): void {
     this._theme = args.theme;
+    this.render();
+  }
+
+  /** Werte und Rückrufe für den Bereich „Webpart-Einstellungen“. */
+  private _settings(): IWebPartSettings {
+    const p = this.properties;
+    return {
+      values: {
+        title: p.title || '',
+        subtitle: p.subtitle || '',
+        environmentUrl: (p.environmentUrl || '').trim(),
+        showOverview: p.showOverview !== false,
+        showKpis: p.showKpis !== false,
+        density: p.density === 'compact' ? 'compact' : 'comfortable',
+        pageSize: p.pageSize || 25,
+        maxRecords: p.maxRecords || 20000,
+        showDefaultEnvironment: p.showDefaultEnvironment !== false,
+        defaultEnvironmentId: (p.defaultEnvironmentId || '').trim(),
+        showDevEnvironments: p.showDevEnvironments !== false,
+        devEnvManagedField: (p.devEnvManagedField || '').trim(),
+        showSecurity: p.showSecurity !== false,
+        showCopilotCredits: p.showCopilotCredits !== false,
+        pipelinesHostUrl: normalizeDataverseUrl(p.pipelinesHostUrl) || '',
+        notifyAutoSend: p.notifyAutoSend !== false,
+        notifyTone: p.notifyTone === 'du' ? 'du' : 'sie',
+        notifyReplyDays: p.notifyReplyDays || 14,
+        notifyInfoUrl: p.notifyInfoUrl || '',
+        notifyFeedbackUrl: p.notifyFeedbackUrl || '',
+        notifyCc: p.notifyCc || '',
+        notifySignature: p.notifySignature || '',
+        showActions: p.showActions !== false,
+        actionsGroup: this._groupName,
+        deleteRequiresStop: p.deleteRequiresStop !== false
+      },
+      envOptions: this._environmentDropdownOptions().map(o => ({ key: o.key, text: o.text })),
+      envStatus: this._environmentStatusText(),
+      managedOptions: this._managedFieldOptions().map(o => ({ key: o.key, text: o.text })),
+      managedInfo: this._managedInfoText(),
+      hostOptions: this._pipelineHostOptions().map(o => ({ key: o.key, text: o.text })),
+      groupOptions: this._actionGroupOptions().map(o => ({ key: o.key, text: o.text })),
+      actionSetup: this._actionSetup,
+      actionBusy: this._actionBusy,
+      actionMessage: this._actionMessage,
+      tableCount: (p.tables || []).length,
+      defaultInfoUrl: DEFAULT_INFO_URL,
+      onChange: patch => this._applySettings(patch),
+      onLoad: () => { this._loadEnvironmentOptions(); this._loadActionSetup(); },
+      onActionSetup: kind => this._runActionSetup(kind),
+      onOpenTableEditor: () => this._openEditor(),
+      onOpenPropertyPane: () => this.context.propertyPane.open()
+    };
+  }
+
+  /** Änderungen aus den Webpart-Einstellungen übernehmen – wie eine Änderung im Eigenschaftenbereich. */
+  private _applySettings(patch: Partial<ISettingsValues>): void {
+    const props = this.properties as unknown as { [key: string]: unknown };
+    const values = patch as unknown as { [key: string]: unknown };
+    Object.keys(values).forEach(key => {
+      const oldValue = props[key];
+      const newValue = values[key];
+      if (oldValue === newValue) {
+        return;
+      }
+      props[key] = newValue;
+      this.onPropertyPaneFieldChanged(key, oldValue, newValue);
+    });
+    this.render();
+    this.context.propertyPane.refresh();
+  }
+
+  private _managedInfoText(): string {
+    return !isValidEnvironmentUrl(this.properties.environmentUrl)
+      ? 'Zuerst die URL der CoE-Umgebung eintragen.'
+      : !this._managedOptions
+        ? 'Spalten werden aus dem CoE-Inventar geladen …'
+        : this._managedDetected
+          ? 'Angezeigt werden Developer-Environments, die laut dieser Spalte nicht managed sind.'
+          : 'Keine Managed-Spalte erkannt – ohne Auswahl werden alle Developer-Environments angezeigt.';
+  }
+
+  /** Übersichtliche Webpart-Einstellungen öffnen (aus dem SharePoint-Eigenschaftenbereich heraus). */
+  private _openSettings(): void {
+    this._settingsRequest++;
+    this.context.propertyPane.close();
     this.render();
   }
 
@@ -200,6 +289,7 @@ export default class CoeCockpitWebPart extends BaseClientSideWebPart<ICoeCockpit
       this._groups = groups;
       this._actionSetup = st;
       this.context.propertyPane.refresh();
+      this.render();
     });
   }
 
@@ -213,6 +303,7 @@ export default class CoeCockpitWebPart extends BaseClientSideWebPart<ICoeCockpit
     this._actionBusy = kind === 'group' ? `Gruppe „${name}“ wird angelegt …` : `Liste „${ACTION_LIST_TITLE}“ wird eingerichtet …`;
     this._actionMessage = '';
     this.context.propertyPane.refresh();
+    this.render();
     const job = kind === 'group'
       ? svc.createGroup(name).then(() => { this.properties.actionsGroup = name; return `Gruppe „${name}“ ist angelegt. Du bist erstes Mitglied – weitere Admins über die Websiteberechtigungen hinzufügen.`; })
       : svc.setupList(name).then(() => `Liste „${ACTION_LIST_TITLE}“ ist eingerichtet: nur „${name}“ (Bearbeiten) und die Websitebesitzer (Vollzugriff) haben Zugriff.`);
@@ -290,6 +381,7 @@ export default class CoeCockpitWebPart extends BaseClientSideWebPart<ICoeCockpit
         this._managedDetected = detected ? `${detected.displayName} (${detected.selectName})` : undefined;
         this._managedOptions = managedCandidates(attrs).map(a => ({ key: a.selectName, text: `${a.displayName} (${a.selectName})` }));
         this.context.propertyPane.refresh();
+        this.render();
       },
       () => { this._managedOptions = []; this.context.propertyPane.refresh(); }
     );
@@ -308,6 +400,7 @@ export default class CoeCockpitWebPart extends BaseClientSideWebPart<ICoeCockpit
           text: `${e.name}${e.type ? ` (${e.type})` : ''}`
         }));
         this.context.propertyPane.refresh();
+        this.render();
       },
       (e: Error) => {
         if (this._envLoadedFor !== url) {
@@ -381,6 +474,25 @@ export default class CoeCockpitWebPart extends BaseClientSideWebPart<ICoeCockpit
   }
 
   protected getPropertyPaneConfiguration(): IPropertyPaneConfiguration {
+    const config = this._propertyPaneConfiguration();
+    // Übersichtlicher: oben die Schaltfläche zu den Webpart-Einstellungen, alle Abschnitte außer „Verbindung“ zugeklappt
+    const page = config.pages[0];
+    page.groups = [{
+      groupName: 'Webpart-Einstellungen',
+      groupFields: [
+        PropertyPaneLabel('settingsHint', { text: 'Alle Einstellungen übersichtlich nach Bereichen – mit Status der Einrichtung.' }),
+        PropertyPaneButton('openSettings', {
+          text: 'Webpart-Einstellungen öffnen',
+          buttonType: PropertyPaneButtonType.Primary,
+          icon: 'Settings',
+          onClick: () => { this._openSettings(); return undefined; }
+        })
+      ]
+    } as IPropertyPaneGroup].concat((page.groups as IPropertyPaneGroup[]).map((g, i) => (i === 0 ? g : { ...g, isCollapsed: true })));
+    return config;
+  }
+
+  private _propertyPaneConfiguration(): IPropertyPaneConfiguration {
     const tableCount = (this.properties.tables || []).length;
     return {
       pages: [
@@ -431,13 +543,7 @@ export default class CoeCockpitWebPart extends BaseClientSideWebPart<ICoeCockpit
                   disabled: this.properties.showDevEnvironments === false
                 }),
                 PropertyPaneLabel('devEnvInfo', {
-                  text: !isValidEnvironmentUrl(this.properties.environmentUrl)
-                    ? 'Zuerst die URL der CoE-Umgebung eintragen.'
-                    : !this._managedOptions
-                      ? 'Spalten werden aus dem CoE-Inventar geladen …'
-                      : this._managedDetected
-                        ? 'Angezeigt werden Developer-Environments, die laut dieser Spalte nicht managed sind.'
-                        : 'Keine Managed-Spalte erkannt – ohne Auswahl werden alle Developer-Environments angezeigt.'
+                  text: this._managedInfoText()
                 })
               ]
             },

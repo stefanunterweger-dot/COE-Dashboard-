@@ -1,6 +1,7 @@
 import { IRecord } from './ITableConfig';
 import { DEV_ENV_DEADLINES, DEV_FIELDS, RECOMMENDATION } from './devEnvironments';
 import { displayValue, isMailAddress } from '../utils/format';
+import { IMailTemplateOverrides } from './mailTemplates';
 
 /**
  * E-Mail an die Maker eines betroffenen Developer-Environments.
@@ -35,6 +36,8 @@ export interface INotifySettings {
   cc: string;
   /** Grußzeile, z. B. „Ihr Power-Platform-Team“. */
   signature: string;
+  /** Gepflegte Mail-Texte (nur Abweichungen vom Standard). */
+  templates?: IMailTemplateOverrides;
 }
 
 export interface IMailDraft {

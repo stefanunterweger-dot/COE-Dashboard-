@@ -31,6 +31,8 @@ import { ActionDialog, IActionTarget } from './ActionDialog';
 import { ActionLogView } from './ActionLogView';
 import { CopilotCreditsView } from './CopilotCreditsView';
 import { SolutionContents } from './SolutionContents';
+import { SettingsPanel } from './SettingsPanel';
+import { IWebPartSettings } from '../models/settings';
 import { BILLING_KEY, CREDITS_KEY, GROUP_LICENSING } from '../models/copilotCredits';
 import { PowerPlatformApiService } from '../services/PowerPlatformApiService';
 import { GROUP_GOVERNANCE } from '../models/defaultTables';
@@ -97,6 +99,10 @@ export interface ICoeCockpitProps {
   actionsVersion?: number;
   onTablesChanged: (tables: ITableConfig[]) => void;
   onConfigure: () => void;
+  /** Werte und Rückrufe für den Bereich „Webpart-Einstellungen“ (nur im Bearbeitungsmodus angeboten). */
+  settings?: IWebPartSettings;
+  /** Zähler: erhöht sich, wenn der Bereich „Webpart-Einstellungen“ geöffnet werden soll (aus dem Eigenschaftenbereich). */
+  settingsRequest?: number;
 }
 
 interface IDefaultEnvState {
@@ -178,6 +184,13 @@ function writeHidden(storageKey: string, value: { [tableKey: string]: string[] }
 const PAGE_SIZES = [10, 25, 50, 100];
 /** Bereich für Tabellen ohne eigene Gruppe. */
 const DEFAULT_GROUP = 'Inventar';
+/** Felder für die Aktionen je Tabelle (werden für den geöffneten Datensatz direkt nachgeladen). */
+const ACTION_FIELDS: { [logicalName: string]: string[] } = {
+  admin_app: ['admin_appid', 'admin_appenvironmentid', 'admin_issolutionapp', 'admin_appisquarantined', 'admin_quarantineapp', 'admin_appdeleted'],
+  admin_flow: ['admin_flowid', 'admin_flowidstring', 'admin_flowenvironmentid', 'admin_issolutionflow', 'admin_flowstate', 'admin_flowdeleted'],
+  admin_solution: ['admin_solutionid', 'admin_solutionenvtobjectguidstring', 'admin_solutionismanaged', 'admin_solutiondeleted', 'admin_name',
+    'admin_solutiondisplayname', 'admin_solutionpublisher', '_admin_solutionenvironment_value']
+};
 /** Bereich für die Übersicht (Startseite). */
 const START_GROUP = 'Start';
 /** Bereich für berechnete Ansichten (Default Environment, Betroffen ab 15.12.). */
@@ -253,7 +266,22 @@ const CoeCockpit: React.FC<ICoeCockpitProps> = props => {
   /** Geöffnete Datensätze (Detailansicht); mehrere = durchgeklickt, „Zurück“ führt zum vorherigen. */
   const [panelStack, setPanelStack] = React.useState<{ table: ITableConfig; record: IRecord; meta?: IEntityMeta }[]>([]);
   const panel = panelStack.length ? panelStack[panelStack.length - 1] : undefined;
+  /**
+   * Felder, die die Aktionen brauchen (Solution-Kennzeichen, Quarantäne, Flow-Status, IDs). Sie werden für den geöffneten
+   * Datensatz immer direkt geladen – unabhängig davon, ob sie in den (evtl. älteren) gespeicherten Tabelleneinstellungen stehen.
+   */
+  const [actionExtra, setActionExtra] = React.useState<{ [key: string]: IRecord }>({});
+  const [actionExtraTick, setActionExtraTick] = React.useState<number>(0);
+  const actionExtraKey = panel && ACTION_FIELDS[panel.table.logicalName] && !panel.table.environmentUrl && !panel.table.virtual
+    ? `${panel.table.logicalName}:${String(panel.record[(panel.meta && panel.meta.primaryId) || `${panel.table.logicalName}id`] || '')}`
+    : '';
+  const actionExtraPending = !!actionExtraKey && !actionExtra[actionExtraKey];
+  /** Datensatz für die Aktionen: Listenzeile + direkt geladene Aktionsfelder. */
+  const actionRecord = (): IRecord | undefined => (panel ? { ...panel.record, ...(actionExtraKey ? actionExtra[actionExtraKey] || {} : {}) } : undefined);
   const [editorOpen, setEditorOpen] = React.useState<boolean>(false);
+  const [settingsOpen, setSettingsOpen] = React.useState<boolean>(false);
+  /** „Eigenschaften öffnen“: übersichtliche Webpart-Einstellungen, sonst der SharePoint-Eigenschaftenbereich. */
+  const openSettings = (): void => (props.settings ? setSettingsOpen(true) : props.onConfigure());
   /** Environment, für das die E-Mail an die Maker vorbereitet wird. */
   const [notifyRecord, setNotifyRecord] = React.useState<IRecord | undefined>(undefined);
   const [addressesCopied, setAddressesCopied] = React.useState<string>('');
@@ -404,6 +432,7 @@ const CoeCockpit: React.FC<ICoeCockpitProps> = props => {
   React.useEffect(() => { setPageSize(props.pageSize || 25); }, [props.pageSize]);
   React.useEffect(() => { setCompact(props.density === 'compact'); }, [props.density]);
   React.useEffect(() => { if (props.editorRequest > 0) { setEditorOpen(true); } }, [props.editorRequest]);
+  React.useEffect(() => { if ((props.settingsRequest || 0) > 0 && props.settings) { setSettingsOpen(true); } }, [props.settingsRequest]);
 
   React.useEffect(() => {
     const waitingForDefault = (props.showDefaultEnvironment && isDefaultEnvKey(activeKey)) || (props.showOverview && activeKey === OVERVIEW_KEY)
@@ -937,7 +966,7 @@ const CoeCockpit: React.FC<ICoeCockpitProps> = props => {
       </div>
       {isEditMode && (
         <div className={styles.stateActions}>
-          <PrimaryButton text="Eigenschaften öffnen" iconProps={{ iconName: 'Settings' }} onClick={props.onConfigure} />
+          <PrimaryButton text="Webpart-Einstellungen" iconProps={{ iconName: 'Settings' }} onClick={openSettings} />
         </div>
       )}
     </div>
@@ -973,7 +1002,7 @@ const CoeCockpit: React.FC<ICoeCockpitProps> = props => {
           {defaultEnv.error && <p className={`${styles.stateText} ${styles.mono}`}>{defaultEnv.error}</p>}
           {isEditMode && (
             <div className={styles.stateActions}>
-              <PrimaryButton text="Eigenschaften öffnen" iconProps={{ iconName: 'Settings' }} onClick={props.onConfigure} />
+              <PrimaryButton text="Webpart-Einstellungen" iconProps={{ iconName: 'Settings' }} onClick={openSettings} />
             </div>
           )}
         </div>
@@ -1281,7 +1310,7 @@ const CoeCockpit: React.FC<ICoeCockpitProps> = props => {
           <p className={styles.stateText}>{activeTable.unavailable}</p>
           {isEditMode && (
             <div className={styles.stateActions}>
-              <DefaultButton text="Eigenschaften öffnen" iconProps={{ iconName: 'Settings' }} onClick={props.onConfigure} />
+              <DefaultButton text="Webpart-Einstellungen" iconProps={{ iconName: 'Settings' }} onClick={openSettings} />
             </div>
           )}
         </div>
@@ -1431,16 +1460,17 @@ const CoeCockpit: React.FC<ICoeCockpitProps> = props => {
       });
     }
     // Environment-Aktionen nur in der Auswertung „Betroffen ab 15.12.“, App/Flow-Aktionen in Apps und Flows
-    const res = canAct && (isDev || panel.table.logicalName !== 'admin_environment') ? resourceOf(panel.table.logicalName, panel.record) : undefined;
-    if (res && panel.record.admin_appdeleted !== true && panel.record.admin_flowdeleted !== true) {
+    const rec = actionRecord() || panel.record;
+    const res = canAct && (isDev || panel.table.logicalName !== 'admin_environment') ? resourceOf(panel.table.logicalName, rec) : undefined;
+    if (res && rec.admin_appdeleted !== true && rec.admin_flowdeleted !== true && rec.admin_solutiondeleted !== true) {
       const pending = (actionItems || []).some(i => i.resourceId === res.id && (i.status === 'Angefordert' || i.status === 'In Arbeit'));
-      actionsFor(res.type, panel.record, props.deleteRequiresStop).forEach(a => out.push({
+      actionsFor(res.type, rec, props.deleteRequiresStop).forEach(a => out.push({
         key: a.code,
         text: ACTION_LABEL[a.code].replace(' (Benutzer)', '').replace(' (Mitbesitzer)', ''),
         icon: ACTION_ICON[a.code],
-        disabled: !!a.disabled || pending,
-        title: pending ? 'Für diese Ressource läuft bereits ein Auftrag.' : a.disabled,
-        onClick: () => setActionTarget({ logicalName: panel.table.logicalName, record: panel.record, code: a.code })
+        disabled: !!a.disabled || pending || actionExtraPending,
+        title: actionExtraPending ? 'Daten für die Aktionen werden geladen …' : pending ? 'Für diese Ressource läuft bereits ein Auftrag.' : a.disabled,
+        onClick: () => setActionTarget({ logicalName: panel.table.logicalName, record: rec, code: a.code })
       }));
     }
     return out.length ? out : undefined;
@@ -1448,7 +1478,7 @@ const CoeCockpit: React.FC<ICoeCockpitProps> = props => {
 
   /** Warum im Bereich „Aktionen“ nichts angeboten wird. */
   const panelActionsNote = (): string => {
-    if (!panel || !(panel.table.logicalName === 'admin_app' || panel.table.logicalName === 'admin_flow' || panel.table.key === DEV_ENV_KEY)) {
+    if (!panel || !(panel.table.logicalName === 'admin_app' || panel.table.logicalName === 'admin_flow' || panel.table.logicalName === 'admin_solution' || panel.table.key === DEV_ENV_KEY)) {
       return 'Für diesen Bereich gibt es keine Aktionen.';
     }
     if (!props.showActions) {
@@ -1466,9 +1496,57 @@ const CoeCockpit: React.FC<ICoeCockpitProps> = props => {
     return 'Für diesen Datensatz gibt es keine Aktionen.';
   };
 
+  // Aktionsfelder des geöffneten Datensatzes direkt laden (alle Spalten, damit ältere CoE-Versionen ohne einzelne Felder nicht scheitern)
+  React.useEffect(() => {
+    if (!actionExtraKey || !service || !props.showActions) {
+      return;
+    }
+    let cancelled = false;
+    const sep = actionExtraKey.indexOf(':');
+    const logical = actionExtraKey.substring(0, sep);
+    const id = actionExtraKey.substring(sep + 1);
+    const done = (rec: IRecord): void => {
+      if (!cancelled) {
+        setActionExtra(prev => ({ ...prev, [actionExtraKey]: rec }));
+      }
+    };
+    if (!id) {
+      done({});
+      return;
+    }
+    service.getRecord(logical, id).then(async full => {
+      const picked: IRecord = {};
+      ACTION_FIELDS[logical].forEach(f => {
+        if (f in full) {
+          picked[f] = full[f];
+        }
+      });
+      // Solution: Dataverse-URL des Environments (für „Solution löschen“)
+      const envId = logical === 'admin_solution' ? String(full._admin_solutionenvironment_value || '') : '';
+      if (envId) {
+        try {
+          const env = await service.getRecord('admin_environment', envId);
+          picked.__envurl = String(env.admin_environmentcdsinstanceurl || '').replace(/\/+$/, '');
+        } catch {
+          // ohne URL bleibt „Solution löschen“ gesperrt
+        }
+      }
+      done(picked);
+    }, () => done({}));
+    return () => { cancelled = true; };
+  }, [actionExtraKey, service, props.showActions, actionExtraTick]);
+
   /** Geöffneten Datensatz neu laden (nach einer Aktion); gelöschte schließen das Panel. */
   const refreshPanelRecord = (finished?: IActionItem): void => {
     const top = panel;
+    if (actionExtraKey) {
+      setActionExtra(prev => {
+        const next = { ...prev };
+        delete next[actionExtraKey];
+        return next;
+      });
+      setActionExtraTick(t => t + 1);
+    }
     if (top && top.table.virtual) {
       // Berechnete Tabelle (Betroffen ab 15.12.): Zustand lokal nachführen, Tabelle neu laden
       if (finished && finished.status === 'Erledigt') {
@@ -1500,7 +1578,8 @@ const CoeCockpit: React.FC<ICoeCockpitProps> = props => {
 
   /** Letzte Aufträge zur geöffneten App bzw. zum geöffneten Flow. */
   const panelActionHistory = (): JSX.Element | undefined => {
-    const res = panel && canAct ? resourceOf(panel.table.logicalName, panel.record) : undefined;
+    const rec = actionRecord();
+    const res = panel && rec && canAct ? resourceOf(panel.table.logicalName, rec) : undefined;
     const list = res ? (actionItems || []).filter(i => i.resourceId === res.id).slice(0, 3) : [];
     if (!list.length) {
       return undefined;
@@ -1621,7 +1700,10 @@ const CoeCockpit: React.FC<ICoeCockpitProps> = props => {
               </TooltipHost>
             )}
             {isEditMode && (
-              <DefaultButton text="Tabellen verwalten" iconProps={{ iconName: 'Settings' }} onClick={() => setEditorOpen(true)} styles={{ root: { borderRadius: 6 } }} />
+              <DefaultButton text="Tabellen verwalten" iconProps={{ iconName: 'Table' }} onClick={() => setEditorOpen(true)} styles={{ root: { borderRadius: 6 } }} />
+            )}
+            {isEditMode && (
+              <DefaultButton text="Webpart-Einstellungen" iconProps={{ iconName: 'Settings' }} onClick={openSettings} styles={{ root: { borderRadius: 6 } }} />
             )}
           </div>
         </header>
@@ -1760,6 +1842,19 @@ const CoeCockpit: React.FC<ICoeCockpitProps> = props => {
           onDismiss={() => setEditorOpen(false)}
           onSave={t => { props.onTablesChanged(t); setEditorOpen(false); }}
         />
+
+        {props.settings && (
+          <SettingsPanel
+            isOpen={settingsOpen}
+            settings={{
+              ...props.settings,
+              onOpenTableEditor: () => { setSettingsOpen(false); setEditorOpen(true); },
+              onOpenPropertyPane: () => { setSettingsOpen(false); props.settings!.onOpenPropertyPane(); }
+            }}
+            themeVars={themeVars}
+            onDismiss={() => setSettingsOpen(false)}
+          />
+        )}
       </section>
     </ThemeProvider>
   );

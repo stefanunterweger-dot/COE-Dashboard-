@@ -1907,6 +1907,183 @@
                               }
                             }
                           }
+                        },
+                        "Fall_soldelete": {
+                          "case": "soldelete",
+                          "actions": {
+                            "Nur_Solution_soldelete": {
+                              "type": "If",
+                              "expression": {
+                                "equals": [
+                                  "@triggerOutputs()?['body/ResourceType']",
+                                  "solution"
+                                ]
+                              },
+                              "actions": {
+                                "Solution_lesen_soldelete": {
+                                  "type": "OpenApiConnection",
+                                  "inputs": {
+                                    "host": {
+                                      "connectionName": "shared_commondataserviceforapps",
+                                      "operationId": "GetItemWithOrganization",
+                                      "apiId": "/providers/Microsoft.PowerApps/apis/shared_commondataserviceforapps"
+                                    },
+                                    "parameters": {
+                                      "organization": "@triggerOutputs()?['body/EnvironmentId']",
+                                      "entityName": "solutions",
+                                      "recordId": "@triggerOutputs()?['body/ResourceId']",
+                                      "$select": "uniquename,ismanaged,isvisible"
+                                    },
+                                    "authentication": "@parameters('$authentication')"
+                                  }
+                                },
+                                "Solution_lesen_Fehler_soldelete": {
+                                  "type": "SetVariable",
+                                  "inputs": {
+                                    "name": "Fehler",
+                                    "value": "@{coalesce(body('Solution_lesen_soldelete')?['error']?['message'], body('Solution_lesen_soldelete')?['message'], actions('Solution_lesen_soldelete')?['error']?['message'], 'Aktion Solution_lesen_soldelete ist fehlgeschlagen.')}"
+                                  },
+                                  "runAfter": {
+                                    "Solution_lesen_soldelete": [
+                                      "Failed",
+                                      "TimedOut"
+                                    ]
+                                  }
+                                },
+                                "Loeschen_erlaubt_soldelete": {
+                                  "type": "If",
+                                  "runAfter": {
+                                    "Solution_lesen_soldelete": [
+                                      "Succeeded"
+                                    ]
+                                  },
+                                  "expression": {
+                                    "and": [
+                                      {
+                                        "equals": [
+                                          "@body('Solution_lesen_soldelete')?['ismanaged']",
+                                          false
+                                        ]
+                                      },
+                                      {
+                                        "not": {
+                                          "contains": [
+                                            "@createArray('default','active','basic','system','crmservicesolution')",
+                                            "@toLower(coalesce(body('Solution_lesen_soldelete')?['uniquename'], ''))"
+                                          ]
+                                        }
+                                      }
+                                    ]
+                                  },
+                                  "actions": {
+                                    "Solution_loeschen_soldelete": {
+                                      "type": "OpenApiConnection",
+                                      "inputs": {
+                                        "host": {
+                                          "connectionName": "shared_commondataserviceforapps",
+                                          "operationId": "DeleteRecordWithOrganization",
+                                          "apiId": "/providers/Microsoft.PowerApps/apis/shared_commondataserviceforapps"
+                                        },
+                                        "parameters": {
+                                          "organization": "@triggerOutputs()?['body/EnvironmentId']",
+                                          "entityName": "solutions",
+                                          "recordId": "@triggerOutputs()?['body/ResourceId']"
+                                        },
+                                        "authentication": "@parameters('$authentication')",
+                                        "retryPolicy": {
+                                          "type": "exponential",
+                                          "count": 4,
+                                          "interval": "PT15S"
+                                        }
+                                      }
+                                    },
+                                    "Solution_loeschen_Fehler_soldelete": {
+                                      "type": "SetVariable",
+                                      "inputs": {
+                                        "name": "Fehler",
+                                        "value": "@{coalesce(body('Solution_loeschen_soldelete')?['error']?['message'], body('Solution_loeschen_soldelete')?['message'], actions('Solution_loeschen_soldelete')?['error']?['message'], 'Aktion Solution_loeschen_soldelete ist fehlgeschlagen.')}"
+                                      },
+                                      "runAfter": {
+                                        "Solution_loeschen_soldelete": [
+                                          "Failed",
+                                          "TimedOut"
+                                        ]
+                                      }
+                                    },
+                                    "Ergebnis_setzen_soldelete": {
+                                      "type": "SetVariable",
+                                      "inputs": {
+                                        "name": "Ergebnis",
+                                        "value": "Die Solution wurde gelöscht. Ihre Komponenten (Apps, Flows, Tabellen …) bleiben im Environment erhalten."
+                                      },
+                                      "runAfter": {
+                                        "Solution_loeschen_soldelete": [
+                                          "Succeeded"
+                                        ]
+                                      }
+                                    },
+                                    "CoE_Solution_geloescht_soldelete": {
+                                      "type": "OpenApiConnection",
+                                      "inputs": {
+                                        "host": {
+                                          "connectionName": "shared_commondataserviceforapps",
+                                          "operationId": "UpdateRecord",
+                                          "apiId": "/providers/Microsoft.PowerApps/apis/shared_commondataserviceforapps"
+                                        },
+                                        "parameters": {
+                                          "entityName": "admin_solutions",
+                                          "recordId": "@triggerOutputs()?['body/CoeRecordId']",
+                                          "item/admin_solutiondeleted": true,
+                                          "item/admin_solutiondeletedon": "@utcNow()"
+                                        },
+                                        "authentication": "@parameters('$authentication')"
+                                      },
+                                      "runAfter": {
+                                        "Ergebnis_setzen_soldelete": [
+                                          "Succeeded"
+                                        ]
+                                      }
+                                    },
+                                    "CoE_Solution_geloescht_Hinweis_soldelete": {
+                                      "type": "AppendToStringVariable",
+                                      "inputs": {
+                                        "name": "Hinweis",
+                                        "value": " (CoE-Inventar nicht aktualisiert: @{coalesce(body('CoE_Solution_geloescht_soldelete')?['error']?['message'], body('CoE_Solution_geloescht_soldelete')?['message'], actions('CoE_Solution_geloescht_soldelete')?['error']?['message'], 'Aktion CoE_Solution_geloescht_soldelete ist fehlgeschlagen.')})"
+                                      },
+                                      "runAfter": {
+                                        "CoE_Solution_geloescht_soldelete": [
+                                          "Failed",
+                                          "TimedOut"
+                                        ]
+                                      }
+                                    }
+                                  },
+                                  "else": {
+                                    "actions": {
+                                      "Abgelehnt_verwaltet_soldelete": {
+                                        "type": "SetVariable",
+                                        "inputs": {
+                                          "name": "Abgelehnt",
+                                          "value": "Verwaltete Solutions und System-Solutions werden nicht gelöscht (Deinstallation nur über das Admin Center bzw. ALM)."
+                                        }
+                                      }
+                                    }
+                                  }
+                                }
+                              },
+                              "else": {
+                                "actions": {
+                                  "Abgelehnt_keine_Solution_soldelete": {
+                                    "type": "SetVariable",
+                                    "inputs": {
+                                      "name": "Abgelehnt",
+                                      "value": "Diese Aktion gibt es nur für Solutions."
+                                    }
+                                  }
+                                }
+                              }
+                            }
+                          }
                         }
                       },
                       "default": {

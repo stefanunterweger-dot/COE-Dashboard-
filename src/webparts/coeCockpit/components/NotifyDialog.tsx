@@ -6,7 +6,7 @@ import { MessageBar, MessageBarType } from '@fluentui/react/lib/MessageBar';
 import { Icon } from '@fluentui/react/lib/Icon';
 import styles from './CoeCockpit.module.scss';
 import { IRecord } from '../models/ITableConfig';
-import { buildDevEnvMail, emlDraft, INotifySettings, MAILTO_LIMIT, mailtoUrl } from '../models/notification';
+import { buildDevEnvMail, emlDraft, IMailDraft, INotifySettings, MAILTO_LIMIT, mailtoUrl } from '../models/notification';
 import { displayValue } from '../utils/format';
 import { MailError, MailService, NOT_APPROVED_HINT } from '../services/MailService';
 import { describeEntry, INotifyEntry, NotifyMethod } from '../services/NotifyLogService';
@@ -32,6 +32,14 @@ export interface INotifyDialogProps {
   /** Versand im gemeinsamen Protokoll vermerken. */
   onLogged: (record: IRecord, method: NotifyMethod, subject: string, to: string[]) => Promise<void>;
   onDismiss: () => void;
+  /** Fertige Mail (z. B. „Nachfrage Verwendung“); ohne: Mail für ein Developer-Environment. */
+  draft?: IMailDraft;
+  /** Titel und Untertitel des Dialogs, Dateiname des Entwurfs und Texte (für andere Mail-Arten). */
+  title?: string;
+  subText?: string;
+  fileLabel?: string;
+  noRecipientText?: string;
+  alreadyLabel?: string;
 }
 
 /** So viele Empfänger werden im Dialog einzeln gezeigt, der Rest als „+N“. */
@@ -139,7 +147,10 @@ type Done = '' | 'pasted' | 'plain' | 'eml' | 'addresses' | 'copyFailed' | 'sent
 
 export const NotifyDialog: React.FC<INotifyDialogProps> = props => {
   const { record, settings } = props;
-  const draft = React.useMemo(() => (record ? buildDevEnvMail(record, settings, new Date(), props.accent) : undefined), [record, settings, props.accent]);
+  const draft = React.useMemo(
+    () => (props.draft ? props.draft : record ? buildDevEnvMail(record, settings, new Date(), props.accent) : undefined),
+    [record, settings, props.accent, props.draft]
+  );
   const [subject, setSubject] = React.useState<string>('');
   const [done, setDone] = React.useState<Done>('');
   const [allRecipients, setAllRecipients] = React.useState<boolean>(false);
@@ -181,7 +192,7 @@ export const NotifyDialog: React.FC<INotifyDialogProps> = props => {
   /** Schon Empfänger + Betreff sprengen die Länge – dann Adressen über die Zwischenablage. */
   const tooManyRecipients = !noRecipients && headerUrl.length > MAILTO_LIMIT;
   const shownTo = allRecipients ? draft.to : draft.to.slice(0, SHOW_RECIPIENTS);
-  const fileName = safeFileName(`Benachrichtigung ${env}`) + '.eml';
+  const fileName = safeFileName(props.fileLabel || `Benachrichtigung ${env}`) + '.eml';
 
   const openOutlook = (): void => {
     copyRich(draft.html, draft.body).then(ok => {
@@ -205,8 +216,8 @@ export const NotifyDialog: React.FC<INotifyDialogProps> = props => {
       maxWidth={820}
       dialogContentProps={{
         type: DialogType.normal,
-        title: 'Maker per E-Mail verständigen',
-        subText: `Environment „${env}“ – die E-Mail wird in deinem Outlook geöffnet und erst dort von dir gesendet.`
+        title: props.title || 'Maker per E-Mail verständigen',
+        subText: props.subText || `Environment „${env}“ – die E-Mail wird in deinem Outlook geöffnet und erst dort von dir gesendet.`
       }}
       modalProps={{ isBlocking: false, styles: { main: { maxWidth: 'calc(100vw - 32px) !important' } } }}
     >
@@ -215,7 +226,7 @@ export const NotifyDialog: React.FC<INotifyDialogProps> = props => {
           <span className={styles.notifyLabel}>An</span>
           <span className={styles.notifyValue}>
             {noRecipients
-              ? <span className={styles.notifyWarn}><Icon iconName="Warning" /> Für dieses Environment ist im CoE kein Maker mit E-Mail-Adresse erfasst.</span>
+              ? <span className={styles.notifyWarn}><Icon iconName="Warning" /> {props.noRecipientText || 'Für dieses Environment ist im CoE kein Maker mit E-Mail-Adresse erfasst.'}</span>
               : shownTo.map(a => <span key={a} className={styles.notifyChip}>{a}</span>)}
             {!allRecipients && draft.to.length > SHOW_RECIPIENTS && (
               <button type="button" className={styles.textButton} onClick={() => setAllRecipients(true)}>
@@ -232,7 +243,7 @@ export const NotifyDialog: React.FC<INotifyDialogProps> = props => {
         )}
         {props.notified && !marked && (
           <MessageBar messageBarType={MessageBarType.severeWarning} isMultiline={true}>
-            <b>Bereits verständigt</b> – {describeEntry(props.notified)}. Bitte nur erneut senden, wenn das wirklich nötig ist.
+            <b>{props.alreadyLabel || 'Bereits verständigt'}</b> – {describeEntry(props.notified)}. Bitte nur erneut senden, wenn das wirklich nötig ist.
           </MessageBar>
         )}
         {props.logProblem && <MessageBar messageBarType={MessageBarType.warning} isMultiline={true}>Versandprotokoll nicht verfügbar: {props.logProblem}</MessageBar>}

@@ -67,6 +67,7 @@ function simulateFlow(item: Record<string, unknown>): void {
       const app = coe.admin_app.rows.filter(r => String(r.admin_appid).toLowerCase() === id)[0];
       const flow = coe.admin_flow.rows.filter(r => String(r.admin_flowid).toLowerCase() === id)[0];
       const env = coe.admin_environment.rows.filter(r => String(r.admin_environmentid).toLowerCase() === id)[0];
+      const sol = coe.admin_solution.rows.filter(r => String(r.admin_solutionid).toLowerCase() === id)[0];
       let result = 'Ausgeführt (Vorschau – simulierter Flow).';
       switch (item.Action) {
         case 'quarantine': if (app) { app.admin_appisquarantined = true; app.admin_quarantineapp = true; } break;
@@ -77,6 +78,17 @@ function simulateFlow(item: Record<string, unknown>): void {
         case 'envmanaged': if (env) { env.admin_governanceprotectionlevel = 'Standard'; } break;
         case 'envdisable': if (env) { env.admin_environmentruntimestate = 'Disabled'; } break;
         case 'envenable': if (env) { env.admin_environmentruntimestate = 'Enabled'; } break;
+        case 'soldelete':
+          if (sol && sol.admin_solutionismanaged === false) {
+            sol.admin_solutiondeleted = true;
+            result = 'Die Solution wurde gelöscht; ihre Komponenten bleiben im Environment (Vorschau – simulierter Flow).';
+          } else {
+            item.Status = 'Abgelehnt';
+            item.Result = 'Verwaltete Solution – nicht gelöscht.';
+            item.CompletedAt = new Date().toISOString();
+            return;
+          }
+          break;
         default: result = `Ausgeführt für ${item.TargetName || item.TargetUser} (Vorschau – simulierter Flow).`;
       }
       item.Status = 'Erledigt';

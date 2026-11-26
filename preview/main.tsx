@@ -8,6 +8,8 @@ import { AadHttpClientFactory, MSGraphClientFactory, SPHttpClient } from './shim
 import { seedActions, seedNotifyEntry } from './mock/sharepoint';
 import { ACTION_TIMING } from '../src/webparts/coeCockpit/components/ActionDialog';
 import { resetCreditsCache } from '../src/webparts/coeCockpit/components/CopilotCreditsView';
+import { IWebPartSettings } from '../src/webparts/coeCockpit/models/settings';
+import { ActionService, IActionSetupState } from '../src/webparts/coeCockpit/services/ActionService';
 
 // Vorschau: Aktionen sind eingerichtet (Gruppe „CoE Cockpit Admins“ mit dem angemeldeten Admin, Liste vorhanden)
 seedActions();
@@ -69,7 +71,15 @@ if (seededEnv) {
 }
 
 const App: React.FC = () => {
-  const [tables, setTables] = React.useState<ITableConfig[]>(getDefaultTables());
+  // ?alteTabellen=1: gespeicherte Tabelleneinstellungen eines älteren Webparts nachstellen (ohne die unsichtbaren Aktionsspalten)
+  const [tables, setTables] = React.useState<ITableConfig[]>(() => {
+    const t = getDefaultTables();
+    if (!/[?&]alteTabellen=1/.test(window.location.search)) {
+      return t;
+    }
+    const drop = ['admin_issolutionapp', 'admin_issolutionflow', 'admin_appisquarantined', 'admin_quarantineapp'];
+    return t.map(x => ({ ...x, columns: x.columns.filter(c => drop.indexOf(c.field) < 0) }));
+  });
   const [editMode, setEditMode] = React.useState<boolean>(true);
   const [dark, setDark] = React.useState<boolean>(false);
   const [red, setRed] = React.useState<boolean>(false);
@@ -94,7 +104,14 @@ const App: React.FC = () => {
     notifyReplyDays: 14,
     notifyFeedbackUrl: '',
     notifyCc: 'powerplatform@contoso.com',
-    notifySignature: ''
+    notifySignature: '',
+    notifyInfoUrl: '',
+    notifyAutoSend: true,
+    showOverview: true,
+    showCopilotCredits: true,
+    showActions: true,
+    actionsGroup: 'CoE Cockpit Admins',
+    deleteRequiresStop: true
   });
   const notify = React.useMemo(() => ({
     formal: p.notifyTone !== 'du', replyDays: p.notifyReplyDays, infoUrl: DEFAULT_INFO_URL,
@@ -111,6 +128,45 @@ const App: React.FC = () => {
   const graphFactory = React.useMemo(() => new MSGraphClientFactory(), []);
   const spClient = React.useMemo(() => new SPHttpClient(), []);
   const set = (patch: Partial<typeof p>): void => setP(prev => ({ ...prev, ...patch }));
+
+  // Webpart-Einstellungen (in SharePoint liefert das Webpart diese Werte und Rückrufe)
+  const actionSvc = React.useMemo(() => new ActionService(spClient as never, 'https://contoso.sharepoint.com/sites/powerplatform'), [spClient]);
+  const [setup, setSetup] = React.useState<{ groups: string[]; state?: IActionSetupState; busy: string; message: string }>({ groups: [], busy: '', message: '' });
+  const loadSetup = (group: string): void => {
+    Promise.all([actionSvc.listGroups(), actionSvc.getSetupState(group)]).then(([g, st]) => setSetup(prev => ({ ...prev, groups: g.map(x => x.title), state: st })));
+  };
+  const settings: IWebPartSettings = {
+    values: { ...p, notifyInfoUrl: p.notifyInfoUrl },
+    envOptions: [{ key: '', text: 'Automatisch erkennen (Umgebungstyp „Default“)' }].concat(
+      environments.map(e => ({ key: String(e.admin_environmentid), text: `${e.admin_displayname} (${e.admin_environmentsku})` }))),
+    envStatus: `${environments.length} Umgebungen aus dem CoE-Inventar verfügbar.`,
+    managedOptions: [{ key: '', text: 'Automatisch: Governance Protection Level (admin_governanceprotectionlevel)' }, { key: 'admin_governanceprotectionlevel', text: 'Governance Protection Level (admin_governanceprotectionlevel)' }],
+    managedInfo: 'Angezeigt werden Developer-Environments, die laut dieser Spalte nicht managed sind.',
+    hostOptions: [{ key: '', text: 'Keine – ALM-Pipelines ausblenden' }].concat(
+      environments.filter(e => !!e.admin_environmentcdsinstanceurl).map(e => ({ key: String(e.admin_environmentcdsinstanceurl).replace(/\/$/, ''), text: `${e.admin_displayname} (${e.admin_environmentsku})` }))),
+    groupOptions: (setup.groups.indexOf(p.actionsGroup) < 0 ? [p.actionsGroup] : []).concat(setup.groups).map(g => ({ key: g, text: g })),
+    actionSetup: setup.state,
+    actionBusy: setup.busy,
+    actionMessage: setup.message,
+    tableCount: tables.length,
+    defaultInfoUrl: DEFAULT_INFO_URL,
+    onChange: patch => {
+      set(patch as Partial<typeof p>);
+      if (patch.actionsGroup) {
+        loadSetup(patch.actionsGroup);
+      }
+    },
+    onLoad: () => loadSetup(p.actionsGroup),
+    onActionSetup: kind => {
+      setSetup(prev => ({ ...prev, busy: kind === 'group' ? 'Gruppe wird angelegt …' : 'Liste wird eingerichtet …', message: '' }));
+      (kind === 'group' ? actionSvc.createGroup(p.actionsGroup) : actionSvc.setupList(p.actionsGroup)).then(
+        () => setSetup(prev => ({ ...prev, busy: '', message: kind === 'group' ? 'Gruppe ist angelegt.' : 'Liste ist eingerichtet.' })),
+        (e: Error) => setSetup(prev => ({ ...prev, busy: '', message: `Fehler: ${e.message}` }))
+      ).then(() => loadSetup(p.actionsGroup));
+    },
+    onOpenTableEditor: () => setEditorRequest(n => n + 1),
+    onOpenPropertyPane: () => setPaneOpen(true)
+  };
 
   return (
     <div className={`page ${dark ? 'pageDark' : ''}`}>
@@ -149,16 +205,17 @@ const App: React.FC = () => {
           defaultEnvironmentId={p.defaultEnvironmentId}
           defaultEnvironmentDataverseUrl={p.defaultEnvironmentDataverseUrl}
           showDevEnvironments={p.showDevEnvironments}
-          showOverview={true}
+          showOverview={p.showOverview}
           devEnvManagedField={p.devEnvManagedField}
           showSecurity={p.showSecurity}
-          showCopilotCredits={true}
+          showCopilotCredits={p.showCopilotCredits}
           pipelinesHostUrl={p.pipelinesHostUrl}
           notify={notify}
-          notifyAutoSend={true}
-          showActions={true}
-          actionsGroup="CoE Cockpit Admins"
-          deleteRequiresStop={true}
+          notifyAutoSend={p.notifyAutoSend}
+          showActions={p.showActions}
+          actionsGroup={p.actionsGroup}
+          deleteRequiresStop={p.deleteRequiresStop}
+          settings={editMode ? settings : undefined}
           onTablesChanged={t => setTables(t)}
           onConfigure={() => setPaneOpen(true)}
         />

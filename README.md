@@ -32,6 +32,7 @@ direkt aus den Dataverse-Tabellen des CoE; nur **Copilot-Credits / Abrechnungspl
 | Betroffen ab 15.12. | Alle **nicht verwalteten Developer-Environments** (Sperre 15.12.2026, Löschung ab 15.01.2027) mit Ersteller, Zustand, Anzahl Apps/Flows. Managed-Status aus „Governance Protection Level“ („Basic“ = nicht managed), per Auswahl in den Eigenschaften änderbar. |
 | E-Mail an Maker | Im Reiter „Betroffen ab 15.12.“ öffnet das **Brief-Symbol** am Zeilenanfang (oder die Schaltfläche in der Detailansicht) eine **Vorschau der formatierten E-Mail** an alle Maker des Environments: Kopfbalken in der Theme-Farbe, Fristen-Kacheln (Rückmeldung, Sperre 15.12.2026, Löschung 15.01.2027), Steckbrief mit **Link zum Environment in make.powerapps.com**, Schaltfläche „Environment in Power Apps öffnen“, nummerierte **Rückmelde-Optionen** (1 = weiter benötigt → Managed + Premium-Lizenz, 2 = löschen, 3 = umziehen; optional Formular), Tipp zum Sichern (Solutions exportieren) und die **offizielle Microsoft-Ankündigung** (Abschnitt „Deprecation of unmanaged developer environments …“ auf Microsoft Learn). „In Outlook öffnen“ lädt die fertige Mail als Outlook-Entwurf (.eml) herunter – Datei öffnen, Outlook zeigt sie mit Empfängern, Betreff und formatiertem Text. Alternativ „Über Zwischenablage“ (Empfänger/Betreff per Link, Text mit Strg+V). Die Mail ist „Outlook-fest“ aufgebaut (Tabellen, Farben direkt am Text, keine runden Elemente), damit sie auch im klassischen Outlook sauber aussieht. Mit **„Direkt senden“** geht die Mail ohne Outlook über Microsoft Graph aus dem eigenen Postfach. **„Alle gefilterten verständigen“** schickt jedem gefilterten Environment eine **eigene E-Mail** – automatisch (mit Sicherheitsabfrage, Fortschritt, Anhalten, Fehlerliste, ca. 28 Mails pro Minute wegen des Exchange-Limits) oder **nacheinander in Outlook** (Schritt für Schritt). **Gemeinsames Versandprotokoll:** Jede Benachrichtigung (automatisch gesendet oder in Outlook gesendet und „Als versendet markiert“) wird in der SharePoint-Liste **„CoE Cockpit Benachrichtigungen“** auf der Website des Cockpits vermerkt – mit Environment, Zeitpunkt, Person, Art, Empfängern und Betreff. Alle Admins sehen in der Tabelle die Spalten „Maker verständigt / Verständigt am / Verständigt von“ und die Kachel „Noch nicht verständigt“; wer ein bereits verständigtes Environment erneut anschreiben will, bekommt eine deutliche Warnung. Beim Serienversand wird das Protokoll unmittelbar vor dem Senden neu gelesen – was ein anderer Admin inzwischen verständigt hat, wird übersprungen. „E-Mail-Adressen kopieren“ liefert die Adressen aller gefilterten Environments. Anwendungsbenutzer („# …“) und SYSTEM werden nicht angeschrieben. |
 | Default Environment | Apps und Flows aus dem CoE-Inventar, Solutions live aus dem Dataverse des Default Environments |
+| Webpart-Einstellungen | Schaltfläche **„Webpart-Einstellungen“** oben neben „Tabellen verwalten“ (Bearbeitungsmodus): alle Einstellungen nach Bereichen (Verbindung, Ansichten, Default Environment, Betroffen ab 15.12., E-Mail an Maker, Aktionen, ALM-Pipelines, Darstellung, Tabellen) mit Status-Punkten, Einrichtung der Aktionen mit Checkliste. Der klassische Eigenschaftenbereich bleibt erreichbar (Abschnitte zugeklappt). |
 | Tabellen-Editor | Tabellen **aus einer Liste wählen** (alle Admin-View-Tabellen als Vorlagen oder jede andere Tabelle der Umgebung), Spalten aus Dataverse auswählen, JSON-Import/-Export |
 | Robustheit | Spalten, die es in der eigenen CoE-Version nicht gibt, werden übersprungen und als Hinweis angezeigt |
 
@@ -100,6 +101,7 @@ Im Bereich **„Aktionen“** der Detailansicht (unten) lassen sich Aufträge au
 | App | In Quarantäne stellen / Aus Quarantäne holen, Besitzer ändern, Freigabe hinzufügen (Benutzer/Mitbesitzer), Freigabe entfernen, Löschen |
 | Flow | Ausschalten / Einschalten, Besitzer ändern, Mitbesitzer hinzufügen, Freigabe entfernen, Löschen |
 | Environment (nur „Betroffen ab 15.12.“) | Auf Managed umstellen, Environment deaktivieren / aktivieren, Maker per E-Mail verständigen |
+| Solution | Solution löschen – nur **nicht verwaltete** Solutions (nur der Container; Apps, Flows und andere Komponenten bleiben im Environment). Verwaltete und System-/Microsoft-Solutions sind gesperrt. |
 
 **So funktioniert es:** Das Cockpit legt einen Auftrag in der SharePoint-Liste **„CoE Cockpit Aktionen“** an (Aktion, Ressource, IDs,
 Zielperson, Pflicht-Begründung). Ein Flow im CoE-Environment führt ihn mit einem Admin-Dienstkonto aus und schreibt Status und Ergebnis
@@ -118,7 +120,7 @@ zurück; das Cockpit zeigt den Fortschritt live und alle Aufträge im **Aktionsp
 
 ### Flow „CoE Cockpit | Aktion ausführen“
 
-Fertige, nicht verwaltete Lösung: [`flow/CoECockpitAktionen_1_0_0_0.zip`](flow/CoECockpitAktionen_1_0_0_0.zip)
+Fertige, nicht verwaltete Lösung: [`flow/CoECockpitAktionen_1_1_0_0.zip`](flow/CoECockpitAktionen_1_1_0_0.zip)
 (erzeugt mit [`flow/build-flow-solution.py`](flow/build-flow-solution.py); lesbare Definition: `flow/CoECockpit-Aktionausfuehren.definition.json`).
 
 **Ablauf:** Neuer Eintrag in „CoE Cockpit Aktionen“ → Status „In Arbeit“ → prüfen, ob „Erstellt von“ Mitglied der SharePoint-Gruppe ist
@@ -135,6 +137,7 @@ Fertige, nicht verwaltete Lösung: [`flow/CoECockpitAktionen_1_0_0_0.zip`](flow/
 | Flow aus / ein | Power Automate Management – `StopFlow` / `StartFlow` | „Flow State“ |
 | Auf Managed umstellen | Power Platform for Admins V2 – `EnableManagedEnvironment` | – (nächster CoE-Sync) |
 | Environment deaktivieren / aktivieren | Power Platform for Admins V2 – `DisableEnvironment` / `EnableEnvironment` | – (nächster CoE-Sync) |
+| Solution löschen | Dataverse – `GetItemWithOrganization` (prüft „nicht verwaltet“), dann `DeleteRecordWithOrganization` im Environment der Solution | „Solution Deleted“ + Datum |
 
 Zielpersonen gibt das Cockpit als Entra-Objekt-ID oder E-Mail-Adresse mit; E-Mail-Adressen löst der Flow über Office 365 Users auf
 (Gruppen bitte mit Objekt-ID).
