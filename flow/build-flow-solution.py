@@ -1,13 +1,19 @@
 #!/usr/bin/env python3
 """
 Erzeugt die importierbare Power-Platform-Lösung „CoE Cockpit Aktionen“ (nicht verwaltet) mit dem Flow
-„CoE Cockpit | Aktion ausführen“. Aufruf:  python3 flow/build-flow-solution.py   → flow/CoECockpitAktionen_1_0_0_0.zip
+„CoE Cockpit | Aktion ausführen“. Aufruf:  python3 flow/build-flow-solution.py   → flow/CoECockpitAktionen_<Version>.zip
 
-Der Flow arbeitet die Aufträge ab, die das Webpart in der SharePoint-Liste „CoE Cockpit Aktionen“ anlegt:
+Ab Webpart-Version 1.14 führt das CoE Cockpit alle Aktionen, für die die Rolle „Power Platform Administrator“
+reicht, selbst aus (im Namen der angemeldeten Person). Der Flow mit Dienstkonto bleibt nur für Aktionen, die
+zusätzlich Rechte im jeweiligen Environment brauchen – derzeit „Solution löschen“ (System Administrator bzw.
+System Customizer im Ziel-Environment).
+
+Der Flow arbeitet nur Aufträge mit Status „Angefordert“ ab (Auslösebedingung). Einträge, die das Webpart
+für direkt ausgeführte Aktionen ins Protokoll schreibt („In Arbeit“ → „Erledigt“/„Fehler“), ignoriert er.
   1. Status „In Arbeit“
   2. Prüfen, ob die anfragende Person (Erstellt von) Mitglied der SharePoint-Gruppe ist – sonst „Abgelehnt“
-  3. Aktion ausführen (Admin-Connectors, Verbindungen eines Admin-Dienstkontos)
-  4. CoE-Inventar nachziehen (Quarantäne, gelöscht, Besitzer, Flow-Status) – Fehler dabei sind nur ein Hinweis
+  3. Aktion ausführen (Dataverse-Verbindung des Dienstkontos)
+  4. CoE-Inventar nachziehen (Solution gelöscht) – Fehler dabei sind nur ein Hinweis
   5. Status „Erledigt“, „Fehler“ oder „Abgelehnt“ mit Ergebnistext und Zeitpunkt zurückschreiben
 """
 import io
@@ -16,7 +22,7 @@ import os
 import zipfile
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-VERSION = '1.1.0.0'
+VERSION = '1.2.0.0'
 SOLUTION = 'CoECockpitAktionen'
 FLOW_ID = '7c0c0c4a-3b1e-4f6a-9d2e-5a1b2c3d4e01'
 FLOW_NAME = 'CoE Cockpit | Aktion ausführen'
@@ -38,12 +44,8 @@ P_GROUP = "parameters('CoE Cockpit – SharePoint-Gruppe (coeck_AdminGroupName)'
 # ---------- Verbindungsreferenzen ----------
 CONN = {
     'sp': ('shared_sharepointonline', 'coeck_SharePoint', 'CoE Cockpit – SharePoint', 'Liest Aufträge aus der Liste „CoE Cockpit Aktionen“ und schreibt das Ergebnis zurück.'),
-    'apps': ('shared_powerappsforadmins', 'coeck_PowerAppsAdmin', 'CoE Cockpit – Power Apps for Admins', 'Quarantäne, Besitzer, Freigaben und Löschen von Canvas-Apps (Admin-Dienstkonto).'),
-    'flows': ('shared_microsoftflowforadmins', 'coeck_PowerAutomateAdmin', 'CoE Cockpit – Power Automate for Admins', 'Mitbesitzer, Freigaben und Löschen von Flows (Admin-Dienstkonto).'),
-    'flowmgmt': ('shared_flowmanagement', 'coeck_PowerAutomateManagement', 'CoE Cockpit – Power Automate Management', 'Flows ein- und ausschalten (Admin-Dienstkonto).'),
-    'ppv2': ('shared_powerplatformadminv2', 'coeck_PowerPlatformAdminV2', 'CoE Cockpit – Power Platform for Admins V2', 'Environments auf Managed umstellen, deaktivieren und aktivieren (Admin-Dienstkonto).'),
-    'dv': ('shared_commondataserviceforapps', 'coeck_Dataverse', 'CoE Cockpit – Dataverse (CoE)', 'Liest und aktualisiert das CoE-Inventar im aktuellen Environment.'),
-    'users': ('shared_office365users', 'coeck_Office365Users', 'CoE Cockpit – Office 365 Users', 'Ermittelt die Entra-Objekt-ID zu einer E-Mail-Adresse.'),
+    'dv': ('shared_commondataserviceforapps', 'coeck_Dataverse', 'CoE Cockpit – Dataverse',
+           'Löscht Solutions im Ziel-Environment (Dienstkonto mit System Administrator dort) und aktualisiert das CoE-Inventar.'),
 }
 
 
@@ -126,14 +128,10 @@ def guarded(steps, ok_text, coe_steps=None):
 
 
 # Werte aus dem Auftrag
-T = "triggerOutputs()?['body/{}']"
 ACTION = "@triggerOutputs()?['body/Action']"
 RTYPE = "triggerOutputs()?['body/ResourceType']"
 RID = "@triggerOutputs()?['body/ResourceId']"
-ENV = "@triggerOutputs()?['body/EnvironmentId']"
 COEID = "@triggerOutputs()?['body/CoeRecordId']"
-ZIEL = "@variables('Ziel')"
-PTYPE = "@{if(equals(triggerOutputs()?['body/TargetIsGroup'], true), 'group', 'user')}"
 
 
 def is_type(t):
@@ -200,135 +198,6 @@ def unique_names(actions, suffix):
 
 
 # ---------- Fälle ----------
-def case_quarantine(on):
-    status = 'Quarantined' if on else 'Unquarantined'
-    return guarded(
-        [('Quarantaene_setzen', op('apps', 'Set-AppQuarantineState', {
-            'environment': ENV, 'app': RID, 'api-version': '2021-02-01', 'Content-Type': 'application/json', 'body/quarantineStatus': status}, retry=True))],
-        'Die App ist jetzt in Quarantäne.' if on else 'Die App ist nicht mehr in Quarantäne.',
-        [('CoE_Quarantaene', op('dv', 'UpdateRecord', {
-            'entityName': 'admin_apps', 'recordId': COEID, 'item/admin_quarantineapp': on,
-            'item/admin_quarantineappdate': "@utcNow()" if on else None}))])
-
-
-def solution_check(entity, field, label):
-    """Löschen nur, wenn die Ressource laut CoE NICHT Teil einer Solution ist (unbekannt = ablehnen)."""
-    return {
-        'CoE_Solution_lesen': op('dv', 'GetItem', {'entityName': entity, 'recordId': COEID, '$select': field}),
-        'CoE_Solution_lesen_Fehler': set_var('Fehler', err_of('CoE_Solution_lesen'), {'CoE_Solution_lesen': ['Failed', 'TimedOut']}),
-        'Nicht_in_Solution': {
-            'type': 'If',
-            'runAfter': {'CoE_Solution_lesen': ['Succeeded']},
-            'expression': {'equals': [f"@body('CoE_Solution_lesen')?['{field}']", False]},
-            'actions': {},
-            'else': {'actions': {
-                'Abgelehnt_Solution': set_var('Abgelehnt', f'{label} ist Teil einer Solution (oder das ist im CoE nicht erfasst) – Löschen nur über die Solution (ALM).')
-            }}
-        }
-    }
-
-
-def case_delete():
-    app = solution_check('admin_apps', 'admin_issolutionapp', 'Die App')
-    app['Nicht_in_Solution']['actions'] = guarded(
-        [('App_loeschen', op('apps', 'Remove-AdminApp', {'environment': ENV, 'app': RID, 'api-version': '2016-11-01'}, retry=True))],
-        'Die App wurde im Tenant gelöscht.',
-        [('CoE_App_geloescht', op('dv', 'UpdateRecord', {'entityName': 'admin_apps', 'recordId': COEID, 'item/admin_appdeleted': True, 'item/admin_appdeletedon': '@utcNow()'}))])
-    flow = solution_check('admin_flows', 'admin_issolutionflow', 'Der Flow')
-    flow['Nicht_in_Solution']['actions'] = guarded(
-        [('Flow_loeschen', op('flows', 'Remove-AdminFlow', {'environment': ENV, 'flow': RID, 'api-version': '2016-11-01'}, retry=True))],
-        'Der Flow wurde im Tenant gelöscht.',
-        [('CoE_Flow_geloescht', op('dv', 'UpdateRecord', {'entityName': 'admin_flows', 'recordId': COEID, 'item/admin_flowdeleted': True, 'item/admin_flowdeletedon': '@utcNow()'}))])
-    app = unique_names(app, 'App')
-    flow = unique_names(flow, 'Flow')
-    return {'Loeschen_App_oder_Flow': {
-        'type': 'If', 'expression': is_type('app'),
-        'actions': app,
-        'else': {'actions': {'Loeschen_Flow_pruefen': {
-            'type': 'If', 'expression': is_type('flow'), 'actions': flow,
-            'else': {'actions': {'Abgelehnt_Typ': set_var('Abgelehnt', 'Löschen ist nur für Apps und Flows vorgesehen.')}}
-        }}}
-    }}
-
-
-def app_or_flow(app_acts, flow_acts):
-    app_acts = unique_names(app_acts, 'App')
-    flow_acts = unique_names(flow_acts, 'Flow')
-    return {'App_oder_Flow': {
-        'type': 'If', 'expression': is_type('app'), 'actions': app_acts,
-        'else': {'actions': {'Nur_Flow': {
-            'type': 'If', 'expression': is_type('flow'), 'actions': flow_acts,
-            'else': {'actions': {'Abgelehnt_Ressource': set_var('Abgelehnt', 'Diese Aktion gibt es nur für Apps und Flows.')}}
-        }}}
-    }}
-
-
-def case_setowner():
-    app = guarded(
-        [('App_Besitzer', op('apps', 'Set-AdminAppOwner', {
-            'environment': ENV, 'app': RID, 'api-version': '2016-11-01', 'Content-Type': 'application/json',
-            'body/roleForOldAppOwner': 'CanEdit', 'body/newAppOwner': ZIEL}, retry=True))],
-        "@{concat(triggerOutputs()?['body/TargetName'], ' ist jetzt Besitzer der App; der bisherige Besitzer ist Mitbesitzer.')}",
-        [('CoE_App_Besitzer', op('dv', 'UpdateRecord', {'entityName': 'admin_apps', 'recordId': COEID, 'item/admin_AppOwner@odata.bind': "admin_makers(@{variables('Ziel')})"}))])
-    flow = guarded(
-        [('Flow_Mitbesitzer', op('flows', 'Edit-AdminFlowOwnerRole', {
-            'environment': ENV, 'flow': RID, 'api-version': '2016-11-01', 'Content-Type': 'application/json',
-            'body/put': [{'properties/principal/id': ZIEL, 'properties/principal/type': PTYPE, 'properties/roleName': 'CanEdit'}]}, retry=True))],
-        "@{concat(triggerOutputs()?['body/TargetName'], ' ist jetzt Mitbesitzer des Flows. Den Ersteller eines Flows außerhalb einer Solution kann Power Automate nicht ändern.')}",
-        [('CoE_Flow_Besitzer', op('dv', 'UpdateRecord', {'entityName': 'admin_flows', 'recordId': COEID, 'item/admin_DerivedOwner@odata.bind': "admin_makers(@{variables('Ziel')})"}))])
-    return app_or_flow(app, flow)
-
-
-def case_share(role):
-    app = guarded(
-        [('App_Freigabe', op('apps', 'Edit-AdminAppRoleAssignment', {
-            'environment': ENV, 'app': RID, 'api-version': '2016-11-01',
-            'body/put': [{'properties/roleName': role, 'properties/principal/id': ZIEL, 'properties/principal/type': PTYPE, 'properties/principal/tenantId': '@null'}]}, retry=True))],
-        "@{concat('Freigabe für ', triggerOutputs()?['body/TargetName'], ' hinzugefügt (" + ('Mitbesitzer' if role == 'CanEdit' else 'Benutzer') + ").')}")
-    flow = guarded(
-        [('Flow_Freigabe', op('flows', 'Edit-AdminFlowOwnerRole', {
-            'environment': ENV, 'flow': RID, 'api-version': '2016-11-01', 'Content-Type': 'application/json',
-            'body/put': [{'properties/principal/id': ZIEL, 'properties/principal/type': PTYPE, 'properties/roleName': 'CanEdit'}]}, retry=True))],
-        "@{concat(triggerOutputs()?['body/TargetName'], ' ist jetzt Mitbesitzer des Flows.')}")
-    return app_or_flow(app, flow)
-
-
-def case_removeuser():
-    app = guarded(
-        [('App_Freigabe_entfernen', op('apps', 'Edit-AdminAppRoleAssignment', {
-            'environment': ENV, 'app': RID, 'api-version': '2016-11-01', 'body/delete': [{'id': ZIEL}]}, retry=True))],
-        "@{concat('Freigabe für ', triggerOutputs()?['body/TargetName'], ' entfernt.')}")
-    flow = guarded(
-        [('Flow_Freigabe_entfernen', op('flows', 'Edit-AdminFlowOwnerRole', {
-            'environment': ENV, 'flow': RID, 'api-version': '2016-11-01', 'Content-Type': 'application/json', 'body/delete': [{'id': ZIEL}]}, retry=True))],
-        "@{concat('Freigabe für ', triggerOutputs()?['body/TargetName'], ' entfernt.')}")
-    return app_or_flow(app, flow)
-
-
-def case_flow_state(on):
-    return guarded(
-        [('Flow_' + ('einschalten' if on else 'ausschalten'), op('flowmgmt', 'StartFlow' if on else 'StopFlow', {'environmentName': ENV, 'flowName': RID}, retry=True))],
-        'Der Flow ist eingeschaltet.' if on else 'Der Flow ist ausgeschaltet.',
-        [('CoE_Flow_Status', op('dv', 'UpdateRecord', {'entityName': 'admin_flows', 'recordId': COEID, 'item/admin_flowstate': 'Started' if on else 'Stopped'}))])
-
-
-def case_env(kind):
-    if kind == 'managed':
-        action = op('ppv2', 'EnableManagedEnvironment', {'environmentId': ENV, 'api-version': '2024-10-01'}, retry=True)
-        text = 'Das Environment wird zum Managed Environment (Vorgang läuft bei Microsoft weiter, Dauer wenige Minuten).'
-    elif kind == 'disable':
-        action = op('ppv2', 'DisableEnvironment', {'environmentId': ENV, 'api-version': '2024-10-01', 'body/reason': 'UserRequested'}, retry=True)
-        text = 'Das Environment wird deaktiviert (Vorgang läuft bei Microsoft weiter, Dauer wenige Minuten).'
-    else:
-        action = op('ppv2', 'EnableEnvironment', {'environmentId': ENV, 'api-version': '2024-10-01'}, retry=True)
-        text = 'Das Environment wird wieder aktiviert (Vorgang läuft bei Microsoft weiter, Dauer wenige Minuten).'
-    return {'Nur_Environment': {
-        'type': 'If', 'expression': is_type('environment'),
-        'actions': guarded([('Environment_' + kind, action)], text),
-        'else': {'actions': {'Abgelehnt_kein_Environment': set_var('Abgelehnt', 'Diese Aktion gibt es nur für Environments.')}}
-    }}
-
-
 def case_soldelete():
     """Nicht verwaltete Solution löschen (nur der Container – Komponenten bleiben). EnvironmentId = Dataverse-URL des Environments."""
     org = "@triggerOutputs()?['body/EnvironmentId']"
@@ -360,18 +229,6 @@ def case_soldelete():
 
 
 CASES = {
-    'quarantine': case_quarantine(True),
-    'unquarantine': case_quarantine(False),
-    'delete': case_delete(),
-    'setowner': case_setowner(),
-    'addviewer': case_share('CanView'),
-    'addeditor': case_share('CanEdit'),
-    'removeuser': case_removeuser(),
-    'flowoff': case_flow_state(False),
-    'flowon': case_flow_state(True),
-    'envmanaged': case_env('managed'),
-    'envdisable': case_env('disable'),
-    'envenable': case_env('enable'),
     'soldelete': case_soldelete(),
 }
 
@@ -389,29 +246,13 @@ def definition():
     list_seg = (f"@{{if(equals(length(trim({P_LIST})), 36), concat('lists(guid''', trim({P_LIST}), ''')'), "
                 f"concat('lists/getbytitle(''', replace(trim({P_LIST}), '''', ''''''), ''')'))}}")
     item_uri = f"_api/web/{list_seg}/items(@{{triggerOutputs()?['body/ID']}})"
-    needs_target = "@contains(createArray('setowner','addviewer','addeditor','removeuser'), triggerOutputs()?['body/Action'])"
 
     switch = {
         'type': 'Switch',
         'expression': ACTION,
         'cases': {f'Fall_{k}': {'case': k, 'actions': unique_names(v, k)} for k, v in CASES.items()},
-        'default': {'actions': {'Unbekannte_Aktion': set_var('Abgelehnt', "@{concat('Unbekannte Aktion: ', triggerOutputs()?['body/Action'])}")}},
-        'runAfter': {'Ziel_ermitteln': ['Succeeded']}
-    }
-
-    ziel = {
-        'type': 'If',
-        'expression': {'and': [
-            {'equals': [needs_target, True]},
-            {'not': {'equals': ["@length(variables('Ziel'))", 36]}}
-        ]},
-        'actions': {
-            'Person_suchen': op('users', 'UserProfile_V2', {'id': "@variables('Ziel')"}),
-            'Ziel_ID_setzen': set_var('Ziel', "@body('Person_suchen')?['id']", {'Person_suchen': ['Succeeded']}),
-            'Person_nicht_gefunden': set_var('Abgelehnt', "@{concat('Die Person „', variables('Ziel'), '“ wurde nicht gefunden. Gruppen bitte mit ihrer Objekt-ID angeben.')}",
-                                             {'Person_suchen': ['Failed', 'TimedOut']})
-        },
-        'else': {'actions': {}}
+        'default': {'actions': {'Nicht_im_Flow': set_var('Abgelehnt', "@{concat('Die Aktion „', triggerOutputs()?['body/Action'], '“ führt das CoE Cockpit (ab Version 1.14) direkt aus, nicht dieser Flow. Bitte das Webpart aktualisieren.')}")}},
+        'runAfter': {}
     }
 
     member_check = {
@@ -419,14 +260,7 @@ def definition():
         'runAfter': {'Mitglied_pruefen': ['Succeeded']},
         'expression': {'greater': ["@length(body('Mitglied_pruefen'))", 0]},
         'actions': {
-            'Ziel_ermitteln': ziel,
-            'Aktion_ausfuehren': {
-                'type': 'If',
-                'runAfter': {'Ziel_ermitteln': ['Succeeded', 'Failed']},
-                'expression': {'equals': ["@empty(variables('Abgelehnt'))", True]},
-                'actions': {'Aktion': dict(switch, runAfter={})},
-                'else': {'actions': {}}
-            }
+            'Aktion': switch
         },
         'else': {'actions': {
             'Nicht_Mitglied': set_var('Abgelehnt', f"@{{concat(triggerOutputs()?['body/Author/DisplayName'], ' ist nicht Mitglied der SharePoint-Gruppe „', {P_GROUP}, '“. Der Auftrag wurde nicht ausgeführt.')}}")
@@ -462,8 +296,7 @@ def definition():
         'Fehler_init': {'type': 'InitializeVariable', 'inputs': {'variables': [{'name': 'Fehler', 'type': 'string', 'value': ''}]}, 'runAfter': {'Ergebnis_init': ['Succeeded']}},
         'Abgelehnt_init': {'type': 'InitializeVariable', 'inputs': {'variables': [{'name': 'Abgelehnt', 'type': 'string', 'value': ''}]}, 'runAfter': {'Fehler_init': ['Succeeded']}},
         'Hinweis_init': {'type': 'InitializeVariable', 'inputs': {'variables': [{'name': 'Hinweis', 'type': 'string', 'value': ''}]}, 'runAfter': {'Abgelehnt_init': ['Succeeded']}},
-        'Ziel_init': {'type': 'InitializeVariable', 'inputs': {'variables': [{'name': 'Ziel', 'type': 'string', 'value': "@{trim(coalesce(triggerOutputs()?['body/TargetUser'], ''))}"}]}, 'runAfter': {'Hinweis_init': ['Succeeded']}},
-        'Status_In_Arbeit': sp_http('POST', item_uri, '{"Status": "In Arbeit"}', {'Ziel_init': ['Succeeded']}, merge=True),
+        'Status_In_Arbeit': sp_http('POST', item_uri, '{"Status": "In Arbeit"}', {'Hinweis_init': ['Succeeded']}, merge=True),
         'Ausfuehrung': scope,
         'Status_zurueckschreiben': sp_http('POST', item_uri, end_body, {'Ausfuehrung': ['Succeeded', 'Failed', 'Skipped', 'TimedOut']}, merge=True)
     }
@@ -482,7 +315,8 @@ def definition():
                 'parameters': {'dataset': P_SITE, 'table': f'@{P_LIST}'},
                 'authentication': "@parameters('$authentication')"
             },
-            'description': 'Neuer Auftrag aus dem CoE Cockpit (Liste „CoE Cockpit Aktionen“).'
+            'description': 'Neuer Auftrag aus dem CoE Cockpit (Liste „CoE Cockpit Aktionen“). Nur Status „Angefordert“ – direkt im Webpart ausgeführte Aktionen stehen schon auf „In Arbeit“.',
+            'conditions': [{'expression': "@or(empty(triggerOutputs()?['body/Status']), equals(triggerOutputs()?['body/Status'], 'Angefordert'))"}]
         }
     }
 
@@ -539,7 +373,7 @@ def solution_xml():
       <LocalizedName description="CoE Cockpit Aktionen" languagecode="1033" />
     </LocalizedNames>
     <Descriptions>
-      <Description description="Führt die Aufträge des SharePoint-Webparts „CoE Cockpit“ aus (Liste „CoE Cockpit Aktionen“)." languagecode="1033" />
+      <Description description="Führt die Aufträge des SharePoint-Webparts „CoE Cockpit“ aus, die Rechte im Environment brauchen (derzeit „Solution löschen“). Alle anderen Aktionen führt das Webpart selbst aus." languagecode="1033" />
     </Descriptions>
     <Version>{VERSION}</Version>
     <Managed>0</Managed>
@@ -579,7 +413,7 @@ def customizations_xml():
       <statecode>0</statecode>
       <statuscode>1</statuscode>
     </connectionreference>''' for k in CONN)
-    desc = 'Führt Aufträge aus der SharePoint-Liste „CoE Cockpit Aktionen“ aus (Quarantäne, Löschen, Besitzer, Freigaben, Flow ein/aus, Environment Managed/deaktivieren/aktivieren, Solution löschen).'
+    desc = 'Führt Aufträge mit Status „Angefordert“ aus der SharePoint-Liste „CoE Cockpit Aktionen“ aus, die Rechte im Environment brauchen (derzeit „Solution löschen“).'
     return f'''<?xml version="1.0" encoding="utf-8"?>
 <ImportExportXml xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" OrganizationVersion="9.2.25123.166" OrganizationSchemaType="Standard" CRMServerServiceabilityVersion="9.2.25123.00166">
   <Entities />

@@ -53,7 +53,7 @@ function respond(status: number, body?: unknown): IMockResponse {
 }
 const notFound = (what: string): IMockResponse => respond(404, { 'odata.error': { code: '-1, System.ArgumentException', message: { lang: 'de-DE', value: `${what} ist nicht vorhanden.` } } });
 
-/** Simulierter Flow „CoE Cockpit | Aktion ausführen“: In Arbeit → Erledigt, CoE-Daten anpassen. */
+/** Simulierter Flow „CoE Cockpit | Aktion ausführen“ (ab 1.2.0.0 nur noch „Solution löschen“): In Arbeit → Erledigt, CoE-Daten anpassen. */
 function simulateFlow(item: Record<string, unknown>): void {
   if (w.__spFlowOff) {
     return;
@@ -64,20 +64,9 @@ function simulateFlow(item: Record<string, unknown>): void {
     setTimeout(() => {
       const coe = DATABASES[0].tables;
       const id = String(item.CoeRecordId || '').toLowerCase();
-      const app = coe.admin_app.rows.filter(r => String(r.admin_appid).toLowerCase() === id)[0];
-      const flow = coe.admin_flow.rows.filter(r => String(r.admin_flowid).toLowerCase() === id)[0];
-      const env = coe.admin_environment.rows.filter(r => String(r.admin_environmentid).toLowerCase() === id)[0];
       const sol = coe.admin_solution.rows.filter(r => String(r.admin_solutionid).toLowerCase() === id)[0];
       let result = 'Ausgeführt (Vorschau – simulierter Flow).';
       switch (item.Action) {
-        case 'quarantine': if (app) { app.admin_appisquarantined = true; app.admin_quarantineapp = true; } break;
-        case 'unquarantine': if (app) { app.admin_appisquarantined = false; app.admin_quarantineapp = false; } break;
-        case 'flowoff': if (flow) { flow.admin_flowstate = 'Stopped'; } break;
-        case 'flowon': if (flow) { flow.admin_flowstate = 'Started'; } break;
-        case 'delete': if (app) { app.admin_appdeleted = true; } if (flow) { flow.admin_flowdeleted = true; } break;
-        case 'envmanaged': if (env) { env.admin_governanceprotectionlevel = 'Standard'; } break;
-        case 'envdisable': if (env) { env.admin_environmentruntimestate = 'Disabled'; } break;
-        case 'envenable': if (env) { env.admin_environmentruntimestate = 'Enabled'; } break;
         case 'soldelete':
           if (sol && sol.admin_solutionismanaged === false) {
             sol.admin_solutiondeleted = true;
@@ -89,7 +78,11 @@ function simulateFlow(item: Record<string, unknown>): void {
             return;
           }
           break;
-        default: result = `Ausgeführt für ${item.TargetName || item.TargetUser} (Vorschau – simulierter Flow).`;
+        default:
+          item.Status = 'Abgelehnt';
+          item.Result = `Die Aktion „${item.Action}“ führt das CoE Cockpit (ab Version 1.14) direkt aus, nicht dieser Flow. Bitte das Webpart aktualisieren.`;
+          item.CompletedAt = new Date().toISOString();
+          return;
       }
       item.Status = 'Erledigt';
       item.Result = result;
@@ -98,11 +91,11 @@ function simulateFlow(item: Record<string, unknown>): void {
   }, delay);
 }
 
-export function mockSharePoint(method: 'GET' | 'POST', url: string, body?: string): Promise<IMockResponse> {
-  return new Promise(resolve => setTimeout(() => resolve(handle(method, url, body)), 80));
+export function mockSharePoint(method: 'GET' | 'POST', url: string, body?: string, headers?: { [k: string]: string }): Promise<IMockResponse> {
+  return new Promise(resolve => setTimeout(() => resolve(handle(method, url, body, headers || {})), 80));
 }
 
-function handle(method: 'GET' | 'POST', url: string, body?: string): IMockResponse {
+function handle(method: 'GET' | 'POST', url: string, body: string | undefined, headers: { [k: string]: string }): IMockResponse {
   const s = all();
   const u = decodeURIComponent(url);
   const json = (): Record<string, unknown> => (body ? JSON.parse(body) as Record<string, unknown> : {});
@@ -177,12 +170,21 @@ function handle(method: 'GET' | 'POST', url: string, body?: string): IMockRespon
     }
     const stored = { ...item, Id: list.nextId++, Created: new Date().toISOString() };
     list.items.push(stored);
-    if (m[1] === ACTIONS) {
+    // wie die Auslösebedingung des Flows: nur Aufträge mit Status „Angefordert“
+    if (m[1] === ACTIONS && (!stored.Status || stored.Status === 'Angefordert')) {
       simulateFlow(stored);
     }
     return respond(201, stored);
   }
   const byId = /\/items\((\d+)\)/.exec(u);
+  if (method === 'POST' && byId && /merge/i.test(headers['X-HTTP-Method'] || headers['x-http-method'] || '')) {
+    const it = list.items.filter(x => x.Id === Number(byId[1]))[0];
+    if (!it) {
+      return notFound('Das Element');
+    }
+    Object.assign(it, json());
+    return respond(204);
+  }
   if (method === 'GET' && byId) {
     const it = list.items.filter(x => x.Id === Number(byId[1]))[0];
     return it ? respond(200, it) : notFound('Das Element');

@@ -431,3 +431,41 @@ export function mockGet(url: string, headers: { [k: string]: string }): Promise<
     }, delay);
   });
 }
+
+/** PATCH eines Datensatzes (Webpart zieht nach direkten Aktionen das CoE-Inventar nach). */
+export function mockPatch(url: string, body: string): Promise<IMockResponse> {
+  return new Promise(resolve => setTimeout(() => {
+    try {
+      const u = new URL(url);
+      const db = findDb(u.hostname);
+      if (!db) {
+        throw new ODataError(404, 'Unbekannte Umgebung');
+      }
+      const m = /^([a-z_]+)\(([0-9a-f-]+)\)$/i.exec(decodeURIComponent(u.pathname.replace(/^\/api\/data\/v9\.2\//, '')));
+      if (!m) {
+        throw new ODataError(400, 'Ungültiger Pfad');
+      }
+      const t = tableBySet(db, m[1]);
+      const row = t.rows.filter(r => String(r[t.primaryId]).toLowerCase() === m[2].toLowerCase())[0];
+      if (!row) {
+        throw new ODataError(404, `${t.logicalName} With Id = ${m[2]} Does Not Exist`);
+      }
+      const values = JSON.parse(body || '{}') as { [k: string]: unknown };
+      Object.keys(values).forEach(k => {
+        const bind = /^(.+)@odata\.bind$/.exec(k);
+        if (bind) {
+          const id = (/\(([^)]+)\)/.exec(String(values[k])) || [])[1];
+          row[`_${bind[1].toLowerCase()}_value`] = id;
+        } else {
+          row[k] = values[k];
+        }
+      });
+      ((window as unknown as { __coePatches?: string[] }).__coePatches = (window as unknown as { __coePatches?: string[] }).__coePatches || []).push(`${m[1]}(${m[2]}) ${body}`);
+      resolve(respond(204, undefined));
+    } catch (e) {
+      const err = e as ODataError;
+      resolve(respond(err.status || 500, { error: { code: '0x80060888', message: err.message } }));
+    }
+  }, 150));
+}
+

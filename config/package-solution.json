@@ -3,7 +3,7 @@
   "solution": {
     "name": "coe-cockpit-client-side-solution",
     "id": "7c3e9a52-4b1d-4f6e-9a2c-1e8d5b0f3a71",
-    "version": "1.13.0.0",
+    "version": "1.14.0.0",
     "includeClientSideAssets": true,
     "skipFeatureDeployment": true,
     "isDomainIsolated": false,
@@ -35,6 +35,30 @@
       {
         "resource": "Power Platform API",
         "scope": "EnvironmentManagement.Environments.Read"
+      },
+      {
+        "resource": "Power Platform API",
+        "scope": "EnvironmentManagement.Write"
+      },
+      {
+        "resource": "Power Platform API",
+        "scope": "EnvironmentManagement.Settings.ReadWrite"
+      },
+      {
+        "resource": "PowerApps Service",
+        "scope": "User"
+      },
+      {
+        "resource": "Microsoft Flow Service",
+        "scope": "User"
+      },
+      {
+        "resource": "Microsoft Flow Service",
+        "scope": "Flows.Read.All"
+      },
+      {
+        "resource": "Microsoft Flow Service",
+        "scope": "Flows.Manage.All"
       }
     ],
     "developer": {
@@ -60,7 +84,7 @@
         "title": "CoE Cockpit",
         "description": "CoE Cockpit Webpart",
         "id": "b2f4c6d8-1a3e-4c5b-8d7f-9e0a2b4c6d81",
-        "version": "1.13.0.0"
+        "version": "1.14.0.0"
       }
     ]
   },

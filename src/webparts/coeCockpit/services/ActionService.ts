@@ -4,6 +4,7 @@ import { ACTION_LIST_TITLE, ActionCode, ActionStatus, IActionItem, IActionReques
 /**
  * SharePoint-Seite der Cockpit-Aktionen: Admin-Gruppe, Aktionsliste mit eigenen Berechtigungen,
  * Aufträge anlegen und Status lesen. Alles mit den SharePoint-Rechten des angemeldeten Benutzers.
+ * Die Liste ist zugleich das Aktionsprotokoll – auch für Aktionen, die das Webpart direkt ausführt.
  */
 const JSON_HEADERS = {
   'Accept': 'application/json;odata=nometadata',
@@ -136,7 +137,7 @@ export class ActionService {
     }
     const g = await this._post<{ Id: number; Title: string }>(`${this._web}/sitegroups`, {
       Title: title,
-      Description: 'Power-Platform-Admins, die im CoE Cockpit Aktionen auslösen dürfen (Quarantäne, Löschen, Besitzer und Freigaben, Flows ein/aus).',
+      Description: 'Power-Platform-Admins, die im CoE Cockpit Aktionen auslösen dürfen (Quarantäne, Löschen, Besitzer und Freigaben, Flows ein/aus, Environments, Solutions).',
       OnlyAllowMembersViewMembership: false,
       AllowMembersEditMembership: false,
       AllowRequestToJoinLeave: false
@@ -191,7 +192,7 @@ export class ActionService {
     if (!exists) {
       await this._post(`${this._web}/lists`, {
         Title: ACTION_LIST_TITLE,
-        Description: 'Aufträge aus dem CoE Cockpit (Quarantäne, Löschen, Besitzer, Freigaben, Flows ein/aus). Ein Flow im CoE-Environment führt sie aus.',
+        Description: 'Aktionsprotokoll des CoE Cockpits (Quarantäne, Löschen, Besitzer, Freigaben, Flows ein/aus, Environments, Solutions). Das Cockpit führt die meisten Aktionen direkt aus; „Solution löschen“ übernimmt der Flow im CoE-Environment.',
         BaseTemplate: 100,
         AllowContentTypes: false,
         ContentTypesEnabled: false
@@ -210,8 +211,12 @@ export class ActionService {
     }
   }
 
-  /** Auftrag anlegen; liefert die ID des Listenelements. */
-  public async add(req: IActionRequest, requestedBy: string): Promise<number> {
+  /**
+   * Auftrag anlegen; liefert die ID des Listenelements.
+   * Status „Angefordert“ = der Flow führt ihn aus. Direkt im Webpart ausgeführte Aktionen werden mit
+   * „In Arbeit“ angelegt (der Flow übernimmt nur „Angefordert“) und danach mit complete() abgeschlossen.
+   */
+  public async add(req: IActionRequest, requestedBy: string, status: ActionStatus = 'Angefordert', result: string = ''): Promise<number> {
     const item = await this._post<{ Id: number }>(`${this._list}/items`, {
       Title: `${req.action}: ${req.resourceName}`.slice(0, 255),
       Action: req.action,
@@ -224,10 +229,31 @@ export class ActionService {
       TargetName: (req.targetName || '').slice(0, 255),
       TargetIsGroup: !!req.targetIsGroup,
       Reason: req.reason,
-      Status: 'Angefordert',
+      Status: status,
+      Result: result,
       RequestedBy: requestedBy.slice(0, 255)
     });
     return item.Id;
+  }
+
+  /** Ergebnis einer direkt ausgeführten Aktion zurückschreiben (zweiter Versuch bei Fehlern). */
+  public async complete(id: number, status: ActionStatus, result: string): Promise<void> {
+    const body = { Status: status, Result: result, CompletedAt: new Date().toISOString() };
+    const send = async (): Promise<void> => {
+      const res = await this._client.post(`${this._list}/items(${id})`, SPHttpClient.configurations.v1, {
+        headers: { ...JSON_HEADERS, 'IF-MATCH': '*', 'X-HTTP-Method': 'MERGE' },
+        body: JSON.stringify(body)
+      });
+      if (!res.ok) {
+        throw new ActionError(await this._message(res), res.status);
+      }
+    };
+    try {
+      await send();
+    } catch {
+      await new Promise(resolve => setTimeout(resolve, 1500));
+      await send();
+    }
   }
 
   public async get(id: number): Promise<IActionItem | undefined> {

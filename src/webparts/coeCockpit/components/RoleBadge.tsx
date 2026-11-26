@@ -1,40 +1,31 @@
 import * as React from 'react';
-import { AadTokenProviderFactory } from '@microsoft/sp-http';
 import { Callout, DirectionalHint } from '@fluentui/react/lib/Callout';
 import { DefaultButton, PrimaryButton } from '@fluentui/react/lib/Button';
 import { Icon } from '@fluentui/react/lib/Icon';
 import styles from './CoeCockpit.module.scss';
-import { checkAdminRole, IRoleStatus } from '../services/RoleCheckService';
+import { IRoleStatus } from '../services/RoleCheckService';
 import { PIM_URL } from '../services/PowerPlatformApiService';
 import { formatTime } from '../utils/format';
 
 /**
  * Anzeige rechts oben: Ist die Rolle „Power Platform Administrator“ (bzw. „Globaler Administrator“) gerade aktiv?
  * Grün = aktiv, Gelb = nicht aktiv (PIM aktivieren), Grau = nicht prüfbar. Klick öffnet Details und „Erneut prüfen“.
+ * Die Prüfung selbst macht das Cockpit (dasselbe Ergebnis blendet die Aktions-Schaltflächen ein bzw. aus).
  */
 export interface IRoleBadgeProps {
-  factory: AadTokenProviderFactory;
-  /** Ressourcen, deren Token geprüft werden (in dieser Reihenfolge) */
-  resources: string[];
+  status: IRoleStatus | undefined;
+  checking: boolean;
+  /** Frisches Token holen und neu prüfen */
+  onRecheck: () => void;
+  /** Zeigt im Detail an, dass ohne aktive Rolle die Aktions-Schaltflächen ausgeblendet sind */
+  actionsHint?: boolean;
   themeVars: React.CSSProperties;
 }
 
 export const RoleBadge: React.FC<IRoleBadgeProps> = props => {
-  const [status, setStatus] = React.useState<IRoleStatus | undefined>(undefined);
-  const [checking, setChecking] = React.useState<boolean>(true);
+  const { status, checking } = props;
   const [open, setOpen] = React.useState<boolean>(false);
   const ref = React.useRef<HTMLButtonElement>(null);
-  const key = props.resources.join('|');
-
-  const run = (fresh: boolean): void => {
-    setChecking(true);
-    checkAdminRole(props.factory, props.resources, fresh).then(
-      st => { setStatus(st); setChecking(false); },
-      (e: Error) => { setStatus({ state: 'unknown', roles: [], checkedAt: new Date(), problem: e.message }); setChecking(false); }
-    );
-  };
-
-  React.useEffect(() => { run(false); }, [props.factory, key]);
 
   const state = status ? status.state : 'unknown';
   const tone = checking && !status ? styles.roleBadgeChecking : state === 'active' ? styles.roleBadgeActive : state === 'inactive' ? styles.roleBadgeInactive : styles.roleBadgeUnknown;
@@ -71,10 +62,13 @@ export const RoleBadge: React.FC<IRoleBadgeProps> = props => {
                 {status && status.roles.length > 0 && <> Derzeit aktiv: {status.roles.join(', ')}.</>}
               </p>
             )}
+            {state !== 'active' && props.actionsHint && (
+              <p>Solange die Rolle nicht aktiv ist, sind die Aktions-Schaltflächen (Quarantäne, Löschen, Besitzer, Freigaben, Environments …) ausgeblendet.</p>
+            )}
             {state === 'unknown' && (
               <p>
                 Die aktiven Rollen konnten aus der Anmeldung nicht gelesen werden{status && status.problem ? ` (${status.problem})` : ''}.
-                Ob die Rolle aktiv ist, zeigt sich dann an den einzelnen Bereichen.
+                Ob die Rolle aktiv ist, zeigt sich dann an den einzelnen Bereichen; Aktions-Schaltflächen bleiben vorsichtshalber ausgeblendet.
               </p>
             )}
             <p className={styles.roleCalloutMeta}>
@@ -84,7 +78,7 @@ export const RoleBadge: React.FC<IRoleBadgeProps> = props => {
               {state !== 'active' && (
                 <PrimaryButton text="In PIM aktivieren" iconProps={{ iconName: 'OpenInNewWindow' }} href={PIM_URL} target="_blank" rel="noopener noreferrer" />
               )}
-              <DefaultButton text={checking ? 'Wird geprüft …' : 'Erneut prüfen'} iconProps={{ iconName: 'Refresh' }} disabled={checking} onClick={() => run(true)} />
+              <DefaultButton text={checking ? 'Wird geprüft …' : 'Erneut prüfen'} iconProps={{ iconName: 'Refresh' }} disabled={checking} onClick={props.onRecheck} />
             </div>
           </div>
         </Callout>

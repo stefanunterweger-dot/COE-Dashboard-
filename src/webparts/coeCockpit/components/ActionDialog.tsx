@@ -7,17 +7,26 @@ import { Dropdown, IDropdownOption } from '@fluentui/react/lib/Dropdown';
 import { MessageBar, MessageBarType } from '@fluentui/react/lib/MessageBar';
 import { ProgressIndicator } from '@fluentui/react/lib/ProgressIndicator';
 import { Icon } from '@fluentui/react/lib/Icon';
+import { Link } from '@fluentui/react/lib/Link';
+import { AadTokenProviderFactory } from '@microsoft/sp-http';
 import styles from './CoeCockpit.module.scss';
 import { IRecord } from '../models/ITableConfig';
-import { ACTION_HINT, ACTION_LABEL, ActionCode, FINAL_STATUS, IActionItem, resourceOf } from '../models/actions';
+import { ACTION_HINT, ACTION_LABEL, ActionCode, ActionStatus, FINAL_STATUS, IActionItem, IActionRequest, resourceOf } from '../models/actions';
 import { ActionService } from '../services/ActionService';
 import { DataverseService } from '../services/DataverseService';
+import { DirectActionError, DirectActionService, runsDirect } from '../services/DirectActionService';
+import { PIM_URL, PPAPI_RESOURCE } from '../services/PowerPlatformApiService';
+import { checkAdminRole, RoleState } from '../services/RoleCheckService';
 import { displayValue, isMailAddress } from '../utils/format';
 
 /**
  * Dialog für eine Cockpit-Aktion: Zusammenfassung, Pflicht-Begründung, bei Besitzer/Freigaben die
- * Person bzw. Gruppe. Legt den Auftrag in der SharePoint-Liste an und verfolgt den Status, bis der
- * Flow ihn erledigt hat.
+ * Person bzw. Gruppe.
+ *  - Die meisten Aktionen führt das Webpart direkt aus (Rechte der angemeldeten Person, Rolle
+ *    „Power Platform Administrator“). Vorher wird der Eintrag im Aktionsprotokoll (SharePoint-Liste) mit
+ *    „In Arbeit“ angelegt, danach mit dem Ergebnis abgeschlossen.
+ *  - „Solution löschen“ braucht Rechte im Environment und geht als Auftrag („Angefordert“) an den Flow;
+ *    der Dialog verfolgt den Status, bis der Flow ihn erledigt hat.
  */
 export interface IActionTarget {
   logicalName: string;
@@ -28,6 +37,10 @@ export interface IActionTarget {
 export interface IActionDialogProps {
   target: IActionTarget | undefined;
   actions: ActionService;
+  /** Direkte Ausführung (ohne Flow) */
+  direct: DirectActionService | undefined;
+  /** Für die Prüfung der Admin-Rolle vor direkten Aktionen */
+  tokenFactory?: AadTokenProviderFactory;
   dataverse: DataverseService | undefined;
   requestedBy: string;
   themeVars: React.CSSProperties;
@@ -54,6 +67,8 @@ export const ActionDialog: React.FC<IActionDialogProps> = props => {
   const [phase, setPhase] = React.useState<'edit' | 'sending' | 'waiting' | 'done'>('edit');
   const [item, setItem] = React.useState<IActionItem | undefined>(undefined);
   const [error, setError] = React.useState<string>('');
+  const [logProblem, setLogProblem] = React.useState<string>('');
+  const [role, setRole] = React.useState<RoleState | undefined>(undefined);
   const pollRef = React.useRef<number>(0);
 
   React.useEffect(() => {
@@ -69,7 +84,14 @@ export const ActionDialog: React.FC<IActionDialogProps> = props => {
     setPhase('edit');
     setItem(undefined);
     setError('');
+    setLogProblem('');
+    setRole(undefined);
     pollRef.current++;
+    // Direkte Aktionen laufen mit den eigenen Rechten – ist die Admin-Rolle (PIM) gerade aktiv?
+    if (props.tokenFactory && runsDirect(target.code)) {
+      checkAdminRole(props.tokenFactory, ['https://graph.microsoft.com', PPAPI_RESOURCE], false)
+        .then(st => setRole(st.state), () => setRole('unknown'));
+    }
   }, [target]);
 
   const needsPerson = code === 'setowner' || code === 'addviewer' || code === 'addeditor';
@@ -151,6 +173,7 @@ export const ActionDialog: React.FC<IActionDialogProps> = props => {
   const reasonOk = reason.trim().length >= 5;
   const canSend = phase === 'edit' && targetOk && reasonOk;
   const final = !!item && FINAL_STATUS.indexOf(item.status) >= 0;
+  const direct = runsDirect(code);
 
   const poll = (id: number, run: number, started: number): void => {
     window.setTimeout(() => {
@@ -178,15 +201,60 @@ export const ActionDialog: React.FC<IActionDialogProps> = props => {
     }, ACTION_TIMING.pollMs);
   };
 
+  /** Direkt ausführen: Protokolleintrag „In Arbeit“ → Aufruf → Ergebnis zurückschreiben. */
+  const runDirect = async (request: IActionRequest): Promise<void> => {
+    const run = ++pollRef.current;
+    let id: number;
+    try {
+      id = await props.actions.add(request, props.requestedBy, 'In Arbeit', 'Wird direkt im CoE Cockpit ausgeführt (Rechte der angemeldeten Person) …');
+    } catch (e) {
+      setPhase('edit');
+      setError(`Der Eintrag im Aktionsprotokoll konnte nicht angelegt werden – die Aktion wurde deshalb nicht ausgeführt. ${e instanceof Error ? e.message : String(e)}`);
+      return;
+    }
+    const base: IActionItem = { ...request, id, status: 'In Arbeit', result: '', created: new Date().toISOString(), completedAt: '', requestedBy: props.requestedBy };
+    setItem(base);
+    setPhase('waiting');
+    let status: ActionStatus;
+    let result: string;
+    try {
+      const r = await props.direct!.run(request);
+      status = 'Erledigt';
+      result = `${r.text}${r.note}`;
+    } catch (e) {
+      status = e instanceof DirectActionError && e.kind === 'rejected' ? 'Abgelehnt' : 'Fehler';
+      result = e instanceof Error ? e.message : String(e);
+    }
+    let problem = '';
+    try {
+      await props.actions.complete(id, status, result.slice(0, 4000));
+    } catch (e) {
+      problem = e instanceof Error ? e.message : String(e);
+    }
+    const done: IActionItem = { ...base, status, result, completedAt: new Date().toISOString() };
+    props.onFinished(done);
+    if (pollRef.current !== run) {
+      return;
+    }
+    setItem(done);
+    setLogProblem(problem);
+    setPhase('done');
+  };
+
   const send = (): void => {
     setPhase('sending');
     setError('');
     const person = picked || (typedMail ? { id: typedMail, name: typedMail, sub: '', isGroup: false } : undefined);
-    props.actions.add({
+    const request: IActionRequest = {
       action: code, resourceType: res.type, resourceId: res.id, coeRecordId: res.coeId, resourceName: res.name,
       environmentId: res.env, targetUser: person ? person.id : '', targetName: person ? person.name : '', targetIsGroup: person ? person.isGroup : false,
       reason: reason.trim()
-    }, props.requestedBy).then(
+    };
+    if (direct) {
+      runDirect(request).catch((e: unknown) => { setPhase('edit'); setError(e instanceof Error ? e.message : String(e)); });
+      return;
+    }
+    props.actions.add(request, props.requestedBy).then(
       id => {
         const run = ++pollRef.current;
         setItem({ id, action: code, resourceType: res.type, resourceId: res.id, coeRecordId: res.coeId, resourceName: res.name, environmentId: res.env, reason, status: 'Angefordert', result: '', created: new Date().toISOString(), completedAt: '', requestedBy: props.requestedBy });
@@ -199,7 +267,7 @@ export const ActionDialog: React.FC<IActionDialogProps> = props => {
 
   const statusText = item ? ({
     'Angefordert': 'Auftrag angelegt – wartet auf den Flow (meist unter einer Minute) …',
-    'In Arbeit': 'Der Flow führt den Auftrag gerade aus …',
+    'In Arbeit': direct ? 'Wird ausgeführt und im Aktionsprotokoll vermerkt …' : 'Der Flow führt den Auftrag gerade aus …',
     'Erledigt': 'Erledigt.',
     'Fehler': 'Fehler beim Ausführen.',
     'Abgelehnt': 'Abgelehnt.'
@@ -221,6 +289,30 @@ export const ActionDialog: React.FC<IActionDialogProps> = props => {
           {ACTION_HINT[code]}
         </MessageBar>
 
+        {phase === 'edit' && (
+          <div className={styles.actionHow}>
+            <Icon iconName={direct ? 'LightningBolt' : 'Flow'} />
+            <span>
+              {direct
+                ? 'Wird sofort mit deinen eigenen Rechten ausgeführt (aktive Rolle „Power Platform Administrator“) und im Aktionsprotokoll vermerkt.'
+                : 'Braucht Rechte im Environment (System Administrator) – geht deshalb als Auftrag an den Flow „CoE Cockpit | Aktion ausführen“ (Dienstkonto) und wird im Aktionsprotokoll vermerkt.'}
+            </span>
+          </div>
+        )}
+
+        {phase === 'edit' && direct && role === 'inactive' && (
+          <MessageBar messageBarType={MessageBarType.warning} isMultiline={true}>
+            Deine Rolle „Power Platform Administrator“ ist gerade nicht aktiv – Microsoft würde die Aktion ablehnen.{' '}
+            <Link href={PIM_URL} target="_blank" rel="noopener noreferrer">In PIM aktivieren</Link>, danach einige Minuten warten bzw. neu anmelden.
+          </MessageBar>
+        )}
+
+        {phase === 'edit' && direct && !props.direct && (
+          <MessageBar messageBarType={MessageBarType.error} isMultiline={true}>
+            Direkte Aktionen sind in diesem Webpart nicht verfügbar (keine Anmeldung an den Microsoft-Schnittstellen möglich).
+          </MessageBar>
+        )}
+
         {phase === 'edit' && (code === 'addviewer' || code === 'addeditor') && res.type === 'app' && (
           <ChoiceGroup
             label="Rolle"
@@ -237,7 +329,7 @@ export const ActionDialog: React.FC<IActionDialogProps> = props => {
               placeholder="Name oder E-Mail-Adresse"
               value={picked ? picked.name : query}
               onChange={(_e, v) => { setPicked(undefined); setQuery(v || ''); }}
-              description={typedMail ? 'Nicht im CoE – der Flow sucht die Person über die E-Mail-Adresse.' : 'Vorschläge aus dem CoE (Power Platform User). Personen außerhalb des CoE per E-Mail-Adresse.'}
+              description={typedMail ? 'Nicht im CoE – die Person wird über die E-Mail-Adresse gesucht (Microsoft Graph).' : 'Vorschläge aus dem CoE (Power Platform User). Personen außerhalb des CoE per E-Mail-Adresse.'}
             />
             {suggestions.length > 0 && !picked && (
               <div className={styles.actionSuggest} role="listbox" aria-label="Vorschläge">
@@ -275,17 +367,22 @@ export const ActionDialog: React.FC<IActionDialogProps> = props => {
           />
         )}
 
-        {error && <MessageBar messageBarType={MessageBarType.error} isMultiline={true}>Auftrag konnte nicht angelegt werden: {error}</MessageBar>}
+        {error && <MessageBar messageBarType={MessageBarType.error} isMultiline={true}>{direct ? error : `Auftrag konnte nicht angelegt werden: ${error}`}</MessageBar>}
 
         {item && (
           <div className={styles.actionStatus}>
-            {!final && <ProgressIndicator label={`Auftrag #${item.id}`} description={statusText} />}
+            {!final && <ProgressIndicator label={`${direct ? 'Protokoll' : 'Auftrag'} #${item.id}`} description={statusText} />}
             {final && (
               <MessageBar messageBarType={item.status === 'Erledigt' ? MessageBarType.success : MessageBarType.error} isMultiline={true}>
-                <b>Auftrag #{item.id}: {item.status}</b>{item.result ? ` – ${item.result}` : ''}
+                <b>{direct ? 'Protokoll' : 'Auftrag'} #{item.id}: {item.status}</b>{item.result ? ` – ${item.result}` : ''}
               </MessageBar>
             )}
-            {phase === 'done' && !final && (
+            {logProblem && (
+              <MessageBar messageBarType={MessageBarType.warning} isMultiline={true}>
+                Das Ergebnis konnte nicht ins Aktionsprotokoll geschrieben werden ({logProblem}). Der Eintrag #{item.id} steht dort noch auf „In Arbeit“.
+              </MessageBar>
+            )}
+            {phase === 'done' && !final && !direct && (
               <MessageBar messageBarType={MessageBarType.warning} isMultiline={true}>
                 Der Flow hat den Auftrag noch nicht übernommen. Er bleibt in der Liste und wird ausgeführt, sobald der Flow läuft – den Stand siehst du im Aktionsprotokoll.
               </MessageBar>
@@ -295,10 +392,10 @@ export const ActionDialog: React.FC<IActionDialogProps> = props => {
       </div>
       <DialogFooter>
         {phase === 'edit' && (
-          <PrimaryButton text="Auftrag senden" iconProps={{ iconName: 'Send' }} disabled={!canSend} onClick={send}
+          <PrimaryButton text={direct ? 'Ausführen' : 'Auftrag senden'} iconProps={{ iconName: direct ? 'LightningBolt' : 'Send' }} disabled={!canSend || (direct && !props.direct)} onClick={send}
             title={!reasonOk ? 'Bitte eine Begründung angeben (mind. 5 Zeichen).' : !targetOk ? 'Bitte Person bzw. Freigabe wählen.' : undefined} />
         )}
-        <DefaultButton text={phase === 'edit' ? 'Abbrechen' : 'Schließen'} disabled={phase === 'sending'} onClick={() => { pollRef.current++; props.onDismiss(); }} />
+        <DefaultButton text={phase === 'edit' ? 'Abbrechen' : 'Schließen'} disabled={phase === 'sending' || (direct && phase === 'waiting')} onClick={() => { pollRef.current++; props.onDismiss(); }} />
       </DialogFooter>
     </Dialog>
   );

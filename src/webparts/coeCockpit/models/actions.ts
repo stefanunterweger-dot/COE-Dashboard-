@@ -2,15 +2,17 @@ import { IRecord } from './ITableConfig';
 import { displayValue, rawValue } from '../utils/format';
 
 /**
- * Cockpit-Aktionen: Das Cockpit legt Aufträge in der SharePoint-Liste „CoE Cockpit Aktionen“ an,
- * ein Flow im CoE-Environment führt sie mit einem Admin-Dienstkonto aus und schreibt das Ergebnis zurück.
- * Nur Mitglieder der SharePoint-Gruppe (Standard „CoE Cockpit Admins“) dürfen Aufträge anlegen.
+ * Cockpit-Aktionen: Das Cockpit führt sie direkt mit den Rechten der angemeldeten Person aus (Rolle
+ * „Power Platform Administrator“, siehe services/DirectActionService.ts) und protokolliert jede in der SharePoint-Liste
+ * „CoE Cockpit Aktionen“. Nur „Solution löschen“ braucht Rechte im Environment und geht als Auftrag an den Flow im
+ * CoE-Environment (Dienstkonto). Sichtbar sind die Aktionen nur für Mitglieder der SharePoint-Gruppe (Standard
+ * „CoE Cockpit Admins“) mit aktiver Admin-Rolle.
  */
 export const DEFAULT_ACTION_GROUP = 'CoE Cockpit Admins';
 export const ACTION_LIST_TITLE = 'CoE Cockpit Aktionen';
 export const ACTION_LOG_KEY = 'actions:log';
 
-/** Technische Codes (werden vom Flow ausgewertet – nicht übersetzen). */
+/** Technische Codes (stehen im Aktionsprotokoll und werden vom Flow ausgewertet – nicht übersetzen). */
 export type ActionCode = 'quarantine' | 'unquarantine' | 'delete' | 'setowner' | 'addviewer' | 'addeditor' | 'removeuser' | 'flowoff' | 'flowon'
   | 'envmanaged' | 'envdisable' | 'envenable' | 'soldelete';
 export type ResourceType = 'app' | 'flow' | 'environment' | 'solution';

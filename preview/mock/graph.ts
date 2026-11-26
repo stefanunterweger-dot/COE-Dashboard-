@@ -46,10 +46,20 @@ function licensesFor(user: string): { status: number; body: unknown } {
   return { status: 200, body: { value: [e3] } };
 }
 
+// Für Tests: einige Personen, die Graph kennt (E-Mail → Objekt-ID)
+(window as unknown as { __graphPeople?: unknown }).__graphPeople = GRAPH_PEOPLE.slice(0, 5);
+
 /** GET (z. B. transitive Gruppenmitglieder) */
 export function mockGraphGet(url: string): Promise<IMockResponse> {
   const w = window as unknown as IGraphWindow;
   return new Promise(resolve => setTimeout(() => {
+    const user = /\/v1\.0\/users\/([^/?]+)$/.exec(url.split('?')[0]);
+    if (user) {
+      const key = decodeURIComponent(user[1]).toLowerCase();
+      const p = GRAPH_PEOPLE.filter(x => x.upn.toLowerCase() === key || x.id.toLowerCase() === key)[0];
+      resolve(p ? respond(200, { id: p.id }) : respond(404, { error: { code: 'Request_ResourceNotFound', message: `Resource '${key}' does not exist.` } }));
+      return;
+    }
     const m = /\/groups\/([^/]+)\/transitiveMembers/.exec(url);
     if (!m) {
       resolve(respond(404, { error: { code: 'ResourceNotFound', message: `Unsupported ${url}` } }));

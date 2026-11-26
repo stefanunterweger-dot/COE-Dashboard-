@@ -3974,6 +3974,21 @@ button.solItem {
   background: var(--coe-bg);
 }
 
+.actionHow {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--coe-text-2, #616161);
+
+  i {
+    font-size: 14px;
+    margin-top: 1px;
+    color: var(--coe-accent, #0f6cbd);
+  }
+}
+
 .actionStatus {
   display: flex;
   flex-direction: column;

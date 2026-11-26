@@ -39,7 +39,9 @@ import { IUsageTarget, UsageNotify, usageLogKey } from './UsageNotify';
 import { usageSupported } from '../models/usageMail';
 import { IWebPartSettings } from '../models/settings';
 import { BILLING_KEY, CREDITS_KEY, GROUP_LICENSING } from '../models/copilotCredits';
-import { PowerPlatformApiService } from '../services/PowerPlatformApiService';
+import { PowerPlatformApiService, PPAPI_RESOURCE } from '../services/PowerPlatformApiService';
+import { DirectActionService } from '../services/DirectActionService';
+import { checkAdminRole, IRoleStatus } from '../services/RoleCheckService';
 import { GROUP_GOVERNANCE } from '../models/defaultTables';
 import { INotifySettings } from '../models/notification';
 import { copyCurrentLink, IViewState, readViewState, writeViewState } from '../utils/deepLink';
@@ -326,8 +328,39 @@ const CoeCockpit: React.FC<ICoeCockpitProps> = props => {
   }, [actionService]);
   /** Mitglied der SharePoint-Gruppe (Standard „CoE Cockpit Admins“)? Nur dann gibt es Aktions-Schaltflächen – auch für E-Mails. */
   const isGroupMember = !!actionSetup && !!actionSetup.group && actionSetup.isMember;
-  /** Aufträge (Quarantäne, Löschen …) zusätzlich nur mit eingerichteter Liste und eingeschalteten Aktionen. */
-  const canAct = !!props.showActions && !!actionService && !!actionSetup && actionSetup.listExists && isGroupMember;
+  // Admin-Rolle (PIM) der angemeldeten Person – Anzeige rechts oben und Voraussetzung für alle Admin-Aktionen
+  const [roleStatus, setRoleStatus] = React.useState<IRoleStatus | undefined>(undefined);
+  const [roleChecking, setRoleChecking] = React.useState<boolean>(!!props.aadTokenProviderFactory);
+  const roleResources = [service ? service.baseUrl : '', 'https://graph.microsoft.com', PPAPI_RESOURCE];
+  const checkRole = React.useCallback((fresh: boolean): void => {
+    if (!props.aadTokenProviderFactory) {
+      return;
+    }
+    setRoleChecking(true);
+    checkAdminRole(props.aadTokenProviderFactory, roleResources, fresh).then(
+      st => { setRoleStatus(st); setRoleChecking(false); },
+      (e: Error) => { setRoleStatus({ state: 'unknown', roles: [], checkedAt: new Date(), problem: e.message }); setRoleChecking(false); }
+    );
+  }, [props.aadTokenProviderFactory, roleResources.join('|')]);
+  React.useEffect(() => { checkRole(false); }, [checkRole]);
+  /** Rolle „Power Platform Administrator“ bzw. „Globaler Administrator“ gerade aktiv? */
+  const adminRoleActive = !!roleStatus && roleStatus.state === 'active';
+  /**
+   * Admin-Aktionen (Quarantäne, Löschen …) nur für Gruppenmitglieder mit AKTIVER Admin-Rolle, eingerichteter Liste
+   * (Aktionsprotokoll) und eingeschalteten Aktionen. Ohne aktive Rolle sind die Schaltflächen ausgeblendet.
+   */
+  const canAct = !!props.showActions && !!actionService && !!actionSetup && actionSetup.listExists && isGroupMember && adminRoleActive;
+  /** Direkte Ausführung im Namen der angemeldeten Person (alles außer „Solution löschen“). */
+  const directActions = React.useMemo(() => new DirectActionService(
+    props.aadHttpClientFactory,
+    ppApi,
+    service,
+    async (mail: string) => {
+      const graph = await props.msGraphClientFactory.getClient('3');
+      const u = await graph.api(`/users/${encodeURIComponent(mail)}`).version('v1.0').select('id').get() as { id?: string };
+      return u && u.id ? u.id : undefined;
+    }
+  ), [props.aadHttpClientFactory, ppApi, service, props.msGraphClientFactory]);
   // Gemeinsames Versandprotokoll (wer hat welches Environment wann verständigt)
   const notifyLogService = React.useMemo(
     () => (props.spHttpClient && props.webUrl ? new NotifyLogService(props.spHttpClient, props.webUrl) : undefined),
@@ -1522,14 +1555,24 @@ const CoeCockpit: React.FC<ICoeCockpitProps> = props => {
     const res = canAct && (isDev || panel.table.logicalName !== 'admin_environment') ? resourceOf(panel.table.logicalName, rec) : undefined;
     if (res && rec.admin_appdeleted !== true && rec.admin_flowdeleted !== true && rec.admin_solutiondeleted !== true) {
       const pending = (actionItems || []).some(i => i.resourceId === res.id && (i.status === 'Angefordert' || i.status === 'In Arbeit'));
-      actionsFor(res.type, rec, props.deleteRequiresStop).forEach(a => out.push({
-        key: a.code,
-        text: ACTION_LABEL[a.code].replace(' (Benutzer)', '').replace(' (Mitbesitzer)', ''),
-        icon: ACTION_ICON[a.code],
-        disabled: !!a.disabled || pending || actionExtraPending,
-        title: actionExtraPending ? 'Daten für die Aktionen werden geladen …' : pending ? 'Für diese Ressource läuft bereits ein Auftrag.' : a.disabled,
-        onClick: () => setActionTarget({ logicalName: panel.table.logicalName, record: rec, code: a.code })
-      }));
+      // Environment-Aktionen setzt Microsoft im Hintergrund um, das CoE zeigt sie erst nach dem nächsten Sync:
+      // dieselbe Aktion deshalb 60 Minuten nach „Erledigt“ nicht noch einmal anbieten.
+      const recentEnv = (code: string): IActionItem | undefined => res.type !== 'environment' ? undefined : (actionItems || []).filter(i =>
+        i.resourceId === res.id && i.action === code && i.status === 'Erledigt' && Date.now() - new Date(i.completedAt || i.created).getTime() < 3600000)[0];
+      const fmtTime = (iso: string): string => new Intl.DateTimeFormat('de-AT', { hour: '2-digit', minute: '2-digit' }).format(new Date(iso));
+      actionsFor(res.type, rec, props.deleteRequiresStop).forEach(a => {
+        const recent = recentEnv(a.code);
+        out.push({
+          key: a.code,
+          text: ACTION_LABEL[a.code].replace(' (Benutzer)', '').replace(' (Mitbesitzer)', ''),
+          icon: ACTION_ICON[a.code],
+          disabled: !!a.disabled || pending || actionExtraPending || !!recent,
+          title: actionExtraPending ? 'Daten für die Aktionen werden geladen …' : pending ? 'Für diese Ressource läuft bereits ein Auftrag.'
+            : recent ? `Bereits um ${fmtTime(recent.completedAt || recent.created)} ausgeführt (${recent.requestedBy}) – Microsoft setzt die Änderung um, das CoE-Inventar zeigt sie nach dem nächsten Sync.`
+              : a.disabled,
+          onClick: () => setActionTarget({ logicalName: panel.table.logicalName, record: rec, code: a.code })
+        });
+      });
     }
     return out.length ? out : undefined;
   };
@@ -1556,7 +1599,25 @@ const CoeCockpit: React.FC<ICoeCockpitProps> = props => {
     if (!actionSetup.isMember) {
       return `Aktionen dürfen nur Mitglieder der SharePoint-Gruppe „${props.actionsGroup}“ auslösen.`;
     }
+    if (!adminRoleActive) {
+      return roleNote();
+    }
     return 'Für diesen Datensatz gibt es keine Aktionen.';
+  };
+
+  /** Hinweis für Gruppenmitglieder, wenn die Admin-Aktionen wegen der Rolle ausgeblendet sind. */
+  const roleNote = (): string => roleChecking && !roleStatus
+    ? 'Die Admin-Rolle wird geprüft …'
+    : 'Die Aktionen (Quarantäne, Löschen, Besitzer, Freigaben …) sind ausgeblendet, weil die Rolle „Power Platform Administrator“ gerade nicht aktiv ist. '
+      + 'In PIM aktivieren und danach rechts oben beim Rollen-Abzeichen „Erneut prüfen“.';
+
+  /** Zusätzlicher Hinweis unter den (Mail-)Schaltflächen, wenn Admin-Aktionen nur wegen der Rolle fehlen. */
+  const panelRoleInfo = (): string | undefined => {
+    if (!panel || adminRoleActive || !isGroupMember || !props.showActions || !actionSetup || !actionSetup.listExists) {
+      return undefined;
+    }
+    const actionable = panel.table.logicalName === 'admin_app' || panel.table.logicalName === 'admin_flow' || panel.table.logicalName === 'admin_solution' || panel.table.key === DEV_ENV_KEY;
+    return actionable ? roleNote() : undefined;
   };
 
   // Aktionsfelder des geöffneten Datensatzes direkt laden (alle Spalten, damit ältere CoE-Versionen ohne einzelne Felder nicht scheitern)
@@ -1752,8 +1813,10 @@ const CoeCockpit: React.FC<ICoeCockpitProps> = props => {
           <div className={styles.headerActions}>
             {props.aadTokenProviderFactory && (
               <RoleBadge
-                factory={props.aadTokenProviderFactory}
-                resources={[service ? service.baseUrl : '', 'https://graph.microsoft.com', 'https://api.powerplatform.com']}
+                status={roleStatus}
+                checking={roleChecking}
+                onRecheck={() => checkRole(true)}
+                actionsHint={isGroupMember && !!props.showActions}
                 themeVars={themeVars}
               />
             )}
@@ -1854,6 +1917,7 @@ const CoeCockpit: React.FC<ICoeCockpitProps> = props => {
           actions={panelActions()}
           headerExtra={panelActionHistory()}
           actionsNote={panelActionsNote()}
+          actionsInfo={panelRoleInfo()}
           hideActions={!isGroupMember && !isEditMode}
           extraSection={panel && service && panel.table.logicalName === 'admin_solution' && !panel.table.environmentUrl
             ? {
@@ -1876,6 +1940,8 @@ const CoeCockpit: React.FC<ICoeCockpitProps> = props => {
         <ActionDialog
           target={actionTarget}
           actions={actionService as ActionService}
+          direct={directActions}
+          tokenFactory={props.aadTokenProviderFactory}
           dataverse={service}
           requestedBy={props.currentUser.displayName}
           themeVars={themeVars}

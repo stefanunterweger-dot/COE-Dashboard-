@@ -34,6 +34,8 @@ export interface IRecordPanelProps {
   headerExtra?: React.ReactNode;
   /** Hinweis im Bereich „Aktionen“, wenn keine Aktionen angeboten werden (z. B. fehlende Gruppe). */
   actionsNote?: string;
+  /** Zusätzlicher Hinweis unter vorhandenen Schaltflächen (z. B. Admin-Aktionen wegen fehlender Rolle ausgeblendet) */
+  actionsInfo?: string;
   /** Abschnitt „Aktionen“ ganz ausblenden (z. B. für Personen außerhalb der berechtigten SharePoint-Gruppe). */
   hideActions?: boolean;
   /** Zusätzlicher Abschnitt in der Übersicht unter „Eigenschaften“ (z. B. „Inhalt der Solution“). */
@@ -249,6 +251,12 @@ export const RecordPanel: React.FC<IRecordPanelProps> = props => {
               <ul className={styles.actionReasons}>
                 {props.actions.filter(a => a.disabled && !!a.title).map(a => <li key={a.key}><b>{a.text}:</b> {a.title}</li>)}
               </ul>
+            )}
+            {props.actionsInfo && (
+              <div className={styles.infoCard}>
+                <Icon iconName="ShieldAlert" className={styles.infoCardIcon} />
+                <div>{props.actionsInfo}</div>
+              </div>
             )}
             {props.headerExtra}
           </>

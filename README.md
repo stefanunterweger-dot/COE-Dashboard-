@@ -11,7 +11,8 @@ Apps, Flows, Environments und Maker sind vorkonfiguriert, weitere Tabellen lasse
 
 Nachbau der CoE-App **„Power Platform Admin View“** (CoE Starter Kit, Core Components) als SharePoint-Webpart. Die Daten kommen
 direkt aus den Dataverse-Tabellen des CoE; nur **Copilot-Credits / Abrechnungspläne** werden live über die Power Platform API gelesen.
-Ändernde Aktionen laufen ausschließlich als Auftrag über eine SharePoint-Liste und einen Flow (siehe „Aktionen“).
+Ändernde Aktionen führt das Cockpit direkt mit den Rechten der angemeldeten Person aus (aktive Rolle „Power Platform Administrator“) und
+protokolliert jede in einer SharePoint-Liste; nur „Solution löschen“ läuft über einen Flow mit Dienstkonto (siehe „Aktionen“).
 
 | Bereich | Beschreibung |
 |---|---|
@@ -22,7 +23,7 @@ direkt aus den Dataverse-Tabellen des CoE; nur **Copilot-Credits / Abrechnungspl
 | DLP-Richtlinien | Alle Richtlinien aus dem CoE-Inventar mit Geltungsbereich; in der Detailansicht die zugeordneten **Environments**, **blockierten** und **Business-Connectors** |
 | Maker 360° | Detailansicht eines Makers mit Apps, Flows, Bots, Desktop Flows, **Zugriff auf** (alle Freigaben/Rollen der Person), **Sicherheitsrollen** in allen Environments und eigenen Environments |
 | ALM-Pipelines | Bereitstellungen (Solution, Version, Pipeline, Stufe, Status, ausgelöst von), Pipelines mit Stufen und Pipeline-Environments – live aus dem Dataverse des **Pipelines-Host-Environments** (Auswahl in den Eigenschaften) |
-| Admin-Rolle (PIM) rechts oben | Beim Laden liest das Cockpit die **aktiven Entra-Rollen** der angemeldeten Person aus dem Anmelde-Token (Claim `wids`, keine zusätzliche Berechtigung): **grün** „Power Platform Admin aktiv“ (bzw. „Globaler Admin aktiv“), **gelb** „PIM-Rolle nicht aktiv“, grau, wenn nicht prüfbar. Ein Klick zeigt Details, den Link „In PIM aktivieren“ und „Erneut prüfen“ (holt ein frisches Token – nach dem Aktivieren dauert es oft 1–2 Minuten). |
+| Admin-Rolle (PIM) rechts oben | Beim Laden liest das Cockpit die **aktiven Entra-Rollen** der angemeldeten Person aus dem Anmelde-Token (Claim `wids`, keine zusätzliche Berechtigung): **grün** „Power Platform Admin aktiv“ (bzw. „Globaler Admin aktiv“), **gelb** „PIM-Rolle nicht aktiv“, grau, wenn nicht prüfbar. Ein Klick zeigt Details, den Link „In PIM aktivieren“ und „Erneut prüfen“ (holt ein frisches Token – nach dem Aktivieren dauert es oft 1–2 Minuten). Ohne aktive Rolle sind die **Aktions-Schaltflächen ausgeblendet** (siehe „Aktionen“). |
 | Hinweis Adminrolle | Bereiche außerhalb des CoE-Environments (Solutions im Default Environment, ALM-Pipelines) werden beim Start geprüft. Fehlt der Zugriff, erscheint **vorab** ein Hinweis, welche Bereiche nicht sichtbar sind und dass die Rolle „Power Platform-Administrator“ (PIM) aktiviert werden muss; die Einträge sind in der Navigation mit einem Schloss markiert. |
 | Tabellenansicht | Volltextsuche, Sortierung, Seitenumbruch, kompakte/normale Zeilenhöhe, Spaltenauswahl, CSV-Export für Excel. **Trefferzahl direkt neben dem Suchfeld**: „571 Einträge“, nach Suche/Filter hervorgehoben „9 von 571 Einträgen“. |
 | Betroffen ab Februar 2027 | Ab **Februar 2027** öffnen Apps in **Managed Environments** nur noch für Personen mit Premium-Lizenz (Power Apps Premium, Power Automate Premium oder Dynamics 365 Enterprise mit Power-Apps-Rechten) – auch Standard-Apps ([Microsoft](https://learn.microsoft.com/en-us/power-platform/admin/managed-environment-licensing)). Die Auswertung zeigt **alle Berechtigten** der Apps in Managed Environments – Besitzer, Mitbesitzer, Benutzer und Mitglieder freigegebener Gruppen (auch verschachtelt, über Microsoft Graph `transitiveMembers`) –, ihre **Lizenzen live über Microsoft Graph** und wer die Apps in den letzten 30 Tagen geöffnet hat (CoE-Audit-Log). Reiter Personen / Environments / Apps, Filter „Ohne Premium“, CSV-Export, Countdown. Environments mit Pay-as-you-go für Power Apps werden erkannt, wenn die Power Platform API freigegeben ist. Benötigt die Graph-Berechtigungen `User.Read.All` und `GroupMember.Read.All` (Skript `-Licenses`). |
@@ -84,7 +85,10 @@ Ergebnis: `sharepoint/solution/coe-cockpit.sppkg`
    Für „Betroffen ab Februar 2027“ **Microsoft Graph – User.Read.All** und **GroupMember.Read.All** genehmigen (optional; Lizenzprüfung).
    Für den automatischen E-Mail-Versand zusätzlich **Microsoft Graph – Mail.Send** genehmigen (optional; ohne diese
    Genehmigung funktioniert „In Outlook öffnen“ bzw. „Nacheinander in Outlook“ weiterhin). Für **Copilot-Credits und
-   Abrechnungspläne** die drei Anforderungen der **Power Platform API** genehmigen (optional). Achtung: API-Genehmigungen für
+   Abrechnungspläne** die drei Lese-Anforderungen der **Power Platform API** genehmigen (optional). Für die **Aktionen** (Quarantäne,
+   Löschen, Besitzer, Freigaben, Flows ein/aus, Environments) **PowerApps Service – User**, **Microsoft Flow Service – User,
+   Flows.Read.All, Flows.Manage.All** und **Power Platform API – EnvironmentManagement.Write, EnvironmentManagement.Settings.ReadWrite**
+   genehmigen (optional; Skript `-Actions`). Achtung: API-Genehmigungen für
    SharePoint-Webparts gelten für alle SPFx-Lösungen im Tenant. **Erscheinen unter „API-Zugriff“ keine Anforderungen**, setzt das
    Skript [`scripts/Grant-CoeCockpitPermissions.ps1`](scripts/Grant-CoeCockpitPermissions.ps1) dieselben Berechtigungen
    (Microsoft Graph PowerShell, als Globaler Administrator bzw. Administrator für privilegierte Rollen).
@@ -99,75 +103,96 @@ Benutzer ohne Rechte sehen eine verständliche Fehlermeldung statt Daten.
 
 ## Aktionen für Apps, Flows und Environments
 
-Im Bereich **„Aktionen“** der Detailansicht (unten) lassen sich Aufträge auslösen:
+Im Bereich **„Aktionen“** der Detailansicht (unten):
 
-| Ressource | Aktionen |
-|---|---|
-| App | In Quarantäne stellen / Aus Quarantäne holen, Besitzer ändern, Freigabe hinzufügen (Benutzer/Mitbesitzer), Freigabe entfernen, Löschen |
-| Flow | Ausschalten / Einschalten, Besitzer ändern, Mitbesitzer hinzufügen, Freigabe entfernen, Löschen |
-| Environment (nur „Betroffen ab 15.12.“) | Auf Managed umstellen, Environment deaktivieren / aktivieren, Maker per E-Mail verständigen |
-| Solution | Solution löschen – nur **nicht verwaltete** Solutions (nur der Container; Apps, Flows und andere Komponenten bleiben im Environment). Verwaltete und System-/Microsoft-Solutions sind gesperrt. |
+| Ressource | Aktionen | Ausführung |
+|---|---|---|
+| App | In Quarantäne stellen / Aus Quarantäne holen, Besitzer ändern, Freigabe hinzufügen (Benutzer/Mitbesitzer), Freigabe entfernen, Löschen | direkt im Webpart |
+| Flow | Ausschalten / Einschalten, Besitzer ändern, Mitbesitzer hinzufügen, Freigabe entfernen, Löschen | direkt im Webpart |
+| Environment (nur „Betroffen ab 15.12.“) | Auf Managed umstellen, Environment deaktivieren / aktivieren (dazu „Maker per E-Mail verständigen“) | direkt im Webpart |
+| Solution | Solution löschen – nur **nicht verwaltete** Solutions (nur der Container; Apps, Flows und andere Komponenten bleiben im Environment). Verwaltete und System-/Microsoft-Solutions sind gesperrt. | Flow (Dienstkonto) |
 
-**So funktioniert es:** Das Cockpit legt einen Auftrag in der SharePoint-Liste **„CoE Cockpit Aktionen“** an (Aktion, Ressource, IDs,
-Zielperson, Pflicht-Begründung). Ein Flow im CoE-Environment führt ihn mit einem Admin-Dienstkonto aus und schreibt Status und Ergebnis
-zurück; das Cockpit zeigt den Fortschritt live und alle Aufträge im **Aktionsprotokoll** (Governance).
+**Grundsatz:** Was die Rolle **Power Platform Administrator** kann, führt das Cockpit **direkt** aus – im Namen der angemeldeten Person,
+ohne Flow und ohne Dienstkonto. Microsoft prüft dabei bei jedem Aufruf selbst, ob die Rolle **aktiv** ist (PIM wird also erzwungen), und im
+Audit-Log steht die echte Person. Nur was zusätzlich Rechte **im jeweiligen Environment** braucht (System Administrator bzw. System Customizer),
+läuft als Auftrag über den Flow – derzeit nur „Solution löschen“.
 
-**Sichtbarkeit:** Alle Aktions-Schaltflächen – auch „Nachfrage Verwendung“, „Maker per E-Mail verständigen“, das Brief-Symbol und
-„Alle gefilterten verständigen“ in „Betroffen ab 15.12.“ sowie das Aktionsprotokoll – sehen **nur Mitglieder der SharePoint-Gruppe**
-(Standard „CoE Cockpit Admins“). Für alle anderen ist der Abschnitt „Aktionen“ ausgeblendet; im Bearbeitungsmodus erscheint ein Hinweis.
+**Protokoll:** Jede Aktion steht in der SharePoint-Liste **„CoE Cockpit Aktionen“** (Aktion, Ressource, IDs, Zielperson, Pflicht-Begründung,
+Person, Ergebnis, Zeitpunkt) und im **Aktionsprotokoll** (Governance):
+- Direkte Aktionen: Das Cockpit legt den Eintrag **vor** dem Aufruf mit Status „In Arbeit“ an (scheitert das, wird die Aktion nicht ausgeführt)
+  und schreibt danach „Erledigt“, „Fehler“ oder „Abgelehnt“ mit Ergebnistext zurück.
+- Flow-Aufträge: Eintrag mit Status „Angefordert“; der Flow übernimmt nur diese (Auslösebedingung) und schreibt das Ergebnis zurück.
+
+**Sichtbarkeit:** Die Aktions-Schaltflächen (Quarantäne, Löschen, Besitzer, Freigaben, Flows ein/aus, Environments, Solution löschen) sehen nur
+Personen, die **Mitglied der SharePoint-Gruppe** (Standard „CoE Cockpit Admins“) sind **und** die Rolle **„Power Platform Administrator“**
+(oder „Globaler Administrator“) **gerade aktiv** haben – geprüft beim Laden über den Claim `wids` im Anmelde-Token, dasselbe Ergebnis wie das
+Rollen-Abzeichen rechts oben. Ist die Rolle nicht aktiv, sind die Schaltflächen ausgeblendet; Gruppenmitglieder sehen stattdessen einen Hinweis
+(„In PIM aktivieren, danach ‚Erneut prüfen‘“). Die E-Mail-Funktionen („Nachfrage Verwendung“, „Maker per E-Mail verständigen“) und das
+Aktionsprotokoll brauchen nur die Gruppenmitgliedschaft. Für alle anderen ist der Abschnitt „Aktionen“ ausgeblendet.
 
 **Regeln:**
-- Löschen nie, wenn die App bzw. der Flow **Teil einer Solution** ist (CoE-Felder „Is Solution App“ / „Is Solution Flow“; unbekannt = gesperrt). Bots werden nicht gelöscht.
+- Löschen nie, wenn die App bzw. der Flow **Teil einer Solution** ist (CoE-Felder „Is Solution App“ / „Is Solution Flow“, vor dem Löschen frisch
+  gelesen; unbekannt = gesperrt). Bots werden nicht gelöscht.
 - Optional (Standard: an): Löschen erst, wenn die App **in Quarantäne** bzw. der Flow **ausgeschaltet** ist.
-- Pro Ressource immer nur ein offener Auftrag.
+- Pro Ressource immer nur ein offener Auftrag; eine erledigte Environment-Aktion wird bis zum nächsten CoE-Sync (max. 60 Minuten) nicht noch einmal angeboten.
 
-**Einrichtung (Webpart-Eigenschaften → „Aktionen für Apps und Flows“):**
-1. **SharePoint-Gruppe** wählen oder mit „Gruppe anlegen“ erstellen (Standard: **„CoE Cockpit Admins“**). Nur Mitglieder sehen die Aktionen.
+**Direkte Aufrufe**
+
+| Aktion | Schnittstelle (im Namen der angemeldeten Person) | CoE-Inventar danach |
+|---|---|---|
+| In Quarantäne / Aus Quarantäne | `POST api.powerapps.com/…/scopes/admin/environments/{env}/apps/{app}/setPowerAppQuarantineState` | „Quarantine App“ + Datum, „App Is Quarantined“ |
+| Löschen (App) | `DELETE …/apps/{app}` | „App Deleted“ + Datum |
+| Besitzer ändern (App) | `POST …/apps/{app}/modifyAppOwner` (bisheriger Besitzer wird Mitbesitzer) | „App Owner“ |
+| Freigabe hinzufügen / entfernen (App) | `POST …/apps/{app}/modifyPermissions` | – (nächster CoE-Sync) |
+| Flow aus / ein | `POST api.flow.microsoft.com/…/scopes/admin/environments/{env}/flows/{flow}/stop` bzw. `/start` | „Flow State“ |
+| Löschen (Flow) | `DELETE …/flows/{flow}` | „Flow Deleted“ + Datum |
+| Besitzer / Mitbesitzer / Freigabe entfernen (Flow) | `POST …/flows/{flow}/modifyOwners` (als Mitbesitzer – den Ersteller kann Power Automate nicht ändern) | „Derived Owner“ (Besitzer ändern) |
+| Auf Managed umstellen | Power Platform API `POST /environmentmanagement/environments/{id}/governanceSetting/enableManaged` | – (nächster CoE-Sync) |
+| Environment deaktivieren / aktivieren | Power Platform API `POST /environmentmanagement/environments/{id}/Disable` (Grund „UserRequested“) bzw. `/Enable` | – (nächster CoE-Sync) |
+
+Die Power-Apps- und Power-Automate-Aufrufe sind dieselben Admin-Schnittstellen, die die Connectors „Power Apps for Admins“ / „Power Automate
+for Admins“ und Microsofts PowerShell-Modul `Microsoft.PowerApps.Administration.PowerShell` verwenden; sie erlauben Aufrufe aus dem Browser
+(CORS). Die Environment-Aufrufe sind offiziell dokumentierte Endpunkte der Power Platform API (derzeit „Preview“). Zielpersonen, die nicht im CoE
+stehen, werden über ihre E-Mail-Adresse in Microsoft Graph gesucht (`User.Read.All`). Das CoE-Inventar zieht das Cockpit mit den Rechten der
+Person nach; klappt das nicht, steht ein Hinweis im Ergebnis – der nächste CoE-Sync korrigiert es ohnehin.
+
+**Einrichtung (Webpart-Einstellungen → „Aktionen“):**
+1. **SharePoint-Gruppe** wählen oder mit „Gruppe anlegen“ erstellen (Standard: **„CoE Cockpit Admins“**).
 2. **„Aktionsliste einrichten“**: legt die Liste an und gibt ihr eigene Berechtigungen – nur die Gruppe (Bearbeiten) und die Websitebesitzer (Vollzugriff).
-3. Flow „CoE Cockpit | Aktion ausführen“ im CoE-Environment importieren (siehe nächster Abschnitt); dort denselben Gruppennamen eintragen.
-   Der Flow prüft vor jeder Ausführung, ob die anfragende Person Mitglied der Gruppe ist.
+3. Berechtigungen für die direkten Aufrufe freigeben: `.\scripts\Grant-CoeCockpitPermissions.ps1 -Actions` (oder unter „API-Zugriff“ genehmigen).
+4. Für „Solution löschen“: Flow „CoE Cockpit | Aktion ausführen“ im CoE-Environment importieren (siehe nächster Abschnitt); dort denselben Gruppennamen eintragen.
 
-### Flow „CoE Cockpit | Aktion ausführen“
+### Flow „CoE Cockpit | Aktion ausführen“ (nur „Solution löschen“)
 
-Fertige, nicht verwaltete Lösung: [`flow/CoECockpitAktionen_1_1_0_0.zip`](flow/CoECockpitAktionen_1_1_0_0.zip)
+Fertige, nicht verwaltete Lösung: [`flow/CoECockpitAktionen_1_2_0_0.zip`](flow/CoECockpitAktionen_1_2_0_0.zip)
 (erzeugt mit [`flow/build-flow-solution.py`](flow/build-flow-solution.py); lesbare Definition: `flow/CoECockpit-Aktionausfuehren.definition.json`).
 
-**Ablauf:** Neuer Eintrag in „CoE Cockpit Aktionen“ → Status „In Arbeit“ → prüfen, ob „Erstellt von“ Mitglied der SharePoint-Gruppe ist
-(sonst „Abgelehnt“) → Aktion ausführen → CoE-Inventar nachziehen → Status „Erledigt“, „Fehler“ oder „Abgelehnt“ mit Ergebnistext zurückschreiben.
+Version 1.2.0.0 ist bereinigt: Sie enthält nur noch, was ein Dienstkonto mit Rechten im Environment braucht – **2 Verbindungsreferenzen**
+(SharePoint, Dataverse) statt 7. Power Apps for Admins, Power Automate for Admins, Power Automate Management, Power Platform for Admins V2 und
+Office 365 Users werden nicht mehr gebraucht.
 
-| Aktion | Connector-Aktion | CoE-Inventar danach |
-|---|---|---|
-| In Quarantäne / Aus Quarantäne | Power Apps for Admins – `Set-AppQuarantineState` | „Quarantine App“ + Datum |
-| Löschen (App) | prüft „Is Solution App“ = Nein, dann `Remove-AdminApp` | „App Deleted“ + Datum |
-| Löschen (Flow) | prüft „Is Solution Flow“ = Nein, dann Power Automate for Admins – `Remove-AdminFlow` | „Flow Deleted“ + Datum |
-| Besitzer ändern (App) | `Set-AdminAppOwner` (bisheriger Besitzer wird Mitbesitzer) | „App Owner“ |
-| Besitzer ändern (Flow) | `Edit-AdminFlowOwnerRole` (als Mitbesitzer – den Ersteller kann Power Automate nicht ändern) | „Derived Owner“ |
-| Freigabe hinzufügen / entfernen | `Edit-AdminAppRoleAssignment` bzw. `Edit-AdminFlowOwnerRole` | – (nächster CoE-Sync) |
-| Flow aus / ein | Power Automate Management – `StopFlow` / `StartFlow` | „Flow State“ |
-| Auf Managed umstellen | Power Platform for Admins V2 – `EnableManagedEnvironment` | – (nächster CoE-Sync) |
-| Environment deaktivieren / aktivieren | Power Platform for Admins V2 – `DisableEnvironment` / `EnableEnvironment` | – (nächster CoE-Sync) |
-| Solution löschen | Dataverse – `GetItemWithOrganization` (prüft „nicht verwaltet“), dann `DeleteRecordWithOrganization` im Environment der Solution | „Solution Deleted“ + Datum |
-
-Zielpersonen gibt das Cockpit als Entra-Objekt-ID oder E-Mail-Adresse mit; E-Mail-Adressen löst der Flow über Office 365 Users auf
-(Gruppen bitte mit Objekt-ID).
+**Ablauf:** Neuer Eintrag mit Status „Angefordert“ in „CoE Cockpit Aktionen“ (Auslösebedingung – direkt ausgeführte Aktionen stehen schon auf
+„In Arbeit“ und werden ignoriert) → Status „In Arbeit“ → prüfen, ob „Erstellt von“ Mitglied der SharePoint-Gruppe ist (sonst „Abgelehnt“) →
+Solution im Environment lesen (nur nicht verwaltet, keine System-Solution) → löschen (`DeleteRecordWithOrganization`) → CoE-Inventar
+„Solution Deleted“ + Datum → Status „Erledigt“, „Fehler“ oder „Abgelehnt“ zurückschreiben. Andere Aktionen lehnt der Flow mit dem Hinweis ab,
+das Webpart zu aktualisieren.
 
 **Import (im CoE-Environment):**
 1. make.powerapps.com → CoE-Environment → *Lösungen* → *Importieren* → ZIP auswählen.
-2. **Verbindungen** mit einem **Admin-Dienstkonto** (Power Platform Administrator, Lizenz für Premium-Connectors) anlegen bzw. auswählen:
-   SharePoint, Power Apps for Admins, Power Automate for Admins, Power Automate Management, Power Platform for Admins V2,
-   Microsoft Dataverse, Office 365 Users.
+2. **Verbindungen** mit einem **Dienstkonto** anlegen bzw. auswählen: **SharePoint** und **Microsoft Dataverse**. Das Dienstkonto braucht
+   **System Administrator** (oder System Customizer) in den Environments, in denen Solutions gelöscht werden sollen, und Schreibrechte im CoE.
 3. **Umgebungsvariablen:** SharePoint-Website des Cockpits (z. B. `https://contoso.sharepoint.com/sites/powerplatform`),
    Name der Aktionsliste (Standard „CoE Cockpit Aktionen“ – alternativ die Listen-ID), SharePoint-Gruppe (Standard „CoE Cockpit Admins“).
 4. Dem Dienstkonto auf der Liste **„CoE Cockpit Aktionen“** die Berechtigung **Bearbeiten** geben (die Liste hat eigene Berechtigungen).
-5. Flow einschalten (falls er nach dem Import aus ist) und im Cockpit eine harmlose Aktion testen, z. B. „In Quarantäne stellen“ und wieder „Aus Quarantäne holen“.
+5. Flow einschalten (falls er nach dem Import aus ist) und mit einer Test-Solution prüfen.
+
+**Update von Version 1.1.0.0:** Die neue ZIP einfach erneut importieren. Bei nicht verwalteten Lösungen entfernt der Import keine Bestandteile –
+die nicht mehr benötigten Verbindungsreferenzen (Power Apps for Admins, Power Automate for Admins, Power Automate Management, Power Platform for
+Admins V2, Office 365 Users) danach in der Lösung bzw. unter *Verbindungsreferenzen* löschen.
 
 **Hinweise:**
 - Mitgliedschaft wird direkt in der SharePoint-Gruppe geprüft; Personen, die nur über eine darin enthaltene Entra-Gruppe Mitglied sind, werden abgelehnt.
-- Der Connector „Power Platform for Admins V2“ ist bei Microsoft noch in Vorschau. Meldet der Flow-Designer bei einer der drei
-  Environment-Aktionen einen Fehler, die Aktion im Designer neu hinzufügen („Enables managed governance for the specified environment“,
-  „Disables the specified environment“ mit Grund „UserRequested“, „Enables the specified environment“) und Environment-ID
-  `triggerOutputs()?['body/EnvironmentId']` eintragen.
-- Die Flow-Definition konnte hier nicht gegen einen echten Tenant getestet werden – bitte zuerst mit einer Test-App prüfen.
+- Die Flow-Definition konnte hier nicht gegen einen echten Tenant getestet werden – bitte zuerst mit einer Test-Solution prüfen.
 
 ## Copilot-Credits und Abrechnungspläne (live)
 

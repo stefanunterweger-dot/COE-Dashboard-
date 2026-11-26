@@ -14,7 +14,9 @@ export const PPAPI_BASE = 'https://api.powerplatform.com';
 export const PPAPI_VERSIONS = {
   licensing: ['2024-10-01', '2022-03-01-preview'],
   billing: ['2022-03-01-preview', '2024-10-01'],
-  environments: ['2022-03-01-preview', '2024-10-01']
+  environments: ['2022-03-01-preview', '2024-10-01'],
+  /** Environment-Aktionen (Managed, Deaktivieren, Aktivieren) */
+  environmentActions: ['2024-10-01', '2022-03-01-preview']
 };
 
 export const PIM_URL = 'https://portal.azure.com/#view/Microsoft_Azure_PIMCommon/ActivationMenuBlade/~/aadmigratedroles';
@@ -32,6 +34,14 @@ export const PPAPI_FORBIDDEN_HINT = 'Die Power Platform API hat den Zugriff verw
 
 export const PPAPI_CONSENT_HINT = 'Das Webpart darf die Power Platform API noch nicht aufrufen. Ein Administrator muss die Berechtigungen „Licensing.Allocations.Read“, „Licensing.BillingPolicies.Read“ und '
   + '„EnvironmentManagement.Environments.Read“ der „Power Platform API“ für SharePoint freigeben (Skript im README, Abschnitt „Copilot-Credits“).';
+
+export const PPAPI_WRITE_CONSENT_HINT = 'Das Webpart darf Environments über die Power Platform API noch nicht ändern. Ein Administrator muss die Berechtigungen „EnvironmentManagement.Write“ und '
+  + '„EnvironmentManagement.Settings.ReadWrite“ der „Power Platform API“ für SharePoint freigeben (scripts/Grant-CoeCockpitPermissions.ps1 -Actions).';
+
+/** Fehlt dem Token eine Berechtigung (Scope) – im Unterschied zu einer fehlenden Rolle? */
+function isScopeProblem(msg: string): boolean {
+  return /\bscopes?\b|\bscp\b|required claims|insufficient claims|not authorized for (the )?(scope|permission)/i.test(msg);
+}
 
 interface IPaged<T> { value?: T[]; '@odata.nextLink'?: string; nextLink?: string; continuationToken?: string; continuationtoken?: string }
 
@@ -70,7 +80,7 @@ export class PowerPlatformApiService {
     return this.clientPromise;
   }
 
-  private async raw(url: string): Promise<HttpClientResponse> {
+  private async raw(url: string, body?: unknown): Promise<HttpClientResponse> {
     let client: AadHttpClient;
     try {
       client = await this.client();
@@ -78,16 +88,22 @@ export class PowerPlatformApiService {
       throw classifyTokenError(e);
     }
     try {
+      if (body !== undefined) {
+        return await client.post(url, AadHttpClient.configurations.v1, {
+          headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
+          body: JSON.stringify(body)
+        });
+      }
       return await client.get(url, AadHttpClient.configurations.v1, { headers: { Accept: 'application/json' } });
     } catch (e) {
       throw classifyTokenError(e);
     }
   }
 
-  /** GET mit Wiederholung bei 429/503 und Fallback auf die nächste api-version. */
-  private async fetchJson<T>(url: string): Promise<T> {
+  /** GET (bzw. POST mit body) mit Wiederholung bei 429/503. */
+  private async fetchJson<T>(url: string, body?: unknown): Promise<T> {
     for (let attempt = 0; ; attempt++) {
-      const res = await this.raw(url);
+      const res = await this.raw(url, body);
       if (res.ok) {
         if (res.status === 204) {
           return undefined as unknown as T;
@@ -103,6 +119,9 @@ export class PowerPlatformApiService {
       }
       const msg = messageOf(text);
       if (res.status === 401 || res.status === 403) {
+        if (body !== undefined && isScopeProblem(msg)) {
+          throw new PpApiError('consent', PPAPI_WRITE_CONSENT_HINT, res.status, msg);
+        }
         throw new PpApiError('forbidden', PPAPI_FORBIDDEN_HINT, res.status, msg);
       }
       if (res.status === 404) {
@@ -120,11 +139,24 @@ export class PowerPlatformApiService {
   }
 
   /** Einzelne Ressource. versions: siehe PPAPI_VERSIONS. */
-  public async get<T>(path: string, versions: string[] = PPAPI_VERSIONS.licensing): Promise<T> {
+  public get<T>(path: string, versions: string[] = PPAPI_VERSIONS.licensing): Promise<T> {
+    return this.call<T>(path, versions);
+  }
+
+  /**
+   * Schreibender Aufruf (POST) im Namen des angemeldeten Benutzers. Microsoft prüft dabei selbst,
+   * ob die Person die nötige Rolle hat (Power Platform Administrator).
+   */
+  public post<T>(path: string, body: unknown, versions: string[] = PPAPI_VERSIONS.environmentActions): Promise<T> {
+    return this.call<T>(path, versions, body === undefined ? {} : body);
+  }
+
+  /** Aufruf mit Fallback auf die nächste api-version. */
+  private async call<T>(path: string, versions: string[], body?: unknown): Promise<T> {
     let last: PpApiError | undefined;
     for (let i = 0; i < versions.length; i++) {
       try {
-        return await this.fetchJson<T>(this.url(path, versions[i]));
+        return await this.fetchJson<T>(this.url(path, versions[i]), body);
       } catch (e) {
         const err = e as PpApiError;
         const versionProblem = err.kind === 'failed' && err.status === 400 && /api.?version/i.test(err.detail || '');

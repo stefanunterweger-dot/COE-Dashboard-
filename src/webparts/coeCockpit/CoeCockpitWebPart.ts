@@ -633,7 +633,7 @@ export default class CoeCockpitWebPart extends BaseClientSideWebPart<ICoeCockpit
                   disabled: this.properties.showActions === false
                 }),
                 PropertyPaneLabel('actionInfo', {
-                  text: 'Ausgeführt werden die Aufträge vom Flow „CoE Cockpit | Aktion ausführen“ im CoE-Environment. Dort muss derselbe Gruppenname eingetragen sein.'
+                  text: 'Sichtbar nur für Mitglieder der Gruppe mit aktiver Rolle „Power Platform Administrator“. Das Cockpit führt die Aktionen direkt aus und protokolliert sie in der Liste; nur „Solution löschen“ übernimmt der Flow „CoE Cockpit | Aktion ausführen“ (dort denselben Gruppennamen eintragen).'
                 })
               ]
             },

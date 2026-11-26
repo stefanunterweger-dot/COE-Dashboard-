@@ -10,42 +10,6 @@
           "name": "shared_sharepointonline"
         }
       },
-      "shared_powerappsforadmins": {
-        "runtimeSource": "embedded",
-        "connection": {
-          "connectionReferenceLogicalName": "coeck_PowerAppsAdmin"
-        },
-        "api": {
-          "name": "shared_powerappsforadmins"
-        }
-      },
-      "shared_microsoftflowforadmins": {
-        "runtimeSource": "embedded",
-        "connection": {
-          "connectionReferenceLogicalName": "coeck_PowerAutomateAdmin"
-        },
-        "api": {
-          "name": "shared_microsoftflowforadmins"
-        }
-      },
-      "shared_flowmanagement": {
-        "runtimeSource": "embedded",
-        "connection": {
-          "connectionReferenceLogicalName": "coeck_PowerAutomateManagement"
-        },
-        "api": {
-          "name": "shared_flowmanagement"
-        }
-      },
-      "shared_powerplatformadminv2": {
-        "runtimeSource": "embedded",
-        "connection": {
-          "connectionReferenceLogicalName": "coeck_PowerPlatformAdminV2"
-        },
-        "api": {
-          "name": "shared_powerplatformadminv2"
-        }
-      },
       "shared_commondataserviceforapps": {
         "runtimeSource": "embedded",
         "connection": {
@@ -53,15 +17,6 @@
         },
         "api": {
           "name": "shared_commondataserviceforapps"
-        }
-      },
-      "shared_office365users": {
-        "runtimeSource": "embedded",
-        "connection": {
-          "connectionReferenceLogicalName": "coeck_Office365Users"
-        },
-        "api": {
-          "name": "shared_office365users"
         }
       }
     },
@@ -122,7 +77,12 @@
             },
             "authentication": "@parameters('$authentication')"
           },
-          "description": "Neuer Auftrag aus dem CoE Cockpit (Liste „CoE Cockpit Aktionen“)."
+          "description": "Neuer Auftrag aus dem CoE Cockpit (Liste „CoE Cockpit Aktionen“). Nur Status „Angefordert“ – direkt im Webpart ausgeführte Aktionen stehen schon auf „In Arbeit“.",
+          "conditions": [
+            {
+              "expression": "@or(empty(triggerOutputs()?['body/Status']), equals(triggerOutputs()?['body/Status'], 'Angefordert'))"
+            }
+          ]
         }
       },
       "actions": {
@@ -190,23 +150,6 @@
             ]
           }
         },
-        "Ziel_init": {
-          "type": "InitializeVariable",
-          "inputs": {
-            "variables": [
-              {
-                "name": "Ziel",
-                "type": "string",
-                "value": "@{trim(coalesce(triggerOutputs()?['body/TargetUser'], ''))}"
-              }
-            ]
-          },
-          "runAfter": {
-            "Hinweis_init": [
-              "Succeeded"
-            ]
-          }
-        },
         "Status_In_Arbeit": {
           "type": "OpenApiConnection",
           "inputs": {
@@ -230,7 +173,7 @@
             "authentication": "@parameters('$authentication')"
           },
           "runAfter": {
-            "Ziel_init": [
+            "Hinweis_init": [
               "Succeeded"
             ]
           }
@@ -290,608 +233,90 @@
                 ]
               },
               "actions": {
-                "Ziel_ermitteln": {
-                  "type": "If",
-                  "expression": {
-                    "and": [
-                      {
-                        "equals": [
-                          "@contains(createArray('setowner','addviewer','addeditor','removeuser'), triggerOutputs()?['body/Action'])",
-                          true
-                        ]
-                      },
-                      {
-                        "not": {
-                          "equals": [
-                            "@length(variables('Ziel'))",
-                            36
-                          ]
-                        }
-                      }
-                    ]
-                  },
-                  "actions": {
-                    "Person_suchen": {
-                      "type": "OpenApiConnection",
-                      "inputs": {
-                        "host": {
-                          "connectionName": "shared_office365users",
-                          "operationId": "UserProfile_V2",
-                          "apiId": "/providers/Microsoft.PowerApps/apis/shared_office365users"
-                        },
-                        "parameters": {
-                          "id": "@variables('Ziel')"
-                        },
-                        "authentication": "@parameters('$authentication')"
-                      }
-                    },
-                    "Ziel_ID_setzen": {
-                      "type": "SetVariable",
-                      "inputs": {
-                        "name": "Ziel",
-                        "value": "@body('Person_suchen')?['id']"
-                      },
-                      "runAfter": {
-                        "Person_suchen": [
-                          "Succeeded"
-                        ]
-                      }
-                    },
-                    "Person_nicht_gefunden": {
-                      "type": "SetVariable",
-                      "inputs": {
-                        "name": "Abgelehnt",
-                        "value": "@{concat('Die Person „', variables('Ziel'), '“ wurde nicht gefunden. Gruppen bitte mit ihrer Objekt-ID angeben.')}"
-                      },
-                      "runAfter": {
-                        "Person_suchen": [
-                          "Failed",
-                          "TimedOut"
-                        ]
-                      }
-                    }
-                  },
-                  "else": {
-                    "actions": {}
-                  }
-                },
-                "Aktion_ausfuehren": {
-                  "type": "If",
-                  "runAfter": {
-                    "Ziel_ermitteln": [
-                      "Succeeded",
-                      "Failed"
-                    ]
-                  },
-                  "expression": {
-                    "equals": [
-                      "@empty(variables('Abgelehnt'))",
-                      true
-                    ]
-                  },
-                  "actions": {
-                    "Aktion": {
-                      "type": "Switch",
-                      "expression": "@triggerOutputs()?['body/Action']",
-                      "cases": {
-                        "Fall_quarantine": {
-                          "case": "quarantine",
+                "Aktion": {
+                  "type": "Switch",
+                  "expression": "@triggerOutputs()?['body/Action']",
+                  "cases": {
+                    "Fall_soldelete": {
+                      "case": "soldelete",
+                      "actions": {
+                        "Nur_Solution_soldelete": {
+                          "type": "If",
+                          "expression": {
+                            "equals": [
+                              "@triggerOutputs()?['body/ResourceType']",
+                              "solution"
+                            ]
+                          },
                           "actions": {
-                            "Quarantaene_setzen_quarantine": {
-                              "type": "OpenApiConnection",
-                              "inputs": {
-                                "host": {
-                                  "connectionName": "shared_powerappsforadmins",
-                                  "operationId": "Set-AppQuarantineState",
-                                  "apiId": "/providers/Microsoft.PowerApps/apis/shared_powerappsforadmins"
-                                },
-                                "parameters": {
-                                  "environment": "@triggerOutputs()?['body/EnvironmentId']",
-                                  "app": "@triggerOutputs()?['body/ResourceId']",
-                                  "api-version": "2021-02-01",
-                                  "Content-Type": "application/json",
-                                  "body/quarantineStatus": "Quarantined"
-                                },
-                                "authentication": "@parameters('$authentication')",
-                                "retryPolicy": {
-                                  "type": "exponential",
-                                  "count": 4,
-                                  "interval": "PT15S"
-                                }
-                              }
-                            },
-                            "Quarantaene_setzen_Fehler_quarantine": {
-                              "type": "SetVariable",
-                              "inputs": {
-                                "name": "Fehler",
-                                "value": "@{coalesce(body('Quarantaene_setzen_quarantine')?['error']?['message'], body('Quarantaene_setzen_quarantine')?['message'], actions('Quarantaene_setzen_quarantine')?['error']?['message'], 'Aktion Quarantaene_setzen_quarantine ist fehlgeschlagen.')}"
-                              },
-                              "runAfter": {
-                                "Quarantaene_setzen_quarantine": [
-                                  "Failed",
-                                  "TimedOut"
-                                ]
-                              }
-                            },
-                            "Ergebnis_setzen_quarantine": {
-                              "type": "SetVariable",
-                              "inputs": {
-                                "name": "Ergebnis",
-                                "value": "Die App ist jetzt in Quarantäne."
-                              },
-                              "runAfter": {
-                                "Quarantaene_setzen_quarantine": [
-                                  "Succeeded"
-                                ]
-                              }
-                            },
-                            "CoE_Quarantaene_quarantine": {
+                            "Solution_lesen_soldelete": {
                               "type": "OpenApiConnection",
                               "inputs": {
                                 "host": {
                                   "connectionName": "shared_commondataserviceforapps",
-                                  "operationId": "UpdateRecord",
+                                  "operationId": "GetItemWithOrganization",
                                   "apiId": "/providers/Microsoft.PowerApps/apis/shared_commondataserviceforapps"
                                 },
                                 "parameters": {
-                                  "entityName": "admin_apps",
-                                  "recordId": "@triggerOutputs()?['body/CoeRecordId']",
-                                  "item/admin_quarantineapp": true,
-                                  "item/admin_quarantineappdate": "@utcNow()"
+                                  "organization": "@triggerOutputs()?['body/EnvironmentId']",
+                                  "entityName": "solutions",
+                                  "recordId": "@triggerOutputs()?['body/ResourceId']",
+                                  "$select": "uniquename,ismanaged,isvisible"
                                 },
                                 "authentication": "@parameters('$authentication')"
-                              },
-                              "runAfter": {
-                                "Ergebnis_setzen_quarantine": [
-                                  "Succeeded"
-                                ]
                               }
                             },
-                            "CoE_Quarantaene_Hinweis_quarantine": {
-                              "type": "AppendToStringVariable",
-                              "inputs": {
-                                "name": "Hinweis",
-                                "value": " (CoE-Inventar nicht aktualisiert: @{coalesce(body('CoE_Quarantaene_quarantine')?['error']?['message'], body('CoE_Quarantaene_quarantine')?['message'], actions('CoE_Quarantaene_quarantine')?['error']?['message'], 'Aktion CoE_Quarantaene_quarantine ist fehlgeschlagen.')})"
-                              },
-                              "runAfter": {
-                                "CoE_Quarantaene_quarantine": [
-                                  "Failed",
-                                  "TimedOut"
-                                ]
-                              }
-                            }
-                          }
-                        },
-                        "Fall_unquarantine": {
-                          "case": "unquarantine",
-                          "actions": {
-                            "Quarantaene_setzen_unquarantine": {
-                              "type": "OpenApiConnection",
-                              "inputs": {
-                                "host": {
-                                  "connectionName": "shared_powerappsforadmins",
-                                  "operationId": "Set-AppQuarantineState",
-                                  "apiId": "/providers/Microsoft.PowerApps/apis/shared_powerappsforadmins"
-                                },
-                                "parameters": {
-                                  "environment": "@triggerOutputs()?['body/EnvironmentId']",
-                                  "app": "@triggerOutputs()?['body/ResourceId']",
-                                  "api-version": "2021-02-01",
-                                  "Content-Type": "application/json",
-                                  "body/quarantineStatus": "Unquarantined"
-                                },
-                                "authentication": "@parameters('$authentication')",
-                                "retryPolicy": {
-                                  "type": "exponential",
-                                  "count": 4,
-                                  "interval": "PT15S"
-                                }
-                              }
-                            },
-                            "Quarantaene_setzen_Fehler_unquarantine": {
+                            "Solution_lesen_Fehler_soldelete": {
                               "type": "SetVariable",
                               "inputs": {
                                 "name": "Fehler",
-                                "value": "@{coalesce(body('Quarantaene_setzen_unquarantine')?['error']?['message'], body('Quarantaene_setzen_unquarantine')?['message'], actions('Quarantaene_setzen_unquarantine')?['error']?['message'], 'Aktion Quarantaene_setzen_unquarantine ist fehlgeschlagen.')}"
+                                "value": "@{coalesce(body('Solution_lesen_soldelete')?['error']?['message'], body('Solution_lesen_soldelete')?['message'], actions('Solution_lesen_soldelete')?['error']?['message'], 'Aktion Solution_lesen_soldelete ist fehlgeschlagen.')}"
                               },
                               "runAfter": {
-                                "Quarantaene_setzen_unquarantine": [
+                                "Solution_lesen_soldelete": [
                                   "Failed",
                                   "TimedOut"
                                 ]
                               }
                             },
-                            "Ergebnis_setzen_unquarantine": {
-                              "type": "SetVariable",
-                              "inputs": {
-                                "name": "Ergebnis",
-                                "value": "Die App ist nicht mehr in Quarantäne."
-                              },
-                              "runAfter": {
-                                "Quarantaene_setzen_unquarantine": [
-                                  "Succeeded"
-                                ]
-                              }
-                            },
-                            "CoE_Quarantaene_unquarantine": {
-                              "type": "OpenApiConnection",
-                              "inputs": {
-                                "host": {
-                                  "connectionName": "shared_commondataserviceforapps",
-                                  "operationId": "UpdateRecord",
-                                  "apiId": "/providers/Microsoft.PowerApps/apis/shared_commondataserviceforapps"
-                                },
-                                "parameters": {
-                                  "entityName": "admin_apps",
-                                  "recordId": "@triggerOutputs()?['body/CoeRecordId']",
-                                  "item/admin_quarantineapp": false
-                                },
-                                "authentication": "@parameters('$authentication')"
-                              },
-                              "runAfter": {
-                                "Ergebnis_setzen_unquarantine": [
-                                  "Succeeded"
-                                ]
-                              }
-                            },
-                            "CoE_Quarantaene_Hinweis_unquarantine": {
-                              "type": "AppendToStringVariable",
-                              "inputs": {
-                                "name": "Hinweis",
-                                "value": " (CoE-Inventar nicht aktualisiert: @{coalesce(body('CoE_Quarantaene_unquarantine')?['error']?['message'], body('CoE_Quarantaene_unquarantine')?['message'], actions('CoE_Quarantaene_unquarantine')?['error']?['message'], 'Aktion CoE_Quarantaene_unquarantine ist fehlgeschlagen.')})"
-                              },
-                              "runAfter": {
-                                "CoE_Quarantaene_unquarantine": [
-                                  "Failed",
-                                  "TimedOut"
-                                ]
-                              }
-                            }
-                          }
-                        },
-                        "Fall_delete": {
-                          "case": "delete",
-                          "actions": {
-                            "Loeschen_App_oder_Flow_delete": {
+                            "Loeschen_erlaubt_soldelete": {
                               "type": "If",
+                              "runAfter": {
+                                "Solution_lesen_soldelete": [
+                                  "Succeeded"
+                                ]
+                              },
                               "expression": {
-                                "equals": [
-                                  "@triggerOutputs()?['body/ResourceType']",
-                                  "app"
+                                "and": [
+                                  {
+                                    "equals": [
+                                      "@body('Solution_lesen_soldelete')?['ismanaged']",
+                                      false
+                                    ]
+                                  },
+                                  {
+                                    "not": {
+                                      "contains": [
+                                        "@createArray('default','active','basic','system','crmservicesolution')",
+                                        "@toLower(coalesce(body('Solution_lesen_soldelete')?['uniquename'], ''))"
+                                      ]
+                                    }
+                                  }
                                 ]
                               },
                               "actions": {
-                                "CoE_Solution_lesen_App_delete": {
+                                "Solution_loeschen_soldelete": {
                                   "type": "OpenApiConnection",
                                   "inputs": {
                                     "host": {
                                       "connectionName": "shared_commondataserviceforapps",
-                                      "operationId": "GetItem",
+                                      "operationId": "DeleteRecordWithOrganization",
                                       "apiId": "/providers/Microsoft.PowerApps/apis/shared_commondataserviceforapps"
                                     },
                                     "parameters": {
-                                      "entityName": "admin_apps",
-                                      "recordId": "@triggerOutputs()?['body/CoeRecordId']",
-                                      "$select": "admin_issolutionapp"
-                                    },
-                                    "authentication": "@parameters('$authentication')"
-                                  }
-                                },
-                                "CoE_Solution_lesen_Fehler_App_delete": {
-                                  "type": "SetVariable",
-                                  "inputs": {
-                                    "name": "Fehler",
-                                    "value": "@{coalesce(body('CoE_Solution_lesen_App_delete')?['error']?['message'], body('CoE_Solution_lesen_App_delete')?['message'], actions('CoE_Solution_lesen_App_delete')?['error']?['message'], 'Aktion CoE_Solution_lesen_App_delete ist fehlgeschlagen.')}"
-                                  },
-                                  "runAfter": {
-                                    "CoE_Solution_lesen_App_delete": [
-                                      "Failed",
-                                      "TimedOut"
-                                    ]
-                                  }
-                                },
-                                "Nicht_in_Solution_App_delete": {
-                                  "type": "If",
-                                  "runAfter": {
-                                    "CoE_Solution_lesen_App_delete": [
-                                      "Succeeded"
-                                    ]
-                                  },
-                                  "expression": {
-                                    "equals": [
-                                      "@body('CoE_Solution_lesen_App_delete')?['admin_issolutionapp']",
-                                      false
-                                    ]
-                                  },
-                                  "actions": {
-                                    "App_loeschen_App_delete": {
-                                      "type": "OpenApiConnection",
-                                      "inputs": {
-                                        "host": {
-                                          "connectionName": "shared_powerappsforadmins",
-                                          "operationId": "Remove-AdminApp",
-                                          "apiId": "/providers/Microsoft.PowerApps/apis/shared_powerappsforadmins"
-                                        },
-                                        "parameters": {
-                                          "environment": "@triggerOutputs()?['body/EnvironmentId']",
-                                          "app": "@triggerOutputs()?['body/ResourceId']",
-                                          "api-version": "2016-11-01"
-                                        },
-                                        "authentication": "@parameters('$authentication')",
-                                        "retryPolicy": {
-                                          "type": "exponential",
-                                          "count": 4,
-                                          "interval": "PT15S"
-                                        }
-                                      }
-                                    },
-                                    "App_loeschen_Fehler_App_delete": {
-                                      "type": "SetVariable",
-                                      "inputs": {
-                                        "name": "Fehler",
-                                        "value": "@{coalesce(body('App_loeschen_App_delete')?['error']?['message'], body('App_loeschen_App_delete')?['message'], actions('App_loeschen_App_delete')?['error']?['message'], 'Aktion App_loeschen_App_delete ist fehlgeschlagen.')}"
-                                      },
-                                      "runAfter": {
-                                        "App_loeschen_App_delete": [
-                                          "Failed",
-                                          "TimedOut"
-                                        ]
-                                      }
-                                    },
-                                    "Ergebnis_setzen_App_delete": {
-                                      "type": "SetVariable",
-                                      "inputs": {
-                                        "name": "Ergebnis",
-                                        "value": "Die App wurde im Tenant gelöscht."
-                                      },
-                                      "runAfter": {
-                                        "App_loeschen_App_delete": [
-                                          "Succeeded"
-                                        ]
-                                      }
-                                    },
-                                    "CoE_App_geloescht_App_delete": {
-                                      "type": "OpenApiConnection",
-                                      "inputs": {
-                                        "host": {
-                                          "connectionName": "shared_commondataserviceforapps",
-                                          "operationId": "UpdateRecord",
-                                          "apiId": "/providers/Microsoft.PowerApps/apis/shared_commondataserviceforapps"
-                                        },
-                                        "parameters": {
-                                          "entityName": "admin_apps",
-                                          "recordId": "@triggerOutputs()?['body/CoeRecordId']",
-                                          "item/admin_appdeleted": true,
-                                          "item/admin_appdeletedon": "@utcNow()"
-                                        },
-                                        "authentication": "@parameters('$authentication')"
-                                      },
-                                      "runAfter": {
-                                        "Ergebnis_setzen_App_delete": [
-                                          "Succeeded"
-                                        ]
-                                      }
-                                    },
-                                    "CoE_App_geloescht_Hinweis_App_delete": {
-                                      "type": "AppendToStringVariable",
-                                      "inputs": {
-                                        "name": "Hinweis",
-                                        "value": " (CoE-Inventar nicht aktualisiert: @{coalesce(body('CoE_App_geloescht_App_delete')?['error']?['message'], body('CoE_App_geloescht_App_delete')?['message'], actions('CoE_App_geloescht_App_delete')?['error']?['message'], 'Aktion CoE_App_geloescht_App_delete ist fehlgeschlagen.')})"
-                                      },
-                                      "runAfter": {
-                                        "CoE_App_geloescht_App_delete": [
-                                          "Failed",
-                                          "TimedOut"
-                                        ]
-                                      }
-                                    }
-                                  },
-                                  "else": {
-                                    "actions": {
-                                      "Abgelehnt_Solution_App_delete": {
-                                        "type": "SetVariable",
-                                        "inputs": {
-                                          "name": "Abgelehnt",
-                                          "value": "Die App ist Teil einer Solution (oder das ist im CoE nicht erfasst) – Löschen nur über die Solution (ALM)."
-                                        }
-                                      }
-                                    }
-                                  }
-                                }
-                              },
-                              "else": {
-                                "actions": {
-                                  "Loeschen_Flow_pruefen_delete": {
-                                    "type": "If",
-                                    "expression": {
-                                      "equals": [
-                                        "@triggerOutputs()?['body/ResourceType']",
-                                        "flow"
-                                      ]
-                                    },
-                                    "actions": {
-                                      "CoE_Solution_lesen_Flow_delete": {
-                                        "type": "OpenApiConnection",
-                                        "inputs": {
-                                          "host": {
-                                            "connectionName": "shared_commondataserviceforapps",
-                                            "operationId": "GetItem",
-                                            "apiId": "/providers/Microsoft.PowerApps/apis/shared_commondataserviceforapps"
-                                          },
-                                          "parameters": {
-                                            "entityName": "admin_flows",
-                                            "recordId": "@triggerOutputs()?['body/CoeRecordId']",
-                                            "$select": "admin_issolutionflow"
-                                          },
-                                          "authentication": "@parameters('$authentication')"
-                                        }
-                                      },
-                                      "CoE_Solution_lesen_Fehler_Flow_delete": {
-                                        "type": "SetVariable",
-                                        "inputs": {
-                                          "name": "Fehler",
-                                          "value": "@{coalesce(body('CoE_Solution_lesen_Flow_delete')?['error']?['message'], body('CoE_Solution_lesen_Flow_delete')?['message'], actions('CoE_Solution_lesen_Flow_delete')?['error']?['message'], 'Aktion CoE_Solution_lesen_Flow_delete ist fehlgeschlagen.')}"
-                                        },
-                                        "runAfter": {
-                                          "CoE_Solution_lesen_Flow_delete": [
-                                            "Failed",
-                                            "TimedOut"
-                                          ]
-                                        }
-                                      },
-                                      "Nicht_in_Solution_Flow_delete": {
-                                        "type": "If",
-                                        "runAfter": {
-                                          "CoE_Solution_lesen_Flow_delete": [
-                                            "Succeeded"
-                                          ]
-                                        },
-                                        "expression": {
-                                          "equals": [
-                                            "@body('CoE_Solution_lesen_Flow_delete')?['admin_issolutionflow']",
-                                            false
-                                          ]
-                                        },
-                                        "actions": {
-                                          "Flow_loeschen_Flow_delete": {
-                                            "type": "OpenApiConnection",
-                                            "inputs": {
-                                              "host": {
-                                                "connectionName": "shared_microsoftflowforadmins",
-                                                "operationId": "Remove-AdminFlow",
-                                                "apiId": "/providers/Microsoft.PowerApps/apis/shared_microsoftflowforadmins"
-                                              },
-                                              "parameters": {
-                                                "environment": "@triggerOutputs()?['body/EnvironmentId']",
-                                                "flow": "@triggerOutputs()?['body/ResourceId']",
-                                                "api-version": "2016-11-01"
-                                              },
-                                              "authentication": "@parameters('$authentication')",
-                                              "retryPolicy": {
-                                                "type": "exponential",
-                                                "count": 4,
-                                                "interval": "PT15S"
-                                              }
-                                            }
-                                          },
-                                          "Flow_loeschen_Fehler_Flow_delete": {
-                                            "type": "SetVariable",
-                                            "inputs": {
-                                              "name": "Fehler",
-                                              "value": "@{coalesce(body('Flow_loeschen_Flow_delete')?['error']?['message'], body('Flow_loeschen_Flow_delete')?['message'], actions('Flow_loeschen_Flow_delete')?['error']?['message'], 'Aktion Flow_loeschen_Flow_delete ist fehlgeschlagen.')}"
-                                            },
-                                            "runAfter": {
-                                              "Flow_loeschen_Flow_delete": [
-                                                "Failed",
-                                                "TimedOut"
-                                              ]
-                                            }
-                                          },
-                                          "Ergebnis_setzen_Flow_delete": {
-                                            "type": "SetVariable",
-                                            "inputs": {
-                                              "name": "Ergebnis",
-                                              "value": "Der Flow wurde im Tenant gelöscht."
-                                            },
-                                            "runAfter": {
-                                              "Flow_loeschen_Flow_delete": [
-                                                "Succeeded"
-                                              ]
-                                            }
-                                          },
-                                          "CoE_Flow_geloescht_Flow_delete": {
-                                            "type": "OpenApiConnection",
-                                            "inputs": {
-                                              "host": {
-                                                "connectionName": "shared_commondataserviceforapps",
-                                                "operationId": "UpdateRecord",
-                                                "apiId": "/providers/Microsoft.PowerApps/apis/shared_commondataserviceforapps"
-                                              },
-                                              "parameters": {
-                                                "entityName": "admin_flows",
-                                                "recordId": "@triggerOutputs()?['body/CoeRecordId']",
-                                                "item/admin_flowdeleted": true,
-                                                "item/admin_flowdeletedon": "@utcNow()"
-                                              },
-                                              "authentication": "@parameters('$authentication')"
-                                            },
-                                            "runAfter": {
-                                              "Ergebnis_setzen_Flow_delete": [
-                                                "Succeeded"
-                                              ]
-                                            }
-                                          },
-                                          "CoE_Flow_geloescht_Hinweis_Flow_delete": {
-                                            "type": "AppendToStringVariable",
-                                            "inputs": {
-                                              "name": "Hinweis",
-                                              "value": " (CoE-Inventar nicht aktualisiert: @{coalesce(body('CoE_Flow_geloescht_Flow_delete')?['error']?['message'], body('CoE_Flow_geloescht_Flow_delete')?['message'], actions('CoE_Flow_geloescht_Flow_delete')?['error']?['message'], 'Aktion CoE_Flow_geloescht_Flow_delete ist fehlgeschlagen.')})"
-                                            },
-                                            "runAfter": {
-                                              "CoE_Flow_geloescht_Flow_delete": [
-                                                "Failed",
-                                                "TimedOut"
-                                              ]
-                                            }
-                                          }
-                                        },
-                                        "else": {
-                                          "actions": {
-                                            "Abgelehnt_Solution_Flow_delete": {
-                                              "type": "SetVariable",
-                                              "inputs": {
-                                                "name": "Abgelehnt",
-                                                "value": "Der Flow ist Teil einer Solution (oder das ist im CoE nicht erfasst) – Löschen nur über die Solution (ALM)."
-                                              }
-                                            }
-                                          }
-                                        }
-                                      }
-                                    },
-                                    "else": {
-                                      "actions": {
-                                        "Abgelehnt_Typ_delete": {
-                                          "type": "SetVariable",
-                                          "inputs": {
-                                            "name": "Abgelehnt",
-                                            "value": "Löschen ist nur für Apps und Flows vorgesehen."
-                                          }
-                                        }
-                                      }
-                                    }
-                                  }
-                                }
-                              }
-                            }
-                          }
-                        },
-                        "Fall_setowner": {
-                          "case": "setowner",
-                          "actions": {
-                            "App_oder_Flow_setowner": {
-                              "type": "If",
-                              "expression": {
-                                "equals": [
-                                  "@triggerOutputs()?['body/ResourceType']",
-                                  "app"
-                                ]
-                              },
-                              "actions": {
-                                "App_Besitzer_App_setowner": {
-                                  "type": "OpenApiConnection",
-                                  "inputs": {
-                                    "host": {
-                                      "connectionName": "shared_powerappsforadmins",
-                                      "operationId": "Set-AdminAppOwner",
-                                      "apiId": "/providers/Microsoft.PowerApps/apis/shared_powerappsforadmins"
-                                    },
-                                    "parameters": {
-                                      "environment": "@triggerOutputs()?['body/EnvironmentId']",
-                                      "app": "@triggerOutputs()?['body/ResourceId']",
-                                      "api-version": "2016-11-01",
-                                      "Content-Type": "application/json",
-                                      "body/roleForOldAppOwner": "CanEdit",
-                                      "body/newAppOwner": "@variables('Ziel')"
+                                      "organization": "@triggerOutputs()?['body/EnvironmentId']",
+                                      "entityName": "solutions",
+                                      "recordId": "@triggerOutputs()?['body/ResourceId']"
                                     },
                                     "authentication": "@parameters('$authentication')",
                                     "retryPolicy": {
@@ -901,32 +326,32 @@
                                     }
                                   }
                                 },
-                                "App_Besitzer_Fehler_App_setowner": {
+                                "Solution_loeschen_Fehler_soldelete": {
                                   "type": "SetVariable",
                                   "inputs": {
                                     "name": "Fehler",
-                                    "value": "@{coalesce(body('App_Besitzer_App_setowner')?['error']?['message'], body('App_Besitzer_App_setowner')?['message'], actions('App_Besitzer_App_setowner')?['error']?['message'], 'Aktion App_Besitzer_App_setowner ist fehlgeschlagen.')}"
+                                    "value": "@{coalesce(body('Solution_loeschen_soldelete')?['error']?['message'], body('Solution_loeschen_soldelete')?['message'], actions('Solution_loeschen_soldelete')?['error']?['message'], 'Aktion Solution_loeschen_soldelete ist fehlgeschlagen.')}"
                                   },
                                   "runAfter": {
-                                    "App_Besitzer_App_setowner": [
+                                    "Solution_loeschen_soldelete": [
                                       "Failed",
                                       "TimedOut"
                                     ]
                                   }
                                 },
-                                "Ergebnis_setzen_App_setowner": {
+                                "Ergebnis_setzen_soldelete": {
                                   "type": "SetVariable",
                                   "inputs": {
                                     "name": "Ergebnis",
-                                    "value": "@{concat(triggerOutputs()?['body/TargetName'], ' ist jetzt Besitzer der App; der bisherige Besitzer ist Mitbesitzer.')}"
+                                    "value": "Die Solution wurde gelöscht. Ihre Komponenten (Apps, Flows, Tabellen …) bleiben im Environment erhalten."
                                   },
                                   "runAfter": {
-                                    "App_Besitzer_App_setowner": [
+                                    "Solution_loeschen_soldelete": [
                                       "Succeeded"
                                     ]
                                   }
                                 },
-                                "CoE_App_Besitzer_App_setowner": {
+                                "CoE_Solution_geloescht_soldelete": {
                                   "type": "OpenApiConnection",
                                   "inputs": {
                                     "host": {
@@ -935,26 +360,27 @@
                                       "apiId": "/providers/Microsoft.PowerApps/apis/shared_commondataserviceforapps"
                                     },
                                     "parameters": {
-                                      "entityName": "admin_apps",
+                                      "entityName": "admin_solutions",
                                       "recordId": "@triggerOutputs()?['body/CoeRecordId']",
-                                      "item/admin_AppOwner@odata.bind": "admin_makers(@{variables('Ziel')})"
+                                      "item/admin_solutiondeleted": true,
+                                      "item/admin_solutiondeletedon": "@utcNow()"
                                     },
                                     "authentication": "@parameters('$authentication')"
                                   },
                                   "runAfter": {
-                                    "Ergebnis_setzen_App_setowner": [
+                                    "Ergebnis_setzen_soldelete": [
                                       "Succeeded"
                                     ]
                                   }
                                 },
-                                "CoE_App_Besitzer_Hinweis_App_setowner": {
+                                "CoE_Solution_geloescht_Hinweis_soldelete": {
                                   "type": "AppendToStringVariable",
                                   "inputs": {
                                     "name": "Hinweis",
-                                    "value": " (CoE-Inventar nicht aktualisiert: @{coalesce(body('CoE_App_Besitzer_App_setowner')?['error']?['message'], body('CoE_App_Besitzer_App_setowner')?['message'], actions('CoE_App_Besitzer_App_setowner')?['error']?['message'], 'Aktion CoE_App_Besitzer_App_setowner ist fehlgeschlagen.')})"
+                                    "value": " (CoE-Inventar nicht aktualisiert: @{coalesce(body('CoE_Solution_geloescht_soldelete')?['error']?['message'], body('CoE_Solution_geloescht_soldelete')?['message'], actions('CoE_Solution_geloescht_soldelete')?['error']?['message'], 'Aktion CoE_Solution_geloescht_soldelete ist fehlgeschlagen.')})"
                                   },
                                   "runAfter": {
-                                    "CoE_App_Besitzer_App_setowner": [
+                                    "CoE_Solution_geloescht_soldelete": [
                                       "Failed",
                                       "TimedOut"
                                     ]
@@ -963,1146 +389,44 @@
                               },
                               "else": {
                                 "actions": {
-                                  "Nur_Flow_setowner": {
-                                    "type": "If",
-                                    "expression": {
-                                      "equals": [
-                                        "@triggerOutputs()?['body/ResourceType']",
-                                        "flow"
-                                      ]
-                                    },
-                                    "actions": {
-                                      "Flow_Mitbesitzer_Flow_setowner": {
-                                        "type": "OpenApiConnection",
-                                        "inputs": {
-                                          "host": {
-                                            "connectionName": "shared_microsoftflowforadmins",
-                                            "operationId": "Edit-AdminFlowOwnerRole",
-                                            "apiId": "/providers/Microsoft.PowerApps/apis/shared_microsoftflowforadmins"
-                                          },
-                                          "parameters": {
-                                            "environment": "@triggerOutputs()?['body/EnvironmentId']",
-                                            "flow": "@triggerOutputs()?['body/ResourceId']",
-                                            "api-version": "2016-11-01",
-                                            "Content-Type": "application/json",
-                                            "body/put": [
-                                              {
-                                                "properties/principal/id": "@variables('Ziel')",
-                                                "properties/principal/type": "@{if(equals(triggerOutputs()?['body/TargetIsGroup'], true), 'group', 'user')}",
-                                                "properties/roleName": "CanEdit"
-                                              }
-                                            ]
-                                          },
-                                          "authentication": "@parameters('$authentication')",
-                                          "retryPolicy": {
-                                            "type": "exponential",
-                                            "count": 4,
-                                            "interval": "PT15S"
-                                          }
-                                        }
-                                      },
-                                      "Flow_Mitbesitzer_Fehler_Flow_setowner": {
-                                        "type": "SetVariable",
-                                        "inputs": {
-                                          "name": "Fehler",
-                                          "value": "@{coalesce(body('Flow_Mitbesitzer_Flow_setowner')?['error']?['message'], body('Flow_Mitbesitzer_Flow_setowner')?['message'], actions('Flow_Mitbesitzer_Flow_setowner')?['error']?['message'], 'Aktion Flow_Mitbesitzer_Flow_setowner ist fehlgeschlagen.')}"
-                                        },
-                                        "runAfter": {
-                                          "Flow_Mitbesitzer_Flow_setowner": [
-                                            "Failed",
-                                            "TimedOut"
-                                          ]
-                                        }
-                                      },
-                                      "Ergebnis_setzen_Flow_setowner": {
-                                        "type": "SetVariable",
-                                        "inputs": {
-                                          "name": "Ergebnis",
-                                          "value": "@{concat(triggerOutputs()?['body/TargetName'], ' ist jetzt Mitbesitzer des Flows. Den Ersteller eines Flows außerhalb einer Solution kann Power Automate nicht ändern.')}"
-                                        },
-                                        "runAfter": {
-                                          "Flow_Mitbesitzer_Flow_setowner": [
-                                            "Succeeded"
-                                          ]
-                                        }
-                                      },
-                                      "CoE_Flow_Besitzer_Flow_setowner": {
-                                        "type": "OpenApiConnection",
-                                        "inputs": {
-                                          "host": {
-                                            "connectionName": "shared_commondataserviceforapps",
-                                            "operationId": "UpdateRecord",
-                                            "apiId": "/providers/Microsoft.PowerApps/apis/shared_commondataserviceforapps"
-                                          },
-                                          "parameters": {
-                                            "entityName": "admin_flows",
-                                            "recordId": "@triggerOutputs()?['body/CoeRecordId']",
-                                            "item/admin_DerivedOwner@odata.bind": "admin_makers(@{variables('Ziel')})"
-                                          },
-                                          "authentication": "@parameters('$authentication')"
-                                        },
-                                        "runAfter": {
-                                          "Ergebnis_setzen_Flow_setowner": [
-                                            "Succeeded"
-                                          ]
-                                        }
-                                      },
-                                      "CoE_Flow_Besitzer_Hinweis_Flow_setowner": {
-                                        "type": "AppendToStringVariable",
-                                        "inputs": {
-                                          "name": "Hinweis",
-                                          "value": " (CoE-Inventar nicht aktualisiert: @{coalesce(body('CoE_Flow_Besitzer_Flow_setowner')?['error']?['message'], body('CoE_Flow_Besitzer_Flow_setowner')?['message'], actions('CoE_Flow_Besitzer_Flow_setowner')?['error']?['message'], 'Aktion CoE_Flow_Besitzer_Flow_setowner ist fehlgeschlagen.')})"
-                                        },
-                                        "runAfter": {
-                                          "CoE_Flow_Besitzer_Flow_setowner": [
-                                            "Failed",
-                                            "TimedOut"
-                                          ]
-                                        }
-                                      }
-                                    },
-                                    "else": {
-                                      "actions": {
-                                        "Abgelehnt_Ressource_setowner": {
-                                          "type": "SetVariable",
-                                          "inputs": {
-                                            "name": "Abgelehnt",
-                                            "value": "Diese Aktion gibt es nur für Apps und Flows."
-                                          }
-                                        }
-                                      }
-                                    }
-                                  }
-                                }
-                              }
-                            }
-                          }
-                        },
-                        "Fall_addviewer": {
-                          "case": "addviewer",
-                          "actions": {
-                            "App_oder_Flow_addviewer": {
-                              "type": "If",
-                              "expression": {
-                                "equals": [
-                                  "@triggerOutputs()?['body/ResourceType']",
-                                  "app"
-                                ]
-                              },
-                              "actions": {
-                                "App_Freigabe_App_addviewer": {
-                                  "type": "OpenApiConnection",
-                                  "inputs": {
-                                    "host": {
-                                      "connectionName": "shared_powerappsforadmins",
-                                      "operationId": "Edit-AdminAppRoleAssignment",
-                                      "apiId": "/providers/Microsoft.PowerApps/apis/shared_powerappsforadmins"
-                                    },
-                                    "parameters": {
-                                      "environment": "@triggerOutputs()?['body/EnvironmentId']",
-                                      "app": "@triggerOutputs()?['body/ResourceId']",
-                                      "api-version": "2016-11-01",
-                                      "body/put": [
-                                        {
-                                          "properties/roleName": "CanView",
-                                          "properties/principal/id": "@variables('Ziel')",
-                                          "properties/principal/type": "@{if(equals(triggerOutputs()?['body/TargetIsGroup'], true), 'group', 'user')}",
-                                          "properties/principal/tenantId": "@null"
-                                        }
-                                      ]
-                                    },
-                                    "authentication": "@parameters('$authentication')",
-                                    "retryPolicy": {
-                                      "type": "exponential",
-                                      "count": 4,
-                                      "interval": "PT15S"
-                                    }
-                                  }
-                                },
-                                "App_Freigabe_Fehler_App_addviewer": {
-                                  "type": "SetVariable",
-                                  "inputs": {
-                                    "name": "Fehler",
-                                    "value": "@{coalesce(body('App_Freigabe_App_addviewer')?['error']?['message'], body('App_Freigabe_App_addviewer')?['message'], actions('App_Freigabe_App_addviewer')?['error']?['message'], 'Aktion App_Freigabe_App_addviewer ist fehlgeschlagen.')}"
-                                  },
-                                  "runAfter": {
-                                    "App_Freigabe_App_addviewer": [
-                                      "Failed",
-                                      "TimedOut"
-                                    ]
-                                  }
-                                },
-                                "Ergebnis_setzen_App_addviewer": {
-                                  "type": "SetVariable",
-                                  "inputs": {
-                                    "name": "Ergebnis",
-                                    "value": "@{concat('Freigabe für ', triggerOutputs()?['body/TargetName'], ' hinzugefügt (Benutzer).')}"
-                                  },
-                                  "runAfter": {
-                                    "App_Freigabe_App_addviewer": [
-                                      "Succeeded"
-                                    ]
-                                  }
-                                }
-                              },
-                              "else": {
-                                "actions": {
-                                  "Nur_Flow_addviewer": {
-                                    "type": "If",
-                                    "expression": {
-                                      "equals": [
-                                        "@triggerOutputs()?['body/ResourceType']",
-                                        "flow"
-                                      ]
-                                    },
-                                    "actions": {
-                                      "Flow_Freigabe_Flow_addviewer": {
-                                        "type": "OpenApiConnection",
-                                        "inputs": {
-                                          "host": {
-                                            "connectionName": "shared_microsoftflowforadmins",
-                                            "operationId": "Edit-AdminFlowOwnerRole",
-                                            "apiId": "/providers/Microsoft.PowerApps/apis/shared_microsoftflowforadmins"
-                                          },
-                                          "parameters": {
-                                            "environment": "@triggerOutputs()?['body/EnvironmentId']",
-                                            "flow": "@triggerOutputs()?['body/ResourceId']",
-                                            "api-version": "2016-11-01",
-                                            "Content-Type": "application/json",
-                                            "body/put": [
-                                              {
-                                                "properties/principal/id": "@variables('Ziel')",
-                                                "properties/principal/type": "@{if(equals(triggerOutputs()?['body/TargetIsGroup'], true), 'group', 'user')}",
-                                                "properties/roleName": "CanEdit"
-                                              }
-                                            ]
-                                          },
-                                          "authentication": "@parameters('$authentication')",
-                                          "retryPolicy": {
-                                            "type": "exponential",
-                                            "count": 4,
-                                            "interval": "PT15S"
-                                          }
-                                        }
-                                      },
-                                      "Flow_Freigabe_Fehler_Flow_addviewer": {
-                                        "type": "SetVariable",
-                                        "inputs": {
-                                          "name": "Fehler",
-                                          "value": "@{coalesce(body('Flow_Freigabe_Flow_addviewer')?['error']?['message'], body('Flow_Freigabe_Flow_addviewer')?['message'], actions('Flow_Freigabe_Flow_addviewer')?['error']?['message'], 'Aktion Flow_Freigabe_Flow_addviewer ist fehlgeschlagen.')}"
-                                        },
-                                        "runAfter": {
-                                          "Flow_Freigabe_Flow_addviewer": [
-                                            "Failed",
-                                            "TimedOut"
-                                          ]
-                                        }
-                                      },
-                                      "Ergebnis_setzen_Flow_addviewer": {
-                                        "type": "SetVariable",
-                                        "inputs": {
-                                          "name": "Ergebnis",
-                                          "value": "@{concat(triggerOutputs()?['body/TargetName'], ' ist jetzt Mitbesitzer des Flows.')}"
-                                        },
-                                        "runAfter": {
-                                          "Flow_Freigabe_Flow_addviewer": [
-                                            "Succeeded"
-                                          ]
-                                        }
-                                      }
-                                    },
-                                    "else": {
-                                      "actions": {
-                                        "Abgelehnt_Ressource_addviewer": {
-                                          "type": "SetVariable",
-                                          "inputs": {
-                                            "name": "Abgelehnt",
-                                            "value": "Diese Aktion gibt es nur für Apps und Flows."
-                                          }
-                                        }
-                                      }
-                                    }
-                                  }
-                                }
-                              }
-                            }
-                          }
-                        },
-                        "Fall_addeditor": {
-                          "case": "addeditor",
-                          "actions": {
-                            "App_oder_Flow_addeditor": {
-                              "type": "If",
-                              "expression": {
-                                "equals": [
-                                  "@triggerOutputs()?['body/ResourceType']",
-                                  "app"
-                                ]
-                              },
-                              "actions": {
-                                "App_Freigabe_App_addeditor": {
-                                  "type": "OpenApiConnection",
-                                  "inputs": {
-                                    "host": {
-                                      "connectionName": "shared_powerappsforadmins",
-                                      "operationId": "Edit-AdminAppRoleAssignment",
-                                      "apiId": "/providers/Microsoft.PowerApps/apis/shared_powerappsforadmins"
-                                    },
-                                    "parameters": {
-                                      "environment": "@triggerOutputs()?['body/EnvironmentId']",
-                                      "app": "@triggerOutputs()?['body/ResourceId']",
-                                      "api-version": "2016-11-01",
-                                      "body/put": [
-                                        {
-                                          "properties/roleName": "CanEdit",
-                                          "properties/principal/id": "@variables('Ziel')",
-                                          "properties/principal/type": "@{if(equals(triggerOutputs()?['body/TargetIsGroup'], true), 'group', 'user')}",
-                                          "properties/principal/tenantId": "@null"
-                                        }
-                                      ]
-                                    },
-                                    "authentication": "@parameters('$authentication')",
-                                    "retryPolicy": {
-                                      "type": "exponential",
-                                      "count": 4,
-                                      "interval": "PT15S"
-                                    }
-                                  }
-                                },
-                                "App_Freigabe_Fehler_App_addeditor": {
-                                  "type": "SetVariable",
-                                  "inputs": {
-                                    "name": "Fehler",
-                                    "value": "@{coalesce(body('App_Freigabe_App_addeditor')?['error']?['message'], body('App_Freigabe_App_addeditor')?['message'], actions('App_Freigabe_App_addeditor')?['error']?['message'], 'Aktion App_Freigabe_App_addeditor ist fehlgeschlagen.')}"
-                                  },
-                                  "runAfter": {
-                                    "App_Freigabe_App_addeditor": [
-                                      "Failed",
-                                      "TimedOut"
-                                    ]
-                                  }
-                                },
-                                "Ergebnis_setzen_App_addeditor": {
-                                  "type": "SetVariable",
-                                  "inputs": {
-                                    "name": "Ergebnis",
-                                    "value": "@{concat('Freigabe für ', triggerOutputs()?['body/TargetName'], ' hinzugefügt (Mitbesitzer).')}"
-                                  },
-                                  "runAfter": {
-                                    "App_Freigabe_App_addeditor": [
-                                      "Succeeded"
-                                    ]
-                                  }
-                                }
-                              },
-                              "else": {
-                                "actions": {
-                                  "Nur_Flow_addeditor": {
-                                    "type": "If",
-                                    "expression": {
-                                      "equals": [
-                                        "@triggerOutputs()?['body/ResourceType']",
-                                        "flow"
-                                      ]
-                                    },
-                                    "actions": {
-                                      "Flow_Freigabe_Flow_addeditor": {
-                                        "type": "OpenApiConnection",
-                                        "inputs": {
-                                          "host": {
-                                            "connectionName": "shared_microsoftflowforadmins",
-                                            "operationId": "Edit-AdminFlowOwnerRole",
-                                            "apiId": "/providers/Microsoft.PowerApps/apis/shared_microsoftflowforadmins"
-                                          },
-                                          "parameters": {
-                                            "environment": "@triggerOutputs()?['body/EnvironmentId']",
-                                            "flow": "@triggerOutputs()?['body/ResourceId']",
-                                            "api-version": "2016-11-01",
-                                            "Content-Type": "application/json",
-                                            "body/put": [
-                                              {
-                                                "properties/principal/id": "@variables('Ziel')",
-                                                "properties/principal/type": "@{if(equals(triggerOutputs()?['body/TargetIsGroup'], true), 'group', 'user')}",
-                                                "properties/roleName": "CanEdit"
-                                              }
-                                            ]
-                                          },
-                                          "authentication": "@parameters('$authentication')",
-                                          "retryPolicy": {
-                                            "type": "exponential",
-                                            "count": 4,
-                                            "interval": "PT15S"
-                                          }
-                                        }
-                                      },
-                                      "Flow_Freigabe_Fehler_Flow_addeditor": {
-                                        "type": "SetVariable",
-                                        "inputs": {
-                                          "name": "Fehler",
-                                          "value": "@{coalesce(body('Flow_Freigabe_Flow_addeditor')?['error']?['message'], body('Flow_Freigabe_Flow_addeditor')?['message'], actions('Flow_Freigabe_Flow_addeditor')?['error']?['message'], 'Aktion Flow_Freigabe_Flow_addeditor ist fehlgeschlagen.')}"
-                                        },
-                                        "runAfter": {
-                                          "Flow_Freigabe_Flow_addeditor": [
-                                            "Failed",
-                                            "TimedOut"
-                                          ]
-                                        }
-                                      },
-                                      "Ergebnis_setzen_Flow_addeditor": {
-                                        "type": "SetVariable",
-                                        "inputs": {
-                                          "name": "Ergebnis",
-                                          "value": "@{concat(triggerOutputs()?['body/TargetName'], ' ist jetzt Mitbesitzer des Flows.')}"
-                                        },
-                                        "runAfter": {
-                                          "Flow_Freigabe_Flow_addeditor": [
-                                            "Succeeded"
-                                          ]
-                                        }
-                                      }
-                                    },
-                                    "else": {
-                                      "actions": {
-                                        "Abgelehnt_Ressource_addeditor": {
-                                          "type": "SetVariable",
-                                          "inputs": {
-                                            "name": "Abgelehnt",
-                                            "value": "Diese Aktion gibt es nur für Apps und Flows."
-                                          }
-                                        }
-                                      }
-                                    }
-                                  }
-                                }
-                              }
-                            }
-                          }
-                        },
-                        "Fall_removeuser": {
-                          "case": "removeuser",
-                          "actions": {
-                            "App_oder_Flow_removeuser": {
-                              "type": "If",
-                              "expression": {
-                                "equals": [
-                                  "@triggerOutputs()?['body/ResourceType']",
-                                  "app"
-                                ]
-                              },
-                              "actions": {
-                                "App_Freigabe_entfernen_App_removeuser": {
-                                  "type": "OpenApiConnection",
-                                  "inputs": {
-                                    "host": {
-                                      "connectionName": "shared_powerappsforadmins",
-                                      "operationId": "Edit-AdminAppRoleAssignment",
-                                      "apiId": "/providers/Microsoft.PowerApps/apis/shared_powerappsforadmins"
-                                    },
-                                    "parameters": {
-                                      "environment": "@triggerOutputs()?['body/EnvironmentId']",
-                                      "app": "@triggerOutputs()?['body/ResourceId']",
-                                      "api-version": "2016-11-01",
-                                      "body/delete": [
-                                        {
-                                          "id": "@variables('Ziel')"
-                                        }
-                                      ]
-                                    },
-                                    "authentication": "@parameters('$authentication')",
-                                    "retryPolicy": {
-                                      "type": "exponential",
-                                      "count": 4,
-                                      "interval": "PT15S"
-                                    }
-                                  }
-                                },
-                                "App_Freigabe_entfernen_Fehler_App_removeuser": {
-                                  "type": "SetVariable",
-                                  "inputs": {
-                                    "name": "Fehler",
-                                    "value": "@{coalesce(body('App_Freigabe_entfernen_App_removeuser')?['error']?['message'], body('App_Freigabe_entfernen_App_removeuser')?['message'], actions('App_Freigabe_entfernen_App_removeuser')?['error']?['message'], 'Aktion App_Freigabe_entfernen_App_removeuser ist fehlgeschlagen.')}"
-                                  },
-                                  "runAfter": {
-                                    "App_Freigabe_entfernen_App_removeuser": [
-                                      "Failed",
-                                      "TimedOut"
-                                    ]
-                                  }
-                                },
-                                "Ergebnis_setzen_App_removeuser": {
-                                  "type": "SetVariable",
-                                  "inputs": {
-                                    "name": "Ergebnis",
-                                    "value": "@{concat('Freigabe für ', triggerOutputs()?['body/TargetName'], ' entfernt.')}"
-                                  },
-                                  "runAfter": {
-                                    "App_Freigabe_entfernen_App_removeuser": [
-                                      "Succeeded"
-                                    ]
-                                  }
-                                }
-                              },
-                              "else": {
-                                "actions": {
-                                  "Nur_Flow_removeuser": {
-                                    "type": "If",
-                                    "expression": {
-                                      "equals": [
-                                        "@triggerOutputs()?['body/ResourceType']",
-                                        "flow"
-                                      ]
-                                    },
-                                    "actions": {
-                                      "Flow_Freigabe_entfernen_Flow_removeuser": {
-                                        "type": "OpenApiConnection",
-                                        "inputs": {
-                                          "host": {
-                                            "connectionName": "shared_microsoftflowforadmins",
-                                            "operationId": "Edit-AdminFlowOwnerRole",
-                                            "apiId": "/providers/Microsoft.PowerApps/apis/shared_microsoftflowforadmins"
-                                          },
-                                          "parameters": {
-                                            "environment": "@triggerOutputs()?['body/EnvironmentId']",
-                                            "flow": "@triggerOutputs()?['body/ResourceId']",
-                                            "api-version": "2016-11-01",
-                                            "Content-Type": "application/json",
-                                            "body/delete": [
-                                              {
-                                                "id": "@variables('Ziel')"
-                                              }
-                                            ]
-                                          },
-                                          "authentication": "@parameters('$authentication')",
-                                          "retryPolicy": {
-                                            "type": "exponential",
-                                            "count": 4,
-                                            "interval": "PT15S"
-                                          }
-                                        }
-                                      },
-                                      "Flow_Freigabe_entfernen_Fehler_Flow_removeuser": {
-                                        "type": "SetVariable",
-                                        "inputs": {
-                                          "name": "Fehler",
-                                          "value": "@{coalesce(body('Flow_Freigabe_entfernen_Flow_removeuser')?['error']?['message'], body('Flow_Freigabe_entfernen_Flow_removeuser')?['message'], actions('Flow_Freigabe_entfernen_Flow_removeuser')?['error']?['message'], 'Aktion Flow_Freigabe_entfernen_Flow_removeuser ist fehlgeschlagen.')}"
-                                        },
-                                        "runAfter": {
-                                          "Flow_Freigabe_entfernen_Flow_removeuser": [
-                                            "Failed",
-                                            "TimedOut"
-                                          ]
-                                        }
-                                      },
-                                      "Ergebnis_setzen_Flow_removeuser": {
-                                        "type": "SetVariable",
-                                        "inputs": {
-                                          "name": "Ergebnis",
-                                          "value": "@{concat('Freigabe für ', triggerOutputs()?['body/TargetName'], ' entfernt.')}"
-                                        },
-                                        "runAfter": {
-                                          "Flow_Freigabe_entfernen_Flow_removeuser": [
-                                            "Succeeded"
-                                          ]
-                                        }
-                                      }
-                                    },
-                                    "else": {
-                                      "actions": {
-                                        "Abgelehnt_Ressource_removeuser": {
-                                          "type": "SetVariable",
-                                          "inputs": {
-                                            "name": "Abgelehnt",
-                                            "value": "Diese Aktion gibt es nur für Apps und Flows."
-                                          }
-                                        }
-                                      }
-                                    }
-                                  }
-                                }
-                              }
-                            }
-                          }
-                        },
-                        "Fall_flowoff": {
-                          "case": "flowoff",
-                          "actions": {
-                            "Flow_ausschalten_flowoff": {
-                              "type": "OpenApiConnection",
-                              "inputs": {
-                                "host": {
-                                  "connectionName": "shared_flowmanagement",
-                                  "operationId": "StopFlow",
-                                  "apiId": "/providers/Microsoft.PowerApps/apis/shared_flowmanagement"
-                                },
-                                "parameters": {
-                                  "environmentName": "@triggerOutputs()?['body/EnvironmentId']",
-                                  "flowName": "@triggerOutputs()?['body/ResourceId']"
-                                },
-                                "authentication": "@parameters('$authentication')",
-                                "retryPolicy": {
-                                  "type": "exponential",
-                                  "count": 4,
-                                  "interval": "PT15S"
-                                }
-                              }
-                            },
-                            "Flow_ausschalten_Fehler_flowoff": {
-                              "type": "SetVariable",
-                              "inputs": {
-                                "name": "Fehler",
-                                "value": "@{coalesce(body('Flow_ausschalten_flowoff')?['error']?['message'], body('Flow_ausschalten_flowoff')?['message'], actions('Flow_ausschalten_flowoff')?['error']?['message'], 'Aktion Flow_ausschalten_flowoff ist fehlgeschlagen.')}"
-                              },
-                              "runAfter": {
-                                "Flow_ausschalten_flowoff": [
-                                  "Failed",
-                                  "TimedOut"
-                                ]
-                              }
-                            },
-                            "Ergebnis_setzen_flowoff": {
-                              "type": "SetVariable",
-                              "inputs": {
-                                "name": "Ergebnis",
-                                "value": "Der Flow ist ausgeschaltet."
-                              },
-                              "runAfter": {
-                                "Flow_ausschalten_flowoff": [
-                                  "Succeeded"
-                                ]
-                              }
-                            },
-                            "CoE_Flow_Status_flowoff": {
-                              "type": "OpenApiConnection",
-                              "inputs": {
-                                "host": {
-                                  "connectionName": "shared_commondataserviceforapps",
-                                  "operationId": "UpdateRecord",
-                                  "apiId": "/providers/Microsoft.PowerApps/apis/shared_commondataserviceforapps"
-                                },
-                                "parameters": {
-                                  "entityName": "admin_flows",
-                                  "recordId": "@triggerOutputs()?['body/CoeRecordId']",
-                                  "item/admin_flowstate": "Stopped"
-                                },
-                                "authentication": "@parameters('$authentication')"
-                              },
-                              "runAfter": {
-                                "Ergebnis_setzen_flowoff": [
-                                  "Succeeded"
-                                ]
-                              }
-                            },
-                            "CoE_Flow_Status_Hinweis_flowoff": {
-                              "type": "AppendToStringVariable",
-                              "inputs": {
-                                "name": "Hinweis",
-                                "value": " (CoE-Inventar nicht aktualisiert: @{coalesce(body('CoE_Flow_Status_flowoff')?['error']?['message'], body('CoE_Flow_Status_flowoff')?['message'], actions('CoE_Flow_Status_flowoff')?['error']?['message'], 'Aktion CoE_Flow_Status_flowoff ist fehlgeschlagen.')})"
-                              },
-                              "runAfter": {
-                                "CoE_Flow_Status_flowoff": [
-                                  "Failed",
-                                  "TimedOut"
-                                ]
-                              }
-                            }
-                          }
-                        },
-                        "Fall_flowon": {
-                          "case": "flowon",
-                          "actions": {
-                            "Flow_einschalten_flowon": {
-                              "type": "OpenApiConnection",
-                              "inputs": {
-                                "host": {
-                                  "connectionName": "shared_flowmanagement",
-                                  "operationId": "StartFlow",
-                                  "apiId": "/providers/Microsoft.PowerApps/apis/shared_flowmanagement"
-                                },
-                                "parameters": {
-                                  "environmentName": "@triggerOutputs()?['body/EnvironmentId']",
-                                  "flowName": "@triggerOutputs()?['body/ResourceId']"
-                                },
-                                "authentication": "@parameters('$authentication')",
-                                "retryPolicy": {
-                                  "type": "exponential",
-                                  "count": 4,
-                                  "interval": "PT15S"
-                                }
-                              }
-                            },
-                            "Flow_einschalten_Fehler_flowon": {
-                              "type": "SetVariable",
-                              "inputs": {
-                                "name": "Fehler",
-                                "value": "@{coalesce(body('Flow_einschalten_flowon')?['error']?['message'], body('Flow_einschalten_flowon')?['message'], actions('Flow_einschalten_flowon')?['error']?['message'], 'Aktion Flow_einschalten_flowon ist fehlgeschlagen.')}"
-                              },
-                              "runAfter": {
-                                "Flow_einschalten_flowon": [
-                                  "Failed",
-                                  "TimedOut"
-                                ]
-                              }
-                            },
-                            "Ergebnis_setzen_flowon": {
-                              "type": "SetVariable",
-                              "inputs": {
-                                "name": "Ergebnis",
-                                "value": "Der Flow ist eingeschaltet."
-                              },
-                              "runAfter": {
-                                "Flow_einschalten_flowon": [
-                                  "Succeeded"
-                                ]
-                              }
-                            },
-                            "CoE_Flow_Status_flowon": {
-                              "type": "OpenApiConnection",
-                              "inputs": {
-                                "host": {
-                                  "connectionName": "shared_commondataserviceforapps",
-                                  "operationId": "UpdateRecord",
-                                  "apiId": "/providers/Microsoft.PowerApps/apis/shared_commondataserviceforapps"
-                                },
-                                "parameters": {
-                                  "entityName": "admin_flows",
-                                  "recordId": "@triggerOutputs()?['body/CoeRecordId']",
-                                  "item/admin_flowstate": "Started"
-                                },
-                                "authentication": "@parameters('$authentication')"
-                              },
-                              "runAfter": {
-                                "Ergebnis_setzen_flowon": [
-                                  "Succeeded"
-                                ]
-                              }
-                            },
-                            "CoE_Flow_Status_Hinweis_flowon": {
-                              "type": "AppendToStringVariable",
-                              "inputs": {
-                                "name": "Hinweis",
-                                "value": " (CoE-Inventar nicht aktualisiert: @{coalesce(body('CoE_Flow_Status_flowon')?['error']?['message'], body('CoE_Flow_Status_flowon')?['message'], actions('CoE_Flow_Status_flowon')?['error']?['message'], 'Aktion CoE_Flow_Status_flowon ist fehlgeschlagen.')})"
-                              },
-                              "runAfter": {
-                                "CoE_Flow_Status_flowon": [
-                                  "Failed",
-                                  "TimedOut"
-                                ]
-                              }
-                            }
-                          }
-                        },
-                        "Fall_envmanaged": {
-                          "case": "envmanaged",
-                          "actions": {
-                            "Nur_Environment_envmanaged": {
-                              "type": "If",
-                              "expression": {
-                                "equals": [
-                                  "@triggerOutputs()?['body/ResourceType']",
-                                  "environment"
-                                ]
-                              },
-                              "actions": {
-                                "Environment_managed_envmanaged": {
-                                  "type": "OpenApiConnection",
-                                  "inputs": {
-                                    "host": {
-                                      "connectionName": "shared_powerplatformadminv2",
-                                      "operationId": "EnableManagedEnvironment",
-                                      "apiId": "/providers/Microsoft.PowerApps/apis/shared_powerplatformadminv2"
-                                    },
-                                    "parameters": {
-                                      "environmentId": "@triggerOutputs()?['body/EnvironmentId']",
-                                      "api-version": "2024-10-01"
-                                    },
-                                    "authentication": "@parameters('$authentication')",
-                                    "retryPolicy": {
-                                      "type": "exponential",
-                                      "count": 4,
-                                      "interval": "PT15S"
-                                    }
-                                  }
-                                },
-                                "Environment_managed_Fehler_envmanaged": {
-                                  "type": "SetVariable",
-                                  "inputs": {
-                                    "name": "Fehler",
-                                    "value": "@{coalesce(body('Environment_managed_envmanaged')?['error']?['message'], body('Environment_managed_envmanaged')?['message'], actions('Environment_managed_envmanaged')?['error']?['message'], 'Aktion Environment_managed_envmanaged ist fehlgeschlagen.')}"
-                                  },
-                                  "runAfter": {
-                                    "Environment_managed_envmanaged": [
-                                      "Failed",
-                                      "TimedOut"
-                                    ]
-                                  }
-                                },
-                                "Ergebnis_setzen_envmanaged": {
-                                  "type": "SetVariable",
-                                  "inputs": {
-                                    "name": "Ergebnis",
-                                    "value": "Das Environment wird zum Managed Environment (Vorgang läuft bei Microsoft weiter, Dauer wenige Minuten)."
-                                  },
-                                  "runAfter": {
-                                    "Environment_managed_envmanaged": [
-                                      "Succeeded"
-                                    ]
-                                  }
-                                }
-                              },
-                              "else": {
-                                "actions": {
-                                  "Abgelehnt_kein_Environment_envmanaged": {
+                                  "Abgelehnt_verwaltet_soldelete": {
                                     "type": "SetVariable",
                                     "inputs": {
                                       "name": "Abgelehnt",
-                                      "value": "Diese Aktion gibt es nur für Environments."
+                                      "value": "Verwaltete Solutions und System-Solutions werden nicht gelöscht (Deinstallation nur über das Admin Center bzw. ALM)."
                                     }
                                   }
                                 }
                               }
                             }
-                          }
-                        },
-                        "Fall_envdisable": {
-                          "case": "envdisable",
-                          "actions": {
-                            "Nur_Environment_envdisable": {
-                              "type": "If",
-                              "expression": {
-                                "equals": [
-                                  "@triggerOutputs()?['body/ResourceType']",
-                                  "environment"
-                                ]
-                              },
-                              "actions": {
-                                "Environment_disable_envdisable": {
-                                  "type": "OpenApiConnection",
-                                  "inputs": {
-                                    "host": {
-                                      "connectionName": "shared_powerplatformadminv2",
-                                      "operationId": "DisableEnvironment",
-                                      "apiId": "/providers/Microsoft.PowerApps/apis/shared_powerplatformadminv2"
-                                    },
-                                    "parameters": {
-                                      "environmentId": "@triggerOutputs()?['body/EnvironmentId']",
-                                      "api-version": "2024-10-01",
-                                      "body/reason": "UserRequested"
-                                    },
-                                    "authentication": "@parameters('$authentication')",
-                                    "retryPolicy": {
-                                      "type": "exponential",
-                                      "count": 4,
-                                      "interval": "PT15S"
-                                    }
-                                  }
-                                },
-                                "Environment_disable_Fehler_envdisable": {
-                                  "type": "SetVariable",
-                                  "inputs": {
-                                    "name": "Fehler",
-                                    "value": "@{coalesce(body('Environment_disable_envdisable')?['error']?['message'], body('Environment_disable_envdisable')?['message'], actions('Environment_disable_envdisable')?['error']?['message'], 'Aktion Environment_disable_envdisable ist fehlgeschlagen.')}"
-                                  },
-                                  "runAfter": {
-                                    "Environment_disable_envdisable": [
-                                      "Failed",
-                                      "TimedOut"
-                                    ]
-                                  }
-                                },
-                                "Ergebnis_setzen_envdisable": {
-                                  "type": "SetVariable",
-                                  "inputs": {
-                                    "name": "Ergebnis",
-                                    "value": "Das Environment wird deaktiviert (Vorgang läuft bei Microsoft weiter, Dauer wenige Minuten)."
-                                  },
-                                  "runAfter": {
-                                    "Environment_disable_envdisable": [
-                                      "Succeeded"
-                                    ]
-                                  }
-                                }
-                              },
-                              "else": {
-                                "actions": {
-                                  "Abgelehnt_kein_Environment_envdisable": {
-                                    "type": "SetVariable",
-                                    "inputs": {
-                                      "name": "Abgelehnt",
-                                      "value": "Diese Aktion gibt es nur für Environments."
-                                    }
-                                  }
-                                }
-                              }
-                            }
-                          }
-                        },
-                        "Fall_envenable": {
-                          "case": "envenable",
-                          "actions": {
-                            "Nur_Environment_envenable": {
-                              "type": "If",
-                              "expression": {
-                                "equals": [
-                                  "@triggerOutputs()?['body/ResourceType']",
-                                  "environment"
-                                ]
-                              },
-                              "actions": {
-                                "Environment_enable_envenable": {
-                                  "type": "OpenApiConnection",
-                                  "inputs": {
-                                    "host": {
-                                      "connectionName": "shared_powerplatformadminv2",
-                                      "operationId": "EnableEnvironment",
-                                      "apiId": "/providers/Microsoft.PowerApps/apis/shared_powerplatformadminv2"
-                                    },
-                                    "parameters": {
-                                      "environmentId": "@triggerOutputs()?['body/EnvironmentId']",
-                                      "api-version": "2024-10-01"
-                                    },
-                                    "authentication": "@parameters('$authentication')",
-                                    "retryPolicy": {
-                                      "type": "exponential",
-                                      "count": 4,
-                                      "interval": "PT15S"
-                                    }
-                                  }
-                                },
-                                "Environment_enable_Fehler_envenable": {
-                                  "type": "SetVariable",
-                                  "inputs": {
-                                    "name": "Fehler",
-                                    "value": "@{coalesce(body('Environment_enable_envenable')?['error']?['message'], body('Environment_enable_envenable')?['message'], actions('Environment_enable_envenable')?['error']?['message'], 'Aktion Environment_enable_envenable ist fehlgeschlagen.')}"
-                                  },
-                                  "runAfter": {
-                                    "Environment_enable_envenable": [
-                                      "Failed",
-                                      "TimedOut"
-                                    ]
-                                  }
-                                },
-                                "Ergebnis_setzen_envenable": {
-                                  "type": "SetVariable",
-                                  "inputs": {
-                                    "name": "Ergebnis",
-                                    "value": "Das Environment wird wieder aktiviert (Vorgang läuft bei Microsoft weiter, Dauer wenige Minuten)."
-                                  },
-                                  "runAfter": {
-                                    "Environment_enable_envenable": [
-                                      "Succeeded"
-                                    ]
-                                  }
-                                }
-                              },
-                              "else": {
-                                "actions": {
-                                  "Abgelehnt_kein_Environment_envenable": {
-                                    "type": "SetVariable",
-                                    "inputs": {
-                                      "name": "Abgelehnt",
-                                      "value": "Diese Aktion gibt es nur für Environments."
-                                    }
-                                  }
-                                }
-                              }
-                            }
-                          }
-                        },
-                        "Fall_soldelete": {
-                          "case": "soldelete",
-                          "actions": {
-                            "Nur_Solution_soldelete": {
-                              "type": "If",
-                              "expression": {
-                                "equals": [
-                                  "@triggerOutputs()?['body/ResourceType']",
-                                  "solution"
-                                ]
-                              },
-                              "actions": {
-                                "Solution_lesen_soldelete": {
-                                  "type": "OpenApiConnection",
-                                  "inputs": {
-                                    "host": {
-                                      "connectionName": "shared_commondataserviceforapps",
-                                      "operationId": "GetItemWithOrganization",
-                                      "apiId": "/providers/Microsoft.PowerApps/apis/shared_commondataserviceforapps"
-                                    },
-                                    "parameters": {
-                                      "organization": "@triggerOutputs()?['body/EnvironmentId']",
-                                      "entityName": "solutions",
-                                      "recordId": "@triggerOutputs()?['body/ResourceId']",
-                                      "$select": "uniquename,ismanaged,isvisible"
-                                    },
-                                    "authentication": "@parameters('$authentication')"
-                                  }
-                                },
-                                "Solution_lesen_Fehler_soldelete": {
-                                  "type": "SetVariable",
-                                  "inputs": {
-                                    "name": "Fehler",
-                                    "value": "@{coalesce(body('Solution_lesen_soldelete')?['error']?['message'], body('Solution_lesen_soldelete')?['message'], actions('Solution_lesen_soldelete')?['error']?['message'], 'Aktion Solution_lesen_soldelete ist fehlgeschlagen.')}"
-                                  },
-                                  "runAfter": {
-                                    "Solution_lesen_soldelete": [
-                                      "Failed",
-                                      "TimedOut"
-                                    ]
-                                  }
-                                },
-                                "Loeschen_erlaubt_soldelete": {
-                                  "type": "If",
-                                  "runAfter": {
-                                    "Solution_lesen_soldelete": [
-                                      "Succeeded"
-                                    ]
-                                  },
-                                  "expression": {
-                                    "and": [
-                                      {
-                                        "equals": [
-                                          "@body('Solution_lesen_soldelete')?['ismanaged']",
-                                          false
-                                        ]
-                                      },
-                                      {
-                                        "not": {
-                                          "contains": [
-                                            "@createArray('default','active','basic','system','crmservicesolution')",
-                                            "@toLower(coalesce(body('Solution_lesen_soldelete')?['uniquename'], ''))"
-                                          ]
-                                        }
-                                      }
-                                    ]
-                                  },
-                                  "actions": {
-                                    "Solution_loeschen_soldelete": {
-                                      "type": "OpenApiConnection",
-                                      "inputs": {
-                                        "host": {
-                                          "connectionName": "shared_commondataserviceforapps",
-                                          "operationId": "DeleteRecordWithOrganization",
-                                          "apiId": "/providers/Microsoft.PowerApps/apis/shared_commondataserviceforapps"
-                                        },
-                                        "parameters": {
-                                          "organization": "@triggerOutputs()?['body/EnvironmentId']",
-                                          "entityName": "solutions",
-                                          "recordId": "@triggerOutputs()?['body/ResourceId']"
-                                        },
-                                        "authentication": "@parameters('$authentication')",
-                                        "retryPolicy": {
-                                          "type": "exponential",
-                                          "count": 4,
-                                          "interval": "PT15S"
-                                        }
-                                      }
-                                    },
-                                    "Solution_loeschen_Fehler_soldelete": {
-                                      "type": "SetVariable",
-                                      "inputs": {
-                                        "name": "Fehler",
-                                        "value": "@{coalesce(body('Solution_loeschen_soldelete')?['error']?['message'], body('Solution_loeschen_soldelete')?['message'], actions('Solution_loeschen_soldelete')?['error']?['message'], 'Aktion Solution_loeschen_soldelete ist fehlgeschlagen.')}"
-                                      },
-                                      "runAfter": {
-                                        "Solution_loeschen_soldelete": [
-                                          "Failed",
-                                          "TimedOut"
-                                        ]
-                                      }
-                                    },
-                                    "Ergebnis_setzen_soldelete": {
-                                      "type": "SetVariable",
-                                      "inputs": {
-                                        "name": "Ergebnis",
-                                        "value": "Die Solution wurde gelöscht. Ihre Komponenten (Apps, Flows, Tabellen …) bleiben im Environment erhalten."
-                                      },
-                                      "runAfter": {
-                                        "Solution_loeschen_soldelete": [
-                                          "Succeeded"
-                                        ]
-                                      }
-                                    },
-                                    "CoE_Solution_geloescht_soldelete": {
-                                      "type": "OpenApiConnection",
-                                      "inputs": {
-                                        "host": {
-                                          "connectionName": "shared_commondataserviceforapps",
-                                          "operationId": "UpdateRecord",
-                                          "apiId": "/providers/Microsoft.PowerApps/apis/shared_commondataserviceforapps"
-                                        },
-                                        "parameters": {
-                                          "entityName": "admin_solutions",
-                                          "recordId": "@triggerOutputs()?['body/CoeRecordId']",
-                                          "item/admin_solutiondeleted": true,
-                                          "item/admin_solutiondeletedon": "@utcNow()"
-                                        },
-                                        "authentication": "@parameters('$authentication')"
-                                      },
-                                      "runAfter": {
-                                        "Ergebnis_setzen_soldelete": [
-                                          "Succeeded"
-                                        ]
-                                      }
-                                    },
-                                    "CoE_Solution_geloescht_Hinweis_soldelete": {
-                                      "type": "AppendToStringVariable",
-                                      "inputs": {
-                                        "name": "Hinweis",
-                                        "value": " (CoE-Inventar nicht aktualisiert: @{coalesce(body('CoE_Solution_geloescht_soldelete')?['error']?['message'], body('CoE_Solution_geloescht_soldelete')?['message'], actions('CoE_Solution_geloescht_soldelete')?['error']?['message'], 'Aktion CoE_Solution_geloescht_soldelete ist fehlgeschlagen.')})"
-                                      },
-                                      "runAfter": {
-                                        "CoE_Solution_geloescht_soldelete": [
-                                          "Failed",
-                                          "TimedOut"
-                                        ]
-                                      }
-                                    }
-                                  },
-                                  "else": {
-                                    "actions": {
-                                      "Abgelehnt_verwaltet_soldelete": {
-                                        "type": "SetVariable",
-                                        "inputs": {
-                                          "name": "Abgelehnt",
-                                          "value": "Verwaltete Solutions und System-Solutions werden nicht gelöscht (Deinstallation nur über das Admin Center bzw. ALM)."
-                                        }
-                                      }
-                                    }
-                                  }
-                                }
-                              },
-                              "else": {
-                                "actions": {
-                                  "Abgelehnt_keine_Solution_soldelete": {
-                                    "type": "SetVariable",
-                                    "inputs": {
-                                      "name": "Abgelehnt",
-                                      "value": "Diese Aktion gibt es nur für Solutions."
-                                    }
-                                  }
+                          },
+                          "else": {
+                            "actions": {
+                              "Abgelehnt_keine_Solution_soldelete": {
+                                "type": "SetVariable",
+                                "inputs": {
+                                  "name": "Abgelehnt",
+                                  "value": "Diese Aktion gibt es nur für Solutions."
                                 }
                               }
                             }
                           }
                         }
-                      },
-                      "default": {
-                        "actions": {
-                          "Unbekannte_Aktion": {
-                            "type": "SetVariable",
-                            "inputs": {
-                              "name": "Abgelehnt",
-                              "value": "@{concat('Unbekannte Aktion: ', triggerOutputs()?['body/Action'])}"
-                            }
-                          }
-                        }
-                      },
-                      "runAfter": {}
+                      }
                     }
                   },
-                  "else": {
-                    "actions": {}
-                  }
+                  "default": {
+                    "actions": {
+                      "Nicht_im_Flow": {
+                        "type": "SetVariable",
+                        "inputs": {
+                          "name": "Abgelehnt",
+                          "value": "@{concat('Die Aktion „', triggerOutputs()?['body/Action'], '“ führt das CoE Cockpit (ab Version 1.14) direkt aus, nicht dieser Flow. Bitte das Webpart aktualisieren.')}"
+                        }
+                      }
+                    }
+                  },
+                  "runAfter": {}
                 }
               },
               "else": {

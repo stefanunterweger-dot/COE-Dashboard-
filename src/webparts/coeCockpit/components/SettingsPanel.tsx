@@ -119,8 +119,8 @@ export const SettingsPanel: React.FC<ISettingsPanelProps> = props => {
     default: 'Eigener Bereich für das Default Environment: Apps und Flows aus dem CoE, Solutions live aus dem Environment.',
     dev: 'Nicht verwaltete Developer-Environments, die Microsoft ab 15.12.2026 sperrt und ab 15.01.2027 löscht.',
     mail: 'Allgemeine Einstellungen für alle E-Mails und die Texte der Vorlagen „Nachfrage Verwendung“ und „Betroffen ab 15.12.“.',
-    actions: 'Aufträge wie Quarantäne, Löschen, Besitzer ändern oder Environment deaktivieren. Das Cockpit legt sie in einer SharePoint-Liste an, '
-      + 'der Flow „CoE Cockpit | Aktion ausführen“ im CoE-Environment führt sie mit einem Admin-Dienstkonto aus.',
+    actions: 'Aktionen wie Quarantäne, Löschen, Besitzer ändern oder Environment deaktivieren. Das Cockpit führt sie direkt mit den Rechten der angemeldeten Person aus '
+      + '(aktive Rolle „Power Platform Administrator“) und schreibt jede in die SharePoint-Liste (Aktionsprotokoll). Nur „Solution löschen“ läuft über den Flow im CoE-Environment.',
     alm: 'Bereitstellungen und Pipelines aus dem Dataverse des Pipelines-Host-Environments.',
     display: 'Überschrift, Kennzahlen und Tabellenansicht.',
     tables: 'Welche CoE-Tabellen mit welchen Spalten angezeigt werden.'
@@ -291,8 +291,10 @@ export const SettingsPanel: React.FC<ISettingsPanelProps> = props => {
             <div className={styles.setNote}>
               <Icon iconName="Info" />
               <span>
-                Ausgeführt werden die Aufträge vom Flow „CoE Cockpit | Aktion ausführen“ (Lösung im Ordner <code>flow/</code> des Projekts).
-                Dort muss derselbe Gruppenname eingetragen sein; das Dienstkonto des Flows braucht „Bearbeiten“ auf der Liste.
+                Sichtbar sind die Aktionen nur für Mitglieder dieser Gruppe, solange ihre Rolle „Power Platform Administrator“ (oder „Globaler Administrator“) aktiv ist.
+                Ausgeführt werden sie direkt im Webpart; dafür braucht SharePoint die Berechtigungen aus <code>scripts/Grant-CoeCockpitPermissions.ps1 -Actions</code>.
+                Nur „Solution löschen“ (braucht System Administrator im Environment) übernimmt der Flow „CoE Cockpit | Aktion ausführen“ (Lösung im Ordner <code>flow/</code>):
+                dort muss derselbe Gruppenname eingetragen sein, das Dienstkonto des Flows braucht „Bearbeiten“ auf der Liste.
               </span>
             </div>
           </>

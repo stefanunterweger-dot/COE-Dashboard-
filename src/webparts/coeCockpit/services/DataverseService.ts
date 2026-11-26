@@ -490,6 +490,25 @@ export class DataverseService {
     return (await this._fetchAll(entitySet, select, filter, undefined, maxRecords)).records;
   }
 
+  /** Datensatz aktualisieren (PATCH, nur bestehende Datensätze). entitySet z. B. „admin_apps“. */
+  public async update(entitySet: string, id: string, values: { [field: string]: unknown }): Promise<void> {
+    const client = await this._getClient();
+    const res: HttpClientResponse = await client.fetch(`${this.baseUrl}${API_PATH}${entitySet}(${id})`, AadHttpClient.configurations.v1, {
+      method: 'PATCH',
+      headers: {
+        'Accept': 'application/json',
+        'Content-Type': 'application/json',
+        'OData-MaxVersion': '4.0',
+        'OData-Version': '4.0',
+        'If-Match': '*'
+      },
+      body: JSON.stringify(values)
+    });
+    if (!res.ok) {
+      throw await toError(res);
+    }
+  }
+
   /** Kurzer Zugriffstest auf diese Umgebung (wirft bei fehlenden Rechten). */
   public async whoAmI(): Promise<{ UserId?: string }> {
     return this._get<{ UserId?: string }>('WhoAmI');
