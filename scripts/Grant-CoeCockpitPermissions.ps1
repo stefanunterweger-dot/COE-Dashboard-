@@ -6,6 +6,7 @@
   Normalerweise genehmigt man die Anforderungen des Pakets im SharePoint Admin Center unter „Erweitert → API-Zugriff“.
   Erscheinen dort keine Anforderungen, setzt dieses Skript dieselben Berechtigungen direkt (Microsoft Graph PowerShell):
 
+    -Dataverse         Dynamics CRM „user_impersonation“ – CoE-Daten lesen (Pflicht für das Cockpit)
     -MailSend          Microsoft Graph „Mail.Send“ – automatischer E-Mail-Versand an Maker (optional)
     -Licenses          Microsoft Graph „User.Read.All“ und „GroupMember.Read.All“ – Lizenzprüfung in
                        „Betroffen ab Februar 2027“ (Lizenzen der Berechtigten, Mitglieder freigegebener Gruppen)
@@ -36,14 +37,15 @@
   .\Grant-CoeCockpitPermissions.ps1 -Actions
 #>
 param(
+  [switch]$Dataverse,
   [switch]$MailSend,
   [switch]$Licenses,
   [switch]$PowerPlatformApi,
   [switch]$Actions
 )
 $ErrorActionPreference = 'Stop'
-if (-not $MailSend -and -not $Licenses -and -not $PowerPlatformApi -and -not $Actions) {
-  $MailSend = $true; $Licenses = $true; $PowerPlatformApi = $true; $Actions = $true
+if (-not $Dataverse -and -not $MailSend -and -not $Licenses -and -not $PowerPlatformApi -and -not $Actions) {
+  $Dataverse = $true; $MailSend = $true; $Licenses = $true; $PowerPlatformApi = $true; $Actions = $true
 }
 
 # Install-Module Microsoft.Graph.Applications, Microsoft.Graph.Identity.SignIns -Scope CurrentUser   # nur falls noch nicht installiert
@@ -92,7 +94,12 @@ function Grant-Scopes($resource, [string[]]$scopes) {
   }
 }
 
-$graph = Get-MgServicePrincipal -Filter "appId eq '00000003-0000-0000-c000-000000000000'"
+if ($Dataverse) {
+  $crm = Get-ResourceSp '00000007-0000-0000-c000-000000000000' 'Dynamics CRM'
+  Grant-Scopes $crm @('user_impersonation')
+}
+
+$graph = Get-ResourceSp '00000003-0000-0000-c000-000000000000' 'Microsoft Graph'
 if ($MailSend) {
   Grant-Scopes $graph @('Mail.Send')
 }
