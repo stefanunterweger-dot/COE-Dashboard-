@@ -109,6 +109,34 @@ Ergebnis: `sharepoint/solution/coe-cockpit.sppkg`
 3. Webpart **CoE Cockpit** auf einer Seite einfügen und in den Eigenschaften die **URL der CoE-Umgebung** eintragen,
    z. B. `https://contoso-coe.crm4.dynamics.com`.
 
+## SharePoint-Listen prüfen (Skript)
+
+[`scripts/Ensure-CoeCockpitLists.ps1`](scripts/Ensure-CoeCockpitLists.ps1) prüft auf der Website des Cockpits die Listen
+**„CoE Cockpit Aktionen“** und **„CoE Cockpit Benachrichtigungen“** und legt Fehlendes an bzw. korrigiert es:
+
+- **Listen** vorhanden (sonst anlegen, ohne Schnellstart-Eintrag),
+- **Spalten**: vorhanden, Typ, Anzeigename, Länge, Format, Zeilen (fehlende anlegen, Abweichungen korrigieren; falscher Typ = Fehler, wird nicht
+  automatisch umgebaut). Die Titelspalte heißt „Eintrag“ bzw. „Environment“.
+- **Ansichten**: vorhanden, Spalten, Filter/Sortierung/Gruppierung, Zeilenzahl, Standardansicht –
+  Aktionen: „Alle Aktionen“ (Standard), „Offen“, „Fehler und Abgelehnt“, „Letzte 30 Tage“, „Meine Aktionen“, „Nach Aktion“;
+  Benachrichtigungen: „Alle Benachrichtigungen“ (Standard), „Letzte 30 Tage“, „Nach Environment“, „Meine Benachrichtigungen“.
+- **Berechtigungen** der Aktionsliste: eigene Berechtigungen, Gruppe (Standard „CoE Cockpit Admins“) = Mitwirken, Websitebesitzer = Vollzugriff,
+  optional das Flow-Dienstkonto (`-FlowServiceAccount`) = Mitwirken; weitere Berechtigte werden nur gemeldet.
+- Bericht mit OK / ANGELEGT / KORRIGIERT / FEHLT / WARNUNG / FEHLER; `-CheckOnly` prüft nur.
+
+Anmeldung interaktiv mit **PnP.PowerShell** über die eigene App-Registrierung – die **Client-ID** wird beim Start abgefragt (oder `-ClientId`).
+Die App braucht die Plattform „Mobile and desktop applications“ mit Umleitungs-URI `http://localhost` und die delegierte SharePoint-Berechtigung
+`AllSites.FullControl`. Ausgeführt wird mit den Rechten der angemeldeten Person (Websitebesitzer). Voraussetzung: PowerShell 7.4+,
+`Install-Module PnP.PowerShell -Scope CurrentUser`.
+
+```powershell
+.\scripts\Ensure-CoeCockpitLists.ps1 -SiteUrl https://contoso.sharepoint.com/sites/powerplatform -CheckOnly   # nur prüfen
+.\scripts\Ensure-CoeCockpitLists.ps1 -SiteUrl https://contoso.sharepoint.com/sites/powerplatform              # prüfen und ergänzen
+```
+
+Das Berechtigungsskript `Grant-CoeCockpitPermissions.ps1` läuft dagegen im Kontext der angemeldeten Person über Microsoft Graph PowerShell
+(`Connect-MgGraph`, ohne eigene App). Ändern sich Listen, Spalten, Ansichten oder Berechtigungen, werden beide Skripte mit angepasst.
+
 ## Berechtigungen
 
 Das Webpart liest mit den Rechten des angemeldeten Benutzers. Benutzer brauchen in der CoE-Umgebung eine Sicherheitsrolle
@@ -279,7 +307,11 @@ live über Microsoft Graph (`/roleManagement/directory`):
 - **MFA:** Verlangt die Rolle MFA, klappt die Aktivierung, wenn die SharePoint-Sitzung mit MFA angemeldet wurde; sonst meldet das Cockpit das
   und verweist aufs PIM-Portal. Rollen mit **Authentifizierungskontext** (Conditional Access) und Berechtigungen **über Gruppen** (PIM für
   Gruppen) gehen nur im PIM-Portal.
-- Nach dem Aktivieren dauert es oft 1–2 Minuten, bis die Rolle im Anmelde-Token steht; das Abzeichen prüft automatisch nach.
+- **Neu anmelden?** Normalerweise nicht. Laut Microsoft legt PIM die aktive Zuweisung innerhalb von Sekunden an; Anwendungen, die sich den
+  alten Stand gemerkt haben, sehen sie aber evtl. erst später – „bei manchen Anwendungen hilft Ab- und wieder Anmelden“
+  ([Microsoft Learn](https://learn.microsoft.com/entra/id-governance/privileged-identity-management/pim-how-to-activate-role)). Das Cockpit
+  holt deshalb nach dem Aktivieren selbst frische Tokens (nach 20 s, 1 Min., 2 Min.; „Erneut prüfen“ jederzeit). Neu anmelden muss man nur,
+  wenn das Abzeichen nach einigen Minuten noch nicht grün ist oder die Rolle MFA verlangt und die Sitzung ohne MFA angemeldet wurde.
 - Eine gerade aktivierte Rolle lässt sich laut Microsoft erst nach 5 Minuten wieder beenden.
 - **Berechtigungen** (Skript `-Pim`): Microsoft Graph `RoleEligibilitySchedule.Read.Directory`, `RoleAssignmentSchedule.ReadWrite.Directory`,
   `RoleManagementPolicy.Read.Directory`. **Achtung:** Wie alle SPFx-Berechtigungen gilt `RoleAssignmentSchedule.ReadWrite.Directory` für

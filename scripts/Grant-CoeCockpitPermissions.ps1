@@ -38,6 +38,8 @@
    - Sie geben niemandem zusätzliche Rechte: Microsoft prüft bei jedem Aufruf die Rolle der angemeldeten Person.
      Ausführen kann eine Aktion nur, wer die Rolle „Power Platform Administrator“ (oder „Globaler Administrator“) aktiv hat.
 
+  Läuft im Kontext der angemeldeten Person: Microsoft Graph PowerShell mit interaktiver Anmeldung (Connect-MgGraph), ohne eigene App-Registrierung.
+
   Ausführen als Globaler Administrator oder Administrator für privilegierte Rollen
   (für Power Platform API, PowerApps Service und Flow Service reicht auch Anwendungsadministrator / Cloudanwendungsadministrator).
 
