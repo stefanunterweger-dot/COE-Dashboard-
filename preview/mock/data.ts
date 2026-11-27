@@ -495,6 +495,59 @@ liveEnvs.forEach(e => {
   (e as Record<string, unknown>).admin_dlppolicies = names.length ? names.join(', ') : null;
 });
 
+// ---------- DLP: Connectors je App/Flow („App Connections“ / „Flow Connections“) ----------
+// deterministisch aus der ID – verbraucht den Zufallsgenerator nicht (alle übrigen Testdaten bleiben gleich)
+function hashOf(text: string): number {
+  let h = 2166136261;
+  for (let i = 0; i < text.length; i++) { h ^= text.charCodeAt(i); h = Math.imul(h, 16777619); }
+  return h >>> 0;
+}
+function connsFor(id: string, app: boolean): string {
+  let h = hashOf(id) || 1;
+  const next = (): number => { h ^= h << 13; h ^= h >>> 17; h ^= h << 5; h >>>= 0; return h / 4294967296; };
+  const n = 1 + Math.floor(next() * 3);
+  const out: string[] = [];
+  for (let i = 0; i < n; i++) {
+    const list = next() < 0.86 ? commonConnectors : connectors;
+    const c = String(list[Math.floor(next() * list.length)].admin_name);
+    if (out.indexOf(c) < 0) { out.push(c); }
+  }
+  if (app && next() < 0.08) { out.push('shared_logicflows'); }
+  return out.join(',');
+}
+apps.forEach(a => { a.admin_appconnections = connsFor(String(a.admin_appid), true); });
+flows.forEach(f => { f.admin_flowconnections = connsFor(String(f.admin_flowid), false); });
+
+// Entwürfe (CoE-Tabelle „Data Policy Drafts“) und Aufgabenliste („DLP Impact Analysis“) – feste IDs/Daten, ebenfalls ohne Zufallsgenerator
+const fixedId = (n: number): string => `d1a90000-0000-4000-8000-${String(n).padStart(12, '0')}`;
+const fixedDate = (days: number): string => new Date(NOW - days * DAY).toISOString().replace(/\.\d{3}Z$/, 'Z');
+const FIXED = (created: number, modified: number): Record<string, unknown> => ({ statecode: 0, createdon: fixedDate(created), modifiedon: fixedDate(modified) });
+const conRef = (n: string): { id: string; name: string; type: string } => {
+  const name = String(connectors.filter(c => c.admin_displayname === n)[0].admin_name);
+  return { id: `/providers/Microsoft.PowerApps/apis/${name}`, name, type: 'Microsoft.PowerApps/apis' };
+};
+const draftEnvs = liveEnvs.filter(e => e.admin_environmentsku === 'Production').slice(0, 3).map(e => ({
+  name: String(e.admin_environmentname), type: 'Microsoft.BusinessAppPlatform/scopes/environments',
+  id: `/providers/Microsoft.BusinessAppPlatform/scopes/admin/environments/${e.admin_environmentname}`
+}));
+const dlpDrafts: Record<string, unknown>[] = [{
+  ...FIXED(12, 3), admin_datapolicydraftsid: fixedId(1), admin_name: 'Produktion ohne SQL', admin_displayname: 'Produktion – Business-Daten', admin_apiversion: '2020-10-01',
+  admin_defaultconnectorclassification: 'General', admin_scope: 'OnlyEnvironments', admin_environments: JSON.stringify(draftEnvs),
+  admin_connectorgroups: JSON.stringify([
+    { classification: 'Confidential', connectors: ['SharePoint', 'Microsoft Dataverse', 'SAP ERP'].map(conRef) },
+    { classification: 'General', connectors: ['Office 365 Outlook', 'Microsoft Teams'].map(conRef) },
+    { classification: 'Blocked', connectors: ['1DocStop', 'SQL Server'].map(conRef) }
+  ]),
+  _createdby_value: 'Anna Berger', _modifiedby_value: 'Anna Berger'
+}];
+const dlpTasks: Record<string, unknown>[] = apps.filter(a => !a.admin_appdeleted).slice(0, 3).map((a, i) => ({
+  ...FIXED(9 - i, 2), admin_dlpimpactanalysisid: fixedId(100 + i), admin_name: a.admin_displayname, admin_dlppolicyname: 'Contoso Standard-DLP', admin_datapolicyid: '',
+  _admin_impactedapp_value: a.admin_appid, _admin_impactedflow_value: null, _admin_impactedenvironment_value: a._admin_appenvironment_value,
+  _admin_impactowner_value: a._admin_appowner_value, admin_conflictingconnectorbusiness: 'SharePoint', admin_conflictingconnectornonbusiness: i === 2 ? '' : 'Excel Online (Business)',
+  admin_conflictingconnectorblocked: i === 2 ? 'HTTP' : '', admin_decision: [597910000, 597910004, null][i], admin_decisionstatus: [597910000, 597910000, null][i],
+  admin_actionrequiredon: i === 0 ? fixedDate(-14) : null
+}));
+
 // Freigaben, Gäste, DLP-Verstöße, unverschlüsselte Custom Connectors
 apps.forEach(a => {
   a.admin_appsharedwithtenant = chance(0.025);
@@ -606,7 +659,7 @@ export const DATABASES: IDatabase[] = [
       A('admin_appsharedwithtenant', 'Boolean', 'App Shared With Tenant'), A('admin_appsharedguestuser', 'Boolean', 'App Shared With Guest User'),
       A('admin_dlppoliciesviolated', 'String', 'DLP Policies Violated'),
       A('admin_appisquarantined', 'Boolean', 'App Is Quarantined'), A('admin_quarantineapp', 'Boolean', 'Quarantine App'),
-      A('admin_issolutionapp', 'Boolean', 'Is Solution App')
+      A('admin_issolutionapp', 'Boolean', 'Is Solution App'), A('admin_appconnections', 'Memo', 'App Connections')
     ], apps),
     table('admin_flow', 'admin_flows', 'Flow', 'admin_flowid', 'admin_displayname', [
       A('admin_displayname', 'String', 'Display Name'), MAKER_LK('admin_flowcreator', 'Maker'), MAKER_LK('admin_derivedowner', 'Derived Owner'),
@@ -614,7 +667,7 @@ export const DATABASES: IDatabase[] = [
       A('admin_flowstate', 'String', 'Flow State'), A('cr5d5_flowisorphaned', 'String', 'Flow is Orphaned'), A('cr5d5_flowtrigger', 'String', 'Trigger'),
       A('admin_flowmodifiedon', 'DateTime', 'Flow Modified On'), A('admin_flowcreatedon', 'DateTime', 'Flow Created On'), A('admin_flowdeleted', 'Boolean', 'Flow Deleted'), A('admin_flowispublished', 'Boolean', 'Flow Is Published'),
       A('admin_flowsharedguestuser', 'Boolean', 'Flow Shared With Guest User'),
-      A('admin_issolutionflow', 'Boolean', 'Is Solution Flow')
+      A('admin_issolutionflow', 'Boolean', 'Is Solution Flow'), A('admin_flowconnections', 'Memo', 'Flow Connections')
     ], flows),
     table('admin_environment', 'admin_environments', 'Environment', 'admin_environmentid', 'admin_displayname', [
       A('admin_displayname', 'String', 'Display Name'), A('admin_environmentname', 'String', 'Name'), A('admin_environmentsku', 'String', 'Environment Sku'),
@@ -706,7 +759,22 @@ export const DATABASES: IDatabase[] = [
     withNav(table('admin_dlppolicy', 'admin_dlppolicies', 'DLP Policy', 'admin_dlppolicyid', 'admin_name', [
       A('admin_name', 'String', 'Display Name'), A('admin_scope', 'Picklist', 'Environment Scope', undefined, DLP_SCOPES), A('admin_description', 'String', 'Description'),
       A('admin_isshared', 'Boolean', 'Is Shared'), A('admin_policyid', 'String', 'Policy ID')
-    ], dlpPolicies), { admin_policy_environments: 'admin_environment', admin_blocked_policy_connectors: 'admin_connector', admin_confidential_policy_connectors: 'admin_connector' })
+    ], dlpPolicies), { admin_policy_environments: 'admin_environment', admin_blocked_policy_connectors: 'admin_connector', admin_confidential_policy_connectors: 'admin_connector' }),
+    table('admin_datapolicydrafts', 'admin_datapolicydraftses', 'Data Policy Drafts', 'admin_datapolicydraftsid', 'admin_name', [
+      A('admin_name', 'String', 'Name'), A('admin_displayname', 'String', 'DisplayName'), A('admin_apiversion', 'String', 'API Version'),
+      A('admin_defaultconnectorclassification', 'String', 'Default Connector Classification'), A('admin_scope', 'String', 'Scope'),
+      A('admin_environments', 'Memo', 'Environments'), A('admin_connectorgroups', 'Memo', 'Connector Groups'),
+      LK('createdby', 'Erstellt von', 'systemuser'), LK('modifiedby', 'Geändert von', 'systemuser')
+    ], dlpDrafts),
+    table('admin_dlpimpactanalysis', 'admin_dlpimpactanalysises', 'DLP Impact Analysis', 'admin_dlpimpactanalysisid', 'admin_name', [
+      A('admin_name', 'String', 'Name'), A('admin_dlppolicyname', 'String', 'Data Policy Name'), A('admin_datapolicyid', 'String', 'Data Policy ID'),
+      LK('admin_impactedapp', 'Impacted App', 'admin_app'), LK('admin_impactedflow', 'Impacted Flow', 'admin_flow'), ENV_LK('admin_impactedenvironment'),
+      MAKER_LK('admin_impactowner', 'Impact Owner'), A('admin_conflictingconnectorbusiness', 'Memo', 'Conflicting connector (business)'),
+      A('admin_conflictingconnectornonbusiness', 'Memo', 'Conflicting connector (non-business)'), A('admin_conflictingconnectorblocked', 'Memo', 'Conflicting connector (blocked)'),
+      A('admin_decision', 'Picklist', 'Decision', undefined, { 597910000: 'In progress', 597910001: 'Not required - Maker will delete', 597910002: 'Not required - Can be deleted by IT', 597910003: 'Required - Needs to be migrated', 597910004: 'Required - Maker will update app' }),
+      A('admin_decisionstatus', 'Picklist', 'Decision status', undefined, { 597910000: 'In progress', 597910001: 'Completed' }),
+      A('admin_actionrequiredon', 'DateTime', 'Action Required On')
+    ], dlpTasks)
   ]),
   db(DEFAULT_HOST, [
     table('solution', 'solutions', 'Lösung', 'solutionid', 'friendlyname', [
@@ -852,3 +920,10 @@ export const DATABASES: IDatabase[] = [
 // ---------- Für die simulierte Graph-API (Lizenzen, Gruppenmitglieder) ----------
 export const GRAPH_PEOPLE = humans.map(h => ({ id: String(h.admin_makerid), upn: String(h.admin_userprincipalname || ''), name: String(h.admin_displayname || '') }));
 export const GRAPH_GROUPS = ppUsers.filter(u => u.admin_type === 'Group').map(g => ({ id: String(g.admin_powerplatformuserid), name: String(g.admin_displayname) }));
+
+/** Grundlage der simulierten DLP-Schnittstelle (api.bap.microsoft.com). */
+export const DLP_MOCK = {
+  policies: dlpPolicies,
+  connectors: connectors.map(c => ({ coeId: String(c.admin_connectorid), name: String(c.admin_name), displayName: String(c.admin_displayname), custom: c.admin_iscustomapi === true })),
+  environments: environments.map(e => ({ coeId: String(e.admin_environmentid), name: String(e.admin_environmentname) }))
+};

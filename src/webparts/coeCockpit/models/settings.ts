@@ -25,6 +25,7 @@ export interface ISettingsValues {
   showLicenseOptimization: boolean;
   showStorage: boolean;
   showMessageCenter: boolean;
+  showDlp: boolean;
   pipelinesHostUrl: string;
   notifyAutoSend: boolean;
   notifyTone: 'sie' | 'du';

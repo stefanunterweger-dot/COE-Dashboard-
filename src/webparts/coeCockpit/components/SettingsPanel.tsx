@@ -181,6 +181,9 @@ export const SettingsPanel: React.FC<ISettingsPanelProps> = props => {
             <Row label="Dataverse-Speicher" description="Kontingent Datenbank/Datei/Log live (Power Platform API), Verbrauch je Environment aus dem CoE.">
               <Toggle checked={v.showStorage} onChange={(_e, c) => set({ showStorage: !!c })} />
             </Row>
+            <Row label="DLP-Auswirkungsanalyse" description="Wie die CoE-App „Data Policy Impact Analysis“: Richtlinien live, Auswirkung aus dem CoE, Entwürfe und Aufgabenliste im CoE.">
+              <Toggle checked={v.showDlp} onChange={(_e, c) => set({ showDlp: !!c })} />
+            </Row>
             <Row label="Default Environment" description="Eigener Bereich – Details unter „Default Environment“">
               <Toggle checked={v.showDefaultEnvironment} onChange={(_e, c) => set({ showDefaultEnvironment: !!c })} />
             </Row>

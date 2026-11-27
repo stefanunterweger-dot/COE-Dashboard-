@@ -12,12 +12,14 @@
                        „Betroffen ab Februar 2027“ (Lizenzen der Berechtigten, Mitglieder freigegebener Gruppen) und
                        „Lizenzen je Benutzer“ (gekaufte/freie Lizenzen aus „subscribedSkus“)
     -MessageCenter     Microsoft Graph „ServiceMessage.Read.All“ – Ansicht „Was ändert Microsoft?“ (Message Center)
+    -Dlp               PowerApps Service „User“ – Ansicht „DLP-Auswirkungsanalyse“ (DLP-Richtlinien live lesen, kopieren,
+                       ändern, löschen; dieselbe Schnittstelle wie der Connector „Power Platform for Admins V2“)
     -PowerPlatformApi  Power Platform API „Licensing.Allocations.Read“, „Licensing.BillingPolicies.Read“,
                        „EnvironmentManagement.Environments.Read“ – Ansichten „Copilot-Credits“ und „Abrechnungspläne“
     -Actions           Aktionen direkt im Webpart (ohne Flow, im Namen der angemeldeten Person):
                          Power Platform API   „EnvironmentManagement.Write“, „EnvironmentManagement.Settings.ReadWrite“
                                               (Environment auf Managed umstellen, deaktivieren, aktivieren)
-                         PowerApps Service    „User“ (Apps: Quarantäne, Besitzer, Freigaben, Löschen)
+                         PowerApps Service    „User“ (Apps: Quarantäne, Besitzer, Freigaben, Löschen; DLP-Richtlinien)
                          Microsoft Flow Service „User“, „Flows.Read.All“, „Flows.Manage.All“
                                               (Flows: ein/aus, Mitbesitzer, Freigaben, Löschen)
                          Microsoft Graph      „User.Read.All“ (Person über die E-Mail-Adresse finden)
@@ -39,18 +41,21 @@
   .\Grant-CoeCockpitPermissions.ps1 -Actions
 .EXAMPLE
   .\Grant-CoeCockpitPermissions.ps1 -MessageCenter
+.EXAMPLE
+  .\Grant-CoeCockpitPermissions.ps1 -Dlp
 #>
 param(
   [switch]$Dataverse,
   [switch]$MailSend,
   [switch]$Licenses,
   [switch]$MessageCenter,
+  [switch]$Dlp,
   [switch]$PowerPlatformApi,
   [switch]$Actions
 )
 $ErrorActionPreference = 'Stop'
-if (-not $Dataverse -and -not $MailSend -and -not $Licenses -and -not $MessageCenter -and -not $PowerPlatformApi -and -not $Actions) {
-  $Dataverse = $true; $MailSend = $true; $Licenses = $true; $MessageCenter = $true; $PowerPlatformApi = $true; $Actions = $true
+if (-not $Dataverse -and -not $MailSend -and -not $Licenses -and -not $MessageCenter -and -not $Dlp -and -not $PowerPlatformApi -and -not $Actions) {
+  $Dataverse = $true; $MailSend = $true; $Licenses = $true; $MessageCenter = $true; $Dlp = $true; $PowerPlatformApi = $true; $Actions = $true
 }
 
 # Install-Module Microsoft.Graph.Applications, Microsoft.Graph.Identity.SignIns -Scope CurrentUser   # nur falls noch nicht installiert
@@ -116,6 +121,12 @@ if ($MessageCenter) {
   Grant-Scopes $graph @('ServiceMessage.Read.All')
 }
 
+if ($Dlp -or $Actions) {
+  # DLP-Richtlinien (api.bap.microsoft.com) und Power-Apps-Verwaltung (api.powerapps.com) nutzen dasselbe Token
+  $apps = Get-ResourceSp '475226c6-020e-4fb2-8a90-7a972cbfc1d4' 'PowerApps Service'
+  Grant-Scopes $apps @('User')
+}
+
 if ($PowerPlatformApi -or $Actions) {
   $pp = Get-ResourceSp '8578e004-a5c6-46e7-913e-12f58912df43' 'Power Platform API'
   if ($PowerPlatformApi) {
@@ -127,8 +138,6 @@ if ($PowerPlatformApi -or $Actions) {
 }
 
 if ($Actions) {
-  $apps = Get-ResourceSp '475226c6-020e-4fb2-8a90-7a972cbfc1d4' 'PowerApps Service'
-  Grant-Scopes $apps @('User')
   $flow = Get-ResourceSp '7df0a125-d3be-4c96-aa54-591f83ff541c' 'Microsoft Flow Service'
   Grant-Scopes $flow @('User', 'Flows.Read.All', 'Flows.Manage.All')
   Grant-Scopes $graph @('User.Read.All')

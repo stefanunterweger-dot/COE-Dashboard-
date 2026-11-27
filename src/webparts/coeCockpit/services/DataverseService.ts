@@ -509,6 +509,38 @@ export class DataverseService {
     }
   }
 
+  /** Datensatz anlegen (POST). Liefert die ID des neuen Datensatzes (aus „OData-EntityId“). */
+  public async create(entitySet: string, values: { [field: string]: unknown }): Promise<string> {
+    const client = await this._getClient();
+    const res: HttpClientResponse = await client.fetch(`${this.baseUrl}${API_PATH}${entitySet}`, AadHttpClient.configurations.v1, {
+      method: 'POST',
+      headers: {
+        'Accept': 'application/json',
+        'Content-Type': 'application/json',
+        'OData-MaxVersion': '4.0',
+        'OData-Version': '4.0'
+      },
+      body: JSON.stringify(values)
+    });
+    if (!res.ok) {
+      throw await toError(res);
+    }
+    const ref = (res.headers && (res.headers.get('OData-EntityId') || res.headers.get('odata-entityid'))) || '';
+    return (/\(([0-9a-f-]{36})\)\s*$/i.exec(ref) || [])[1] || '';
+  }
+
+  /** Datensatz löschen (DELETE). */
+  public async remove(entitySet: string, id: string): Promise<void> {
+    const client = await this._getClient();
+    const res: HttpClientResponse = await client.fetch(`${this.baseUrl}${API_PATH}${entitySet}(${id})`, AadHttpClient.configurations.v1, {
+      method: 'DELETE',
+      headers: { 'Accept': 'application/json', 'OData-MaxVersion': '4.0', 'OData-Version': '4.0' }
+    });
+    if (!res.ok && res.status !== 404) {
+      throw await toError(res);
+    }
+  }
+
   /** Kurzer Zugriffstest auf diese Umgebung (wirft bei fehlenden Rechten). */
   public async whoAmI(): Promise<{ UserId?: string }> {
     return this._get<{ UserId?: string }>('WhoAmI');

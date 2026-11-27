@@ -1,5 +1,6 @@
 /* Ersatz für @microsoft/sp-http in der Vorschau: leitet Aufrufe an die simulierte Dataverse-API. */
-import { IMockResponse, mockGet, mockPatch } from '../mock/odata';
+import { IMockResponse, mockDelete, mockGet, mockPatch, mockPost } from '../mock/odata';
+import { mockBapCall } from '../mock/bap';
 import { adminConsentError, mockAdminCall } from '../mock/adminapi';
 import { mockGraphGet, mockGraphPost } from '../mock/graph';
 import { mockSharePoint } from '../mock/sharepoint';
@@ -31,8 +32,18 @@ export class AadHttpClient {
       const consent = adminConsentError(this.resource);
       return consent ? Promise.reject(consent) : mockAdminCall(method, url, options && options.body);
     }
+    if (/^https:\/\/api\.bap\.microsoft\.com\//i.test(url)) {
+      const consent = adminConsentError(this.resource);
+      return consent ? Promise.reject(consent) : mockBapCall(method, url, options && options.body);
+    }
     if (method === 'PATCH') {
       return mockPatch(url, (options && options.body) || '{}');
+    }
+    if (method === 'POST') {
+      return mockPost(url, (options && options.body) || '{}');
+    }
+    if (method === 'DELETE') {
+      return mockDelete(url);
     }
     return mockGet(url, (options && options.headers) || {});
   }

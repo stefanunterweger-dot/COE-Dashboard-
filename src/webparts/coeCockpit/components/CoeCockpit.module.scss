@@ -4387,3 +4387,311 @@ button.solItem {
 a.ovHeroChip {
   text-decoration: none;
 }
+
+// ===================== DLP-Auswirkungsanalyse =====================
+.dlpCommands {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  padding: 8px 16px;
+  border-bottom: 1px solid var(--coe-border-soft);
+}
+
+.dlpCommand {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 10px;
+  font: inherit;
+  font-size: 13px;
+  color: var(--coe-text);
+  background: transparent;
+  border: 0;
+  border-radius: 6px;
+  cursor: pointer;
+
+  &:hover:not(:disabled) {
+    background: var(--coe-hover);
+  }
+
+  &:disabled {
+    color: var(--coe-text-3);
+    cursor: default;
+  }
+
+  i {
+    color: var(--coe-accent);
+  }
+
+  &:disabled i {
+    color: var(--coe-text-3);
+  }
+}
+
+.dlpCommandDanger i {
+  color: var(--coe-danger);
+}
+
+.dlpWizard {
+  display: grid;
+  grid-template-columns: 220px minmax(0, 1fr);
+  min-height: 420px;
+}
+
+.dlpSteps {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 16px 12px;
+  border-right: 1px solid var(--coe-border-soft);
+  list-style: none;
+  margin: 0;
+}
+
+.dlpStep {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 8px 10px;
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  color: var(--coe-text-2);
+  background: transparent;
+  border: 0;
+  border-radius: 8px;
+  cursor: pointer;
+
+  &:hover:not(:disabled) {
+    background: var(--coe-hover);
+  }
+
+  &:disabled {
+    cursor: default;
+    opacity: 0.6;
+  }
+}
+
+.dlpStepDot {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 22px;
+  height: 22px;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--coe-text-2);
+  border: 2px solid var(--coe-border);
+  border-radius: 50%;
+  background: var(--coe-bg);
+}
+
+.dlpStepActive {
+  color: var(--coe-text);
+  font-weight: 600;
+  background: var(--coe-accent-soft);
+
+  .dlpStepDot {
+    color: #fff;
+    background: var(--coe-accent);
+    border-color: var(--coe-accent);
+  }
+}
+
+.dlpStepDone .dlpStepDot {
+  color: var(--coe-accent);
+  border-color: var(--coe-accent);
+}
+
+.dlpBody {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 0;
+  padding: 18px 24px;
+}
+
+.dlpTitle {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--coe-text);
+}
+
+.dlpFooter {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: auto;
+  padding-top: 14px;
+  border-top: 1px solid var(--coe-border-soft);
+}
+
+.dlpCrumb {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 14px;
+  color: var(--coe-text-2);
+
+  b {
+    color: var(--coe-text);
+  }
+}
+
+.dlpCols {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 12px;
+}
+
+.dlpList {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  border: 1px solid var(--coe-border);
+  border-radius: 10px;
+  background: var(--coe-bg);
+}
+
+.dlpListHead {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  font-weight: 600;
+  border-bottom: 1px solid var(--coe-border-soft);
+}
+
+.dlpListBody {
+  max-height: 360px;
+  overflow: auto;
+}
+
+.dlpListRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  font-size: 13px;
+  border-bottom: 1px solid var(--coe-border-soft);
+  cursor: pointer;
+
+  &:hover {
+    background: var(--coe-hover);
+  }
+
+  span {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+}
+
+.dlpChips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.dlpChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 8px;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 18px;
+  border-radius: 10px;
+  white-space: nowrap;
+}
+
+.dlpChipBusiness {
+  color: var(--coe-info);
+  background: var(--coe-info-bg);
+}
+
+.dlpChipGeneral {
+  color: var(--coe-text-2);
+  background: var(--coe-surface);
+}
+
+.dlpChipBlocked {
+  color: var(--coe-danger);
+  background: var(--coe-danger-bg);
+}
+
+.dlpChipNew {
+  color: var(--coe-warning);
+  background: var(--coe-warning-bg);
+}
+
+.dlpSummary {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 10px;
+}
+
+.dlpSummaryItem {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px 12px;
+  border: 1px solid var(--coe-border);
+  border-radius: 10px;
+  background: var(--coe-bg);
+
+  span {
+    font-size: 12px;
+    color: var(--coe-text-2);
+  }
+
+  b {
+    font-size: 14px;
+    color: var(--coe-text);
+    overflow-wrap: anywhere;
+  }
+}
+
+.dlpChanges {
+  margin: 0;
+  padding-left: 18px;
+  font-size: 13px;
+  color: var(--coe-text);
+
+  li {
+    margin: 2px 0;
+  }
+}
+
+@media (max-width: 720px) {
+  .dlpWizard {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .dlpSteps {
+    flex-direction: row;
+    flex-wrap: wrap;
+    border-right: 0;
+    border-bottom: 1px solid var(--coe-border-soft);
+  }
+
+  .dlpStep {
+    width: auto;
+  }
+
+  .dlpBody {
+    padding: 14px 16px;
+  }
+}
+
+.ovToneGood {
+  color: #ffffff;
+  background: var(--coe-status-good);
+}

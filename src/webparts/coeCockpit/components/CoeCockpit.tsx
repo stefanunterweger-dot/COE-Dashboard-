@@ -47,6 +47,8 @@ import { LICENSE_OPT_KEY } from '../models/licenseOptimization';
 import { LicenseOptimizationView } from './LicenseOptimizationView';
 import { STORAGE_KEY } from '../models/storage';
 import { StorageView } from './StorageView';
+import { DLP_KEY } from '../models/dlp';
+import { DlpView } from './DlpView';
 import { MESSAGES_KEY } from '../models/messageCenter';
 import { MessageCenterView } from './MessageCenterView';
 import { PowerPlatformApiService, PPAPI_RESOURCE } from '../services/PowerPlatformApiService';
@@ -116,6 +118,8 @@ export interface ICoeCockpitProps {
   showStorage?: boolean;
   /** „Was ändert Microsoft?“ (Standard: an) */
   showMessageCenter?: boolean;
+  /** „DLP-Auswirkungsanalyse“ (Standard: an) */
+  showDlp?: boolean;
   /** Dataverse-URL des Pipelines-Host-Environments (leer = ALM-Pipelines ausblenden). */
   pipelinesHostUrl: string;
   /** Vorlage für die E-Mail an die Maker betroffener Developer-Environments. */
@@ -546,7 +550,8 @@ const CoeCockpit: React.FC<ICoeCockpitProps> = props => {
       || (props.showCopilotCredits && (activeKey === CREDITS_KEY || activeKey === BILLING_KEY))
       || (props.showPremium2027 !== false && activeKey === PREMIUM_KEY) || (props.showUserLicenses !== false && activeKey === USER_LICENSES_KEY)
       || (props.showOrphans !== false && activeKey === ORPHANS_KEY) || (props.showLicenseOptimization !== false && activeKey === LICENSE_OPT_KEY)
-      || (props.showStorage !== false && activeKey === STORAGE_KEY) || (props.showMessageCenter !== false && activeKey === MESSAGES_KEY);
+      || (props.showStorage !== false && activeKey === STORAGE_KEY) || (props.showMessageCenter !== false && activeKey === MESSAGES_KEY)
+      || (props.showDlp !== false && activeKey === DLP_KEY);
     if (!activeTable && tables.length && !waitingForDefault) {
       setActiveKey(tables[0].key);
     }
@@ -1264,10 +1269,16 @@ const CoeCockpit: React.FC<ICoeCockpitProps> = props => {
   const inLicenseOpt = props.showLicenseOptimization !== false && activeKey === LICENSE_OPT_KEY;
   const inStorage = props.showStorage !== false && activeKey === STORAGE_KEY;
   const inMessages = props.showMessageCenter !== false && activeKey === MESSAGES_KEY;
+  const inDlp = props.showDlp !== false && activeKey === DLP_KEY;
   /** Warum „Verwaiste Ressourcen“ nicht neu zuweisen darf (leer = darf). */
   const orphanActHint = canAct ? '' : !props.showActions ? 'Aktionen sind in den Webpart-Einstellungen ausgeschaltet.'
     : !isGroupMember ? `Neu zuweisen dürfen Mitglieder der SharePoint-Gruppe „${props.actionsGroup}“ mit aktiver Rolle „Power Platform Administrator“.`
       : !adminRoleActive ? 'Neu zuweisen ist ausgeblendet, weil die Rolle „Power Platform Administrator“ gerade nicht aktiv ist (PIM).'
+        : 'Die Aktionsliste ist noch nicht eingerichtet (Webpart-Einstellungen → Aktionen).';
+  /** Warum die DLP-Ansicht nicht speichern darf (leer = darf). */
+  const dlpActHint = canAct ? '' : !props.showActions ? 'Speichern und Löschen sind aus, weil die Aktionen in den Webpart-Einstellungen ausgeschaltet sind.'
+    : !isGroupMember ? `Speichern und Löschen dürfen Mitglieder der SharePoint-Gruppe „${props.actionsGroup}“ mit aktiver Rolle „Power Platform Administrator“.`
+      : !adminRoleActive ? 'Speichern und Löschen sind ausgeblendet, weil die Rolle „Power Platform Administrator“ gerade nicht aktiv ist (PIM).'
         : 'Die Aktionsliste ist noch nicht eingerichtet (Webpart-Einstellungen → Aktionen).';
   const devState = data[DEV_ENV_KEY];
   const devAffected = devState && devState.status === 'ready'
@@ -1280,6 +1291,21 @@ const CoeCockpit: React.FC<ICoeCockpitProps> = props => {
 
   const renderMain = (): JSX.Element => (inMessages
     ? <MessageCenterView graphFactory={props.msGraphClientFactory} reloadKey={String(reloadTick)} />
+    : inDlp && service
+    ? (
+      <DlpView
+        service={service}
+        factory={props.aadHttpClientFactory}
+        maxRecords={50000}
+        reloadKey={String(reloadTick)}
+        canAct={canAct}
+        actHint={dlpActHint}
+        actions={actionService}
+        requestedBy={props.currentUser.displayName}
+        onOpen={(logical, id) => openRelated(logical, id)}
+        onActionsChanged={refreshActions}
+      />
+    )
     : inStorage && service
     ? <StorageView service={service} ppApi={ppApi} reloadKey={String(reloadTick)} onOpenEnvironment={id => openRelated('admin_environment', id)} />
     : inLicenseOpt && service
@@ -1839,6 +1865,9 @@ const CoeCockpit: React.FC<ICoeCockpitProps> = props => {
   if (props.showStorage !== false) {
     navItems.push({ key: STORAGE_KEY, title: 'Dataverse-Speicher', icon: 'Database', group: GROUP_LICENSING, active: !!inStorage, onClick: () => setActiveKey(STORAGE_KEY) });
   }
+  if (props.showDlp !== false) {
+    navItems.push({ key: DLP_KEY, title: 'DLP-Auswirkungsanalyse', icon: 'ShieldAlert', group: GROUP_GOVERNANCE, active: !!inDlp, onClick: () => setActiveKey(DLP_KEY) });
+  }
   if (props.showActions && actionSetup && actionSetup.listExists && isGroupMember) {
     navItems.push({ key: ACTION_LOG_KEY, title: 'Aktionsprotokoll', icon: 'History', group: GROUP_GOVERNANCE, active: !!inActionLog, onClick: () => setActiveKey(ACTION_LOG_KEY) });
   }
@@ -1942,7 +1971,7 @@ const CoeCockpit: React.FC<ICoeCockpitProps> = props => {
           <>
             {renderAccessNotice()}
 
-            {showKpis && !inOverview && !inSecurity && !inCredits && !inPremium && !inUserLicenses && !inOrphans && !inLicenseOpt && !inStorage && !inMessages && <KpiStrip tables={tables} kpis={kpis} activeKey={activeKey} onSelect={setActiveKey} />}
+            {showKpis && !inOverview && !inSecurity && !inCredits && !inPremium && !inUserLicenses && !inOrphans && !inLicenseOpt && !inStorage && !inMessages && !inDlp && <KpiStrip tables={tables} kpis={kpis} activeKey={activeKey} onSelect={setActiveKey} />}
 
             {navItems.length > 0 && !useSideNav && (
               <nav className={styles.tabs} role="tablist" aria-label="Tabellen">

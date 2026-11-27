@@ -97,6 +97,49 @@ function fromPpApi(e: unknown): DirectActionError {
   return new DirectActionError('failed', errorText(e));
 }
 
+/**
+ * Aufruf einer Admin-Schnittstelle (Power Apps, Power Automate, BAP) mit Wiederholung bei Drosselung.
+ * Liefert den Antworttext; Fehler als DirectActionError (consent, forbidden, notFound, failed).
+ */
+export async function adminRequest(
+  getClient: () => Promise<AadHttpClient>, resource: string, method: 'GET' | 'POST' | 'PATCH' | 'DELETE', url: string, body?: unknown
+): Promise<string> {
+  for (let attempt = 0; ; attempt++) {
+    let res: HttpClientResponse;
+    try {
+      const client = await getClient();
+      res = await client.fetch(url, AadHttpClient.configurations.v1, {
+        method,
+        headers: { 'Accept': 'application/json', 'Content-Type': 'application/json' },
+        body: body === undefined ? undefined : JSON.stringify(body)
+      });
+    } catch (e) {
+      const msg = errorText(e);
+      if (isConsentError(msg)) {
+        throw new DirectActionError('consent', CONSENT[resource] || msg, msg);
+      }
+      throw new DirectActionError('failed', `Die Verwaltungsschnittstelle ist nicht erreichbar: ${msg}`, msg);
+    }
+    if (res.ok) {
+      return res.text().catch(() => '');
+    }
+    const text = await res.text().catch(() => '');
+    if ((res.status === 429 || res.status === 503) && attempt < 3) {
+      const after = Number(res.headers && res.headers.get('Retry-After')) || 0;
+      await wait(Math.min(after > 0 ? after * 1000 : 2000 * (attempt + 1), 15000));
+      continue;
+    }
+    const msg = messageOf(text) || `HTTP ${res.status}`;
+    if (res.status === 401 || res.status === 403) {
+      throw new DirectActionError(isConsentError(msg) ? 'consent' : 'forbidden', isConsentError(msg) ? (CONSENT[resource] || msg) : `${FORBIDDEN} (${msg})`, msg);
+    }
+    if (res.status === 404) {
+      throw new DirectActionError('notFound', `Nicht gefunden – vermutlich bereits gelöscht oder in einem anderen Environment (${msg}).`, msg);
+    }
+    throw new DirectActionError('failed', `${res.status}: ${msg}`, msg);
+  }
+}
+
 export class DirectActionService {
   private clients: { [resource: string]: Promise<AadHttpClient> } = {};
 
@@ -120,40 +163,7 @@ export class DirectActionService {
 
   /** Aufruf einer Admin-Schnittstelle mit Wiederholung bei Drosselung. */
   private async call(resource: string, method: 'POST' | 'DELETE', url: string, body?: unknown): Promise<void> {
-    for (let attempt = 0; ; attempt++) {
-      let res: HttpClientResponse;
-      try {
-        const client = await this.client(resource);
-        res = await client.fetch(url, AadHttpClient.configurations.v1, {
-          method,
-          headers: { 'Accept': 'application/json', 'Content-Type': 'application/json' },
-          body: body === undefined ? undefined : JSON.stringify(body)
-        });
-      } catch (e) {
-        const msg = errorText(e);
-        if (isConsentError(msg)) {
-          throw new DirectActionError('consent', CONSENT[resource] || msg, msg);
-        }
-        throw new DirectActionError('failed', `Die Verwaltungsschnittstelle ist nicht erreichbar: ${msg}`, msg);
-      }
-      if (res.ok) {
-        return;
-      }
-      const text = await res.text().catch(() => '');
-      if ((res.status === 429 || res.status === 503) && attempt < 3) {
-        const after = Number(res.headers && res.headers.get('Retry-After')) || 0;
-        await wait(Math.min(after > 0 ? after * 1000 : 2000 * (attempt + 1), 15000));
-        continue;
-      }
-      const msg = messageOf(text) || `HTTP ${res.status}`;
-      if (res.status === 401 || res.status === 403) {
-        throw new DirectActionError(isConsentError(msg) ? 'consent' : 'forbidden', isConsentError(msg) ? (CONSENT[resource] || msg) : `${FORBIDDEN} (${msg})`, msg);
-      }
-      if (res.status === 404) {
-        throw new DirectActionError('notFound', `Nicht gefunden – vermutlich bereits gelöscht oder in einem anderen Environment (${msg}).`, msg);
-      }
-      throw new DirectActionError('failed', `${res.status}: ${msg}`, msg);
-    }
+    await adminRequest(() => this.client(resource), resource, method, url, body);
   }
 
   /** Zielperson/-gruppe als Entra-Objekt-ID. */

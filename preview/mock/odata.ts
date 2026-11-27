@@ -469,3 +469,76 @@ export function mockPatch(url: string, body: string): Promise<IMockResponse> {
   }, 150));
 }
 
+
+interface IWriteWindow { __coePosts?: { set: string; body: Record<string, unknown> }[]; __coeDeletes?: string[]; __coeDenyCoeWrite?: boolean }
+
+/** POST (Datensatz anlegen) – z. B. DLP-Entwürfe und Aufgabenliste. Antwort 204 mit „OData-EntityId“ wie Dataverse. */
+export function mockPost(url: string, body: string): Promise<IMockResponse> {
+  return new Promise(resolve => setTimeout(() => {
+    const w = window as unknown as IWriteWindow;
+    try {
+      const u = new URL(url);
+      const db = findDb(u.hostname);
+      if (!db) {
+        throw new ODataError(404, 'Unbekannte Umgebung');
+      }
+      const set = decodeURIComponent(u.pathname.replace(/^\/api\/data\/v9\.2\//, ''));
+      const t = tableBySet(db, set);
+      if (w.__coeDenyCoeWrite) {
+        throw new ODataError(403, `Principal user is missing prvCreate${t.logicalName} privilege.`);
+      }
+      const values = JSON.parse(body || '{}') as { [k: string]: unknown };
+      const id = `${Math.random().toString(16).slice(2, 10).padEnd(8, '0')}-0000-4000-8000-${Date.now().toString(16).slice(-12).padStart(12, '0')}`;
+      const now = new Date().toISOString().replace(/\.\d{3}Z$/, 'Z');
+      const row: Record<string, unknown> = { [t.primaryId]: id, statecode: 0, createdon: now, modifiedon: now, _createdby_value: 'Vorschau-Benutzer', _modifiedby_value: 'Vorschau-Benutzer' };
+      Object.keys(values).forEach(k => {
+        const bind = /^(.+)@odata\.bind$/.exec(k);
+        if (bind) {
+          row[`_${bind[1].toLowerCase()}_value`] = (/\(([^)]+)\)/.exec(String(values[k])) || [])[1];
+        } else {
+          row[k] = values[k];
+        }
+      });
+      t.rows.push(row);
+      (w.__coePosts = w.__coePosts || []).push({ set, body: values });
+      resolve({
+        ok: true, status: 204,
+        headers: { get: (n: string) => (/odata-entityid/i.test(n) ? `https://${u.hostname}/api/data/v9.2/${set}(${id})` : null) },
+        json: () => Promise.resolve(undefined), text: () => Promise.resolve('')
+      });
+    } catch (e) {
+      const err = e as ODataError;
+      resolve(respond(err.status || 500, { error: { code: '0x80040220', message: err.message } }));
+    }
+  }, 120));
+}
+
+/** DELETE eines Datensatzes. */
+export function mockDelete(url: string): Promise<IMockResponse> {
+  return new Promise(resolve => setTimeout(() => {
+    const w = window as unknown as IWriteWindow;
+    try {
+      const u = new URL(url);
+      const db = findDb(u.hostname);
+      if (!db) {
+        throw new ODataError(404, 'Unbekannte Umgebung');
+      }
+      const m = /^([a-z_]+)\(([0-9a-f-]+)\)$/i.exec(decodeURIComponent(u.pathname.replace(/^\/api\/data\/v9\.2\//, '')));
+      if (!m) {
+        throw new ODataError(400, 'Ungültiger Pfad');
+      }
+      const t = tableBySet(db, m[1]);
+      const rows = t.rows;
+      const idx = rows.map(r => String(r[t.primaryId]).toLowerCase()).indexOf(m[2].toLowerCase());
+      if (idx < 0) {
+        throw new ODataError(404, `${t.logicalName} With Id = ${m[2]} Does Not Exist`);
+      }
+      rows.splice(idx, 1);
+      (w.__coeDeletes = w.__coeDeletes || []).push(`${m[1]}(${m[2]})`);
+      resolve(respond(204, undefined));
+    } catch (e) {
+      const err = e as ODataError;
+      resolve(respond(err.status || 500, { error: { code: '0x80040217', message: err.message } }));
+    }
+  }, 120));
+}

@@ -40,6 +40,7 @@
         "showLicenseOptimization": true,
         "showStorage": true,
         "showMessageCenter": true,
+        "showDlp": true,
         "hideAppBar": true,
         "mailTemplates": {},
         "pipelinesHostUrl": "",

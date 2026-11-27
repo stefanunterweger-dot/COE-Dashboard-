@@ -31,6 +31,7 @@ protokolliert jede in einer SharePoint-Liste; nur „Solution löschen“ läuft
 | Verwaiste Ressourcen | Auswertungen → „Verwaiste Ressourcen“: Apps und Flows, deren Besitzer laut CoE nicht mehr im Unternehmen ist, nach ehemaligem Besitzer gruppiert; Kacheln für aktive Flows und Einträge in Solutions. **Sammel-Zuweisung**: Einträge auswählen, neue Person wählen (CoE-Vorschlag oder E-Mail-Adresse), Begründung – das Cockpit führt den Besitzerwechsel direkt aus (Apps: neuer Besitzer; Flows: neuer Mitbesitzer), schreibt jede Zuweisung ins Aktionsprotokoll und setzt im CoE „verwaist“ zurück. Nur für Mitglieder der Admin-Gruppe mit aktiver Rolle; max. 100 pro Durchlauf, Anhalten möglich; CSV-Export. |
 | Lizenz-Optimierung | Lizenzen & Kapazität → „Lizenz-Optimierung“: Wer hat eine Power-Platform-Premium-Lizenz (Power Apps Premium, Power Automate Premium, Plan 2 …; live aus Microsoft Graph), nutzt sie aber nicht? Power Apps gilt als genutzt bei einem Start einer **Premium-App** im Zeitraum (CoE-Audit-Log, Lizenzklasse laut CoE), Power Automate bei einem **eingeschalteten eigenen Flow** (CoE). Zeitraum 30/60/90/180 Tage, Status ungenutzt/teilweise/genutzt, **mögliche Einsparung** pro Monat und Jahr mit anpassbaren Listenpreisen (im Browser gespeichert), CSV-Export. Näherung – vor dem Entziehen nachfragen. |
 | Dataverse-Speicher | Lizenzen & Kapazität → „Dataverse-Speicher“: **Kontingent des Tenants** für Datenbank, Datei und Log live aus der Power Platform API (`licensing/tenantCapacity`) mit Ampel (ab 80 % gelb, ab 100 % rot) und Statusmeldung von Microsoft; **Verbrauch je Environment** aus dem CoE (Environment-Kapazität) mit Anteil am Kontingent, Filter nach Typ, Suche, CSV, Klick öffnet das Environment. Ohne Power Platform API bleibt der Verbrauch laut CoE sichtbar. |
+| DLP-Auswirkungsanalyse | Governance → „DLP-Auswirkungsanalyse“ – wie die CoE-App **„Data Policy Impact Analysis“**: **angewendete Richtlinien live** (Name, Gilt für, Standardgruppe, Business/Non-Business/Blockiert, erstellt/geändert von) mit Filter „Richtlinien für Environment“, **Entwürfe** und **Aufgabenliste** aus dem CoE. Befehle **Bearbeiten/Analysieren, Kopieren, Im Admin Center öffnen, Löschen, Neue Richtlinie**. Assistent: Name → Connectors (Gruppen wechseln, Standardgruppe, nicht blockierbare gesperrt) → Geltungsbereich → Environments → **Auswirkung** (betroffene Apps und Flows laut CoE, „neu betroffen“ vs. „bereits betroffen“, CSV, „Zur Aufgabenliste“) → Überprüfen (alle Änderungen) → **Als Entwurf speichern** (CoE) oder **Änderungen übernehmen / Als neue Richtlinie anlegen** (direkt im Tenant, mit Protokoll). Ohne aktive Admin-Rolle: Richtlinien aus dem CoE, nur analysieren. Details unter [DLP-Auswirkungsanalyse](#dlp-auswirkungsanalyse). |
 | Lizenzen je Benutzer (live) | Navigation → Lizenzen & Kapazität: alle Benutzer mit ihren zugewiesenen Lizenzen **live aus Microsoft Graph**. Filter nach einer oder mehreren Lizenzen („mind. eine“ / „alle“, auch „ohne Lizenz“), Suche nach Name, Benutzername, Abteilung; Kacheln als Schnellfilter (mit/ohne Lizenz, **deaktiviert mit Lizenz**, **Gäste mit Lizenz**); Lizenzübersicht mit zugewiesen, gekauft und frei (Klick = Filter); CSV-Export. Berechtigung `User.Read.All`, für gekauft/frei zusätzlich `Organization.Read.All` (Skript `-Licenses`) – ohne sie bleiben Namen und Zuweisungen sichtbar. |
 | Copilot-Credits (live) | Copilot-Studio-Kapazität je Environment wie im Admin Center (Lizenzierung → Copilot Studio): gekauft, zugewiesen, noch zuweisbar, Prepaid- und Pay-as-you-go-Verbrauch, Status (im Rahmen / überschritten / überschritten – gedeckt), „Aus der Tenant-Kapazität ziehen“, verknüpfter Abrechnungsplan, Typ, Managed. Filter (Mit Zuweisung, Über Kapazität, Pay-as-you-go, Ohne Zuweisung), Suche, Sortierung; „Alle Environments prüfen“ fragt jedes Environment einzeln ab. **Ohne CoE/Dataverse** – direkt aus der Power Platform API. |
 | Abrechnungspläne (live) | Alle Pay-as-you-go-Abrechnungspläne mit Status, Produkten, Azure-Abonnement, Ressourcengruppe (Link ins Azure-Portal), Region, Erstelldatum; aufklappbar mit den verknüpften Environments und deren Copilot-Verbrauch. |
@@ -96,7 +97,8 @@ Ergebnis: `sharepoint/solution/coe-cockpit.sppkg`
    Abrechnungspläne** die drei Lese-Anforderungen der **Power Platform API** genehmigen (optional). Für die **Aktionen** (Quarantäne,
    Löschen, Besitzer, Freigaben, Flows ein/aus, Environments) **PowerApps Service – User**, **Microsoft Flow Service – User,
    Flows.Read.All, Flows.Manage.All** und **Power Platform API – EnvironmentManagement.Write, EnvironmentManagement.Settings.ReadWrite**
-   genehmigen (optional; Skript `-Actions`). Achtung: API-Genehmigungen für
+   genehmigen (optional; Skript `-Actions`). Für die **DLP-Auswirkungsanalyse** reicht **PowerApps Service – User** (Skript `-Dlp`,
+   ist auch in `-Actions` enthalten). Achtung: API-Genehmigungen für
    SharePoint-Webparts gelten für alle SPFx-Lösungen im Tenant. **Erscheinen unter „API-Zugriff“ keine Anforderungen**, setzt das
    Skript [`scripts/Grant-CoeCockpitPermissions.ps1`](scripts/Grant-CoeCockpitPermissions.ps1) dieselben Berechtigungen
    (Microsoft Graph PowerShell, als Globaler Administrator bzw. Administrator für privilegierte Rollen).
@@ -118,6 +120,7 @@ Im Bereich **„Aktionen“** der Detailansicht (unten):
 | App | In Quarantäne stellen / Aus Quarantäne holen, Besitzer ändern, Freigabe hinzufügen (Benutzer/Mitbesitzer), Freigabe entfernen, Löschen | direkt im Webpart |
 | Flow | Ausschalten / Einschalten, Besitzer ändern, Mitbesitzer hinzufügen, Freigabe entfernen, Löschen | direkt im Webpart |
 | Environment (nur „Betroffen ab 15.12.“) | Auf Managed umstellen, Environment deaktivieren / aktivieren (dazu „Maker per E-Mail verständigen“) | direkt im Webpart |
+| DLP-Richtlinie (nur „DLP-Auswirkungsanalyse“) | Änderungen übernehmen, Als neue Richtlinie anlegen (z. B. nach „Kopieren“), Löschen | direkt im Webpart |
 | Solution | Solution löschen – nur **nicht verwaltete** Solutions (nur der Container; Apps, Flows und andere Komponenten bleiben im Environment). Verwaltete und System-/Microsoft-Solutions sind gesperrt. | Flow (Dienstkonto) |
 
 **Grundsatz:** Was die Rolle **Power Platform Administrator** kann, führt das Cockpit **direkt** aus – im Namen der angemeldeten Person,
@@ -157,6 +160,7 @@ Aktionsprotokoll brauchen nur die Gruppenmitgliedschaft. Für alle anderen ist d
 | Besitzer / Mitbesitzer / Freigabe entfernen (Flow) | `POST …/flows/{flow}/modifyOwners` (als Mitbesitzer – den Ersteller kann Power Automate nicht ändern) | „Derived Owner“ (Besitzer ändern) |
 | Auf Managed umstellen | Power Platform API `POST /environmentmanagement/environments/{id}/governanceSetting/enableManaged` | – (nächster CoE-Sync) |
 | Environment deaktivieren / aktivieren | Power Platform API `POST /environmentmanagement/environments/{id}/Disable` (Grund „UserRequested“) bzw. `/Enable` | – (nächster CoE-Sync) |
+| DLP-Richtlinie ändern / anlegen / löschen | `PATCH` / `POST` / `DELETE api.bap.microsoft.com/providers/PowerPlatform.Governance/v2/policies[/{id}]` (immer die vollständige Richtlinie) | – (nächster CoE-Sync) |
 
 Die Power-Apps- und Power-Automate-Aufrufe sind dieselben Admin-Schnittstellen, die die Connectors „Power Apps for Admins“ / „Power Automate
 for Admins“ und Microsofts PowerShell-Modul `Microsoft.PowerApps.Administration.PowerShell` verwenden; sie erlauben Aufrufe aus dem Browser
@@ -201,6 +205,35 @@ Admins V2, Office 365 Users) danach in der Lösung bzw. unter *Verbindungsrefere
 **Hinweise:**
 - Mitgliedschaft wird direkt in der SharePoint-Gruppe geprüft; Personen, die nur über eine darin enthaltene Entra-Gruppe Mitglied sind, werden abgelehnt.
 - Die Flow-Definition konnte hier nicht gegen einen echten Tenant getestet werden – bitte zuerst mit einer Test-Solution prüfen.
+
+## DLP-Auswirkungsanalyse
+
+Nachbau der CoE-App **„Data Policy Impact Analysis“** (DLP Editor V2) im Cockpit – mit denselben Datenquellen:
+
+| Was | Woher |
+|---|---|
+| Angewendete Richtlinien | **live** über die Admin-Schnittstelle `api.bap.microsoft.com/providers/PowerPlatform.Governance/v2/policies` – dieselbe wie der Connector „Power Platform for Admins V2“ (den auch die CoE-App nutzt) und die PowerShell-Befehle `Get-/New-/Set-/Remove-DlpPolicy`. Token für **PowerApps Service – User**. |
+| Ohne aktive Rolle | Richtlinien aus der CoE-Tabelle **„DLP Policy“** (Stand letzter Sync; Environments und blockierte/Business-Connectors aus den N:N-Beziehungen, Standardgruppe dort nicht erfasst) – nur analysieren. |
+| Connectors | CoE-Tabelle **„Connector“** (ohne Custom Connectors – die regelt Microsoft über URL-Muster im Admin Center) |
+| Auswirkung | CoE-Felder **„App Connections“ / „Flow Connections“** der Apps und Flows in den Environments, für die die Richtlinie gilt (bis 50.000 je Typ) |
+| Entwürfe | CoE-Tabelle **„Data Policy Drafts“** – dieselben Entwürfe wie in der CoE-App |
+| Aufgabenliste | CoE-Tabelle **„DLP Impact Analysis“** – Einträge wie der CoE-Flow „DLP Editor \| Parse impacted resources“; Entscheidung, Status und Benachrichtigung der Maker weiter in der CoE-App |
+
+**Auswirkung:** Betroffen ist eine App bzw. ein Flow, der einen **blockierten** Connector nutzt oder **Business- und Non-Business-Connectors mischt**
+(Connectors ohne Zuordnung zählen zur Standardgruppe). Beim Bearbeiten einer bestehenden Richtlinie zeigt das Cockpit zusätzlich, was **neu** betroffen wäre
+und was schon mit der bisherigen Richtlinie gegen sie verstößt. Grundlage ist der letzte CoE-Sync.
+
+**Speichern im Tenant** (nur Gruppenmitglieder mit aktiver Rolle „Power Platform Administrator“, mit Pflicht-Begründung und Eintrag im Aktionsprotokoll):
+- **Änderungen übernehmen**: liest die Richtlinie unmittelbar vorher neu; hat sie inzwischen jemand anderes geändert, wird **nicht** gespeichert
+  (Status „Abgelehnt“). Zurückgeschrieben wird die **vollständige** Richtlinie – Aktions- und Endpunkt-Regeln bleiben unverändert.
+- **Als neue Richtlinie anlegen**: nach „Kopieren“ oder „Neue Richtlinie“ bzw. aus einem Entwurf.
+- **Löschen**: nur nach Eingabe des Richtliniennamens. Entwürfe löschen ändert nichts im Tenant.
+- Connectors, die Microsoft nicht blockieren lässt (z. B. SharePoint, Office 365 Outlook, Teams, Dataverse), lassen sich nicht nach „Blockiert“ verschieben.
+
+Die DLP-Schnittstelle ist – wie die Power-Apps-/Power-Automate-Admin-Aufrufe der übrigen Aktionen – nicht als eigene REST-API dokumentiert,
+sondern nur über den Connector und PowerShell. Geprüft: Sie erlaubt Aufrufe aus dem Browser (CORS, alle Methoden) und verlangt ein Token für
+`https://service.powerapps.com/` – genau das, was „PowerApps Service – User“ freigibt. Ohne Admin-Rolle liefert sie „Zugriff verweigert“; dann zeigt das Cockpit den CoE-Stand.
+Die Entwürfe und die Aufgabenliste brauchen Schreibrechte auf diese CoE-Tabellen (z. B. „Power Platform Admin SR“).
 
 ## Copilot-Credits und Abrechnungspläne (live)
 

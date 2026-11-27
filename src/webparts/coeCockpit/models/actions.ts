@@ -14,8 +14,8 @@ export const ACTION_LOG_KEY = 'actions:log';
 
 /** Technische Codes (stehen im Aktionsprotokoll und werden vom Flow ausgewertet – nicht übersetzen). */
 export type ActionCode = 'quarantine' | 'unquarantine' | 'delete' | 'setowner' | 'addviewer' | 'addeditor' | 'removeuser' | 'flowoff' | 'flowon'
-  | 'envmanaged' | 'envdisable' | 'envenable' | 'soldelete';
-export type ResourceType = 'app' | 'flow' | 'environment' | 'solution';
+  | 'envmanaged' | 'envdisable' | 'envenable' | 'soldelete' | 'dlpupdate' | 'dlpcreate' | 'dlpdelete';
+export type ResourceType = 'app' | 'flow' | 'environment' | 'solution' | 'dlppolicy';
 
 export const ACTION_LABEL: { [c in ActionCode]: string } = {
   quarantine: 'In Quarantäne stellen',
@@ -30,13 +30,17 @@ export const ACTION_LABEL: { [c in ActionCode]: string } = {
   envmanaged: 'Auf Managed umstellen',
   envdisable: 'Environment deaktivieren',
   envenable: 'Environment aktivieren',
-  soldelete: 'Solution löschen'
+  soldelete: 'Solution löschen',
+  dlpupdate: 'DLP-Richtlinie ändern',
+  dlpcreate: 'DLP-Richtlinie anlegen',
+  dlpdelete: 'DLP-Richtlinie löschen'
 };
 
 export const ACTION_ICON: { [c in ActionCode]: string } = {
   quarantine: 'Blocked2', unquarantine: 'Unlock', delete: 'Delete', setowner: 'Contact',
   addviewer: 'AddFriend', addeditor: 'AddFriend', removeuser: 'UserRemove', flowoff: 'Pause', flowon: 'Play',
-  envmanaged: 'Shield', envdisable: 'Blocked2', envenable: 'Play', soldelete: 'Delete'
+  envmanaged: 'Shield', envdisable: 'Blocked2', envenable: 'Play', soldelete: 'Delete',
+  dlpupdate: 'Shield', dlpcreate: 'Copy', dlpdelete: 'Delete'
 };
 
 /** Hinweis im Dialog – was die Aktion bewirkt. */
@@ -54,7 +58,10 @@ export const ACTION_HINT: { [c in ActionCode]: string } = {
   envdisable: 'Das Environment wird deaktiviert: Apps, Flows und Bots darin laufen nicht mehr, niemand kann es verwenden. Die Daten bleiben erhalten – ein Admin kann es wieder aktivieren.',
   envenable: 'Das Environment wird wieder aktiviert; Apps, Flows und Bots laufen wieder.',
   soldelete: 'Gelöscht wird nur die Solution selbst (der „Container“). Apps, Flows, Tabellen und alle anderen Komponenten bleiben im Environment erhalten '
-    + 'und gehören danach nur noch zur Default Solution. Das lässt sich nicht rückgängig machen.'
+    + 'und gehören danach nur noch zur Default Solution. Das lässt sich nicht rückgängig machen.',
+  dlpupdate: 'Die DLP-Richtlinie wird im Tenant geändert. Apps und Flows, die danach gegen sie verstoßen, werden blockiert bzw. ausgesetzt.',
+  dlpcreate: 'Eine neue DLP-Richtlinie wird im Tenant angelegt und gilt sofort für die gewählten Environments.',
+  dlpdelete: 'Die DLP-Richtlinie wird im Tenant gelöscht. Ihre Regeln gelten danach nicht mehr. Das lässt sich nicht rückgängig machen.'
 };
 
 export type ActionStatus = 'Angefordert' | 'In Arbeit' | 'Erledigt' | 'Fehler' | 'Abgelehnt';
