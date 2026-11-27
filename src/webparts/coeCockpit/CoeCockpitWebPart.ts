@@ -61,6 +61,7 @@ export interface ICoeCockpitWebPartProps {
   showMessageCenter: boolean;
   showDlp: boolean;
   showPipelineHosts: boolean;
+  showMyRoles: boolean;
   hideAppBar: boolean;
   /** Dataverse-URL des Pipelines-Host-Environments (leer = ALM-Pipelines ausblenden). */
   pipelinesHostUrl: string;
@@ -149,6 +150,7 @@ export default class CoeCockpitWebPart extends BaseClientSideWebPart<ICoeCockpit
       showMessageCenter: this.properties.showMessageCenter !== false,
       showDlp: this.properties.showDlp !== false,
       showPipelineHosts: this.properties.showPipelineHosts !== false,
+      showMyRoles: this.properties.showMyRoles !== false,
       hideAppBar: this.properties.hideAppBar !== false,
       pipelinesHostUrl: normalizeDataverseUrl(this.properties.pipelinesHostUrl) || '',
       notify: {
@@ -230,6 +232,7 @@ export default class CoeCockpitWebPart extends BaseClientSideWebPart<ICoeCockpit
         showMessageCenter: p.showMessageCenter !== false,
         showDlp: p.showDlp !== false,
         showPipelineHosts: p.showPipelineHosts !== false,
+        showMyRoles: p.showMyRoles !== false,
         hideAppBar: p.hideAppBar !== false,
         pipelinesHostUrl: normalizeDataverseUrl(p.pipelinesHostUrl) || '',
         notifyAutoSend: p.notifyAutoSend !== false,
@@ -695,6 +698,7 @@ export default class CoeCockpitWebPart extends BaseClientSideWebPart<ICoeCockpit
                 PropertyPaneToggle('showMessageCenter', { label: 'Ansicht „Was ändert Microsoft?“ anzeigen (Message Center)', checked: this.properties.showMessageCenter !== false }),
                 PropertyPaneToggle('showDlp', { label: 'Ansicht „DLP-Auswirkungsanalyse“ anzeigen', checked: this.properties.showDlp !== false }),
                 PropertyPaneToggle('showPipelineHosts', { label: 'Ansicht „Pipelines-Hosts“ anzeigen (alle Hosts, nur lesen)', checked: this.properties.showPipelineHosts !== false }),
+                PropertyPaneToggle('showMyRoles', { label: '„Meine Rollen“: eigene PIM-Rollen im Cockpit aktivieren', checked: this.properties.showMyRoles !== false }),
                 PropertyPaneDropdown('pipelinesHostUrl', {
                   label: 'Pipelines-Host-Environment',
                   options: this._pipelineHostOptions(),

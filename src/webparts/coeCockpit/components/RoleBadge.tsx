@@ -20,6 +20,8 @@ export interface IRoleBadgeProps {
   /** Zeigt im Detail an, dass ohne aktive Rolle die Aktions-Schaltflächen ausgeblendet sind */
   actionsHint?: boolean;
   themeVars: React.CSSProperties;
+  /** „Meine Rollen“ öffnen (eigene PIM-Rollen aktivieren) – fehlt, wenn ausgeschaltet */
+  onManageRoles?: () => void;
 }
 
 export const RoleBadge: React.FC<IRoleBadgeProps> = props => {
@@ -58,7 +60,7 @@ export const RoleBadge: React.FC<IRoleBadgeProps> = props => {
             {state === 'inactive' && (
               <p>
                 Für die volle Nutzung braucht das Cockpit die aktive Rolle <b>„Power Platform Administrator“</b> (oder „Globaler Administrator“).
-                Aktiviere sie in Privileged Identity Management und klicke danach auf „Erneut prüfen“.
+                Aktiviere sie {props.onManageRoles ? 'hier über „Rolle aktivieren“ oder' : ''} in Privileged Identity Management und klicke danach auf „Erneut prüfen“.
                 {status && status.roles.length > 0 && <> Derzeit aktiv: {status.roles.join(', ')}.</>}
               </p>
             )}
@@ -75,8 +77,16 @@ export const RoleBadge: React.FC<IRoleBadgeProps> = props => {
               {status ? `Geprüft ${formatTime(status.checkedAt)} – laut Anmelde-Token.` : 'Wird geprüft …'} Nach dem Aktivieren dauert es oft 1–2 Minuten, bis die Rolle im Token steht.
             </p>
             <div className={styles.roleCalloutButtons}>
-              {state !== 'active' && (
+              {props.onManageRoles && (
+                state !== 'active'
+                  ? <PrimaryButton text="Rolle aktivieren" iconProps={{ iconName: 'Unlock' }} onClick={() => { setOpen(false); props.onManageRoles!(); }} />
+                  : <DefaultButton text="Meine Rollen" iconProps={{ iconName: 'Permissions' }} onClick={() => { setOpen(false); props.onManageRoles!(); }} />
+              )}
+              {state !== 'active' && !props.onManageRoles && (
                 <PrimaryButton text="In PIM aktivieren" iconProps={{ iconName: 'OpenInNewWindow' }} href={PIM_URL} target="_blank" rel="noopener noreferrer" />
+              )}
+              {state !== 'active' && props.onManageRoles && (
+                <DefaultButton text="PIM-Portal" iconProps={{ iconName: 'OpenInNewWindow' }} href={PIM_URL} target="_blank" rel="noopener noreferrer" />
               )}
               <DefaultButton text={checking ? 'Wird geprüft …' : 'Erneut prüfen'} iconProps={{ iconName: 'Refresh' }} disabled={checking} onClick={props.onRecheck} />
             </div>

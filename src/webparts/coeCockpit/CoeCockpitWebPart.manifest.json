@@ -42,6 +42,7 @@
         "showMessageCenter": true,
         "showDlp": true,
         "showPipelineHosts": true,
+        "showMyRoles": true,
         "hideAppBar": true,
         "mailTemplates": {},
         "pipelinesHostUrl": "",

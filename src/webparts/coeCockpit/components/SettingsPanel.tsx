@@ -187,6 +187,9 @@ export const SettingsPanel: React.FC<ISettingsPanelProps> = props => {
             <Row label="Pipelines-Hosts" description="Alle Pipelines-Hosts mit ihren Pipelines und Environments (live, nur lesen). Markiert in „Betroffen ab Februar 2027“ die Pipeline-Ziele.">
               <Toggle checked={v.showPipelineHosts} onChange={(_e, c) => set({ showPipelineHosts: !!c })} />
             </Row>
+            <Row label="Meine Rollen (PIM)" description="Rollen-Abzeichen rechts oben: eigene, in PIM berechtigte Entra-Rollen live aktivieren und beenden (Microsoft Graph, Skript -Pim).">
+              <Toggle checked={v.showMyRoles} onChange={(_e, c) => set({ showMyRoles: !!c })} />
+            </Row>
             <Row label="Default Environment" description="Eigener Bereich – Details unter „Default Environment“">
               <Toggle checked={v.showDefaultEnvironment} onChange={(_e, c) => set({ showDefaultEnvironment: !!c })} />
             </Row>

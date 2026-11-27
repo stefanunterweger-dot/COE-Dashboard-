@@ -1,6 +1,7 @@
 /* Ersatz für @microsoft/sp-http in der Vorschau: leitet Aufrufe an die simulierte Dataverse-API. */
 import { IMockResponse, mockDelete, mockGet, mockPatch, mockPost } from '../mock/odata';
 import { mockBapCall } from '../mock/bap';
+import { isPimUrl, mockPim } from '../mock/pim';
 import { adminConsentError, mockAdminCall } from '../mock/adminapi';
 import { mockGraphGet, mockGraphPost } from '../mock/graph';
 import { mockSharePoint } from '../mock/sharepoint';
@@ -67,8 +68,8 @@ export class MSGraphClientV3 {
       const err = JSON.parse(text || '{}') as { error?: { code?: string; message?: string } };
       throw { statusCode: res.status, code: err.error && err.error.code, message: err.error && err.error.message, headers: res.headers };
     };
-    const send = (version: string, body: unknown): Promise<unknown> => mockGraphPost(full(version), JSON.stringify(body)).then(handle);
-    const get = (version: string): Promise<unknown> => mockGraphGet(full(version)).then(handle);
+    const send = (version: string, body: unknown): Promise<unknown> => (isPimUrl(full(version)) ? mockPim('POST', full(version), JSON.stringify(body)) : mockGraphPost(full(version), JSON.stringify(body))).then(handle);
+    const get = (version: string): Promise<unknown> => (isPimUrl(full(version)) ? mockPim('GET', full(version)) : mockGraphGet(full(version))).then(handle);
     return {
       version: (v: string) => ({ post: (b: unknown) => send(v, b), get: () => get(v), select: () => ({ get: () => get(v) }) }),
       post: (b: unknown) => send('v1.0', b),

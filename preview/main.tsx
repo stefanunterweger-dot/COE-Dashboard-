@@ -126,6 +126,7 @@ const App: React.FC = () => {
     showMessageCenter: true,
     showDlp: true,
     showPipelineHosts: true,
+    showMyRoles: true,
     mailTemplates: {} as IMailTemplateOverrides
   });
   const notify = React.useMemo(() => ({
@@ -246,6 +247,7 @@ const App: React.FC = () => {
           showMessageCenter={p.showMessageCenter}
           showDlp={p.showDlp}
           showPipelineHosts={p.showPipelineHosts}
+          showMyRoles={p.showMyRoles}
           pipelinesHostUrl={p.pipelinesHostUrl}
           notify={notify}
           notifyAutoSend={p.notifyAutoSend}

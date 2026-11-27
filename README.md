@@ -25,6 +25,7 @@ protokolliert jede in einer SharePoint-Liste; nur „Solution löschen“ läuft
 | Pipelines-Hosts (live, nur lesen) | ALM-Pipelines → „Pipelines-Hosts“: **alle Pipelines-Hosts** des Tenants – das Cockpit findet sie selbst (fragt jedes Dataverse-Environment aus dem CoE nach Pipeline-Environments; Ergebnis 24 h im Browser, „Hosts neu suchen“). Je Host die **Pipelines** mit Entwicklungs-Environment(s), Phasen → Ziel (in Reihenfolge), Besitzer und letzter Bereitstellung (Zeile anklicken = Details, Name öffnet die App „Deployment Pipeline Configuration“ im Host) und alle **Environments** mit Rolle (Entwicklung/Ziel), Pipelines, Prüfstatus und **Managed-Status aus dem CoE** – nicht verwaltete Ziele werden markiert (Microsoft blockiert Bereitstellungen dorthin seit Oktober 2026 nach Übergangsfrist). Filter „Nur mit Hinweis“, Suche, CSV. Der von Microsoft verwaltete „Platform host“ (persönliche Pipelines) ist nur im Admin Center sichtbar. Details unter [Pipelines-Hosts](#pipelines-hosts). |
 | ALM-Pipelines (eingestellter Host) | Bereitstellungen (Solution, Version, Pipeline, Stufe, Status, ausgelöst von), Pipelines mit Stufen und Pipeline-Environments als Tabellen – live aus dem Dataverse des **Pipelines-Host-Environments** (Auswahl in den Eigenschaften) |
 | Admin-Rolle (PIM) rechts oben | Beim Laden liest das Cockpit die **aktiven Entra-Rollen** der angemeldeten Person aus dem Anmelde-Token (Claim `wids`, keine zusätzliche Berechtigung): **grün** „Power Platform Admin aktiv“ (bzw. „Globaler Admin aktiv“), **gelb** „PIM-Rolle nicht aktiv“, grau, wenn nicht prüfbar. Ein Klick zeigt Details, den Link „In PIM aktivieren“ und „Erneut prüfen“ (holt ein frisches Token – nach dem Aktivieren dauert es oft 1–2 Minuten). Ohne aktive Rolle sind die **Aktions-Schaltflächen ausgeblendet** (siehe „Aktionen“). |
+| Meine Rollen (PIM, live) | Am Rollen-Abzeichen „Rolle aktivieren“ bzw. „Meine Rollen“: nur die Entra-Rollen, für die die angemeldete Person in Privileged Identity Management **berechtigt** ist (also aktivieren kann) – aktiv (bis wann), nicht aktiv, Genehmigung ausstehend; keine anderen Rollen, keine dauerhaften Zuweisungen – mit den Regeln der Rolle (maximale Dauer, Begründung, Ticket, MFA, Genehmigung, Authentifizierungskontext). **Aktivieren** (Dauer bis zum Maximum, Begründung, ggf. Ticket) und **vorzeitig beenden** direkt im Cockpit über Microsoft Graph; danach prüft das Cockpit die Rolle automatisch nach (20 s, 1 Min., 2 Min.). Nur Selbst-Aktionen der angemeldeten Person; Rollen über Gruppen oder mit Authentifizierungskontext → Link ins PIM-Portal. Details unter [Meine Rollen (PIM)](#meine-rollen-pim). |
 | Hinweis Adminrolle | Bereiche außerhalb des CoE-Environments (Solutions im Default Environment, ALM-Pipelines) werden beim Start geprüft. Fehlt der Zugriff, erscheint **vorab** ein Hinweis, welche Bereiche nicht sichtbar sind und dass die Rolle „Power Platform-Administrator“ (PIM) aktiviert werden muss; die Einträge sind in der Navigation mit einem Schloss markiert. |
 | Tabellenansicht | Volltextsuche, Sortierung, Seitenumbruch, kompakte/normale Zeilenhöhe, Spaltenauswahl, CSV-Export für Excel. **Trefferzahl direkt neben dem Suchfeld**: „571 Einträge“, nach Suche/Filter hervorgehoben „9 von 571 Einträgen“. |
 | Betroffen ab Februar 2027 | Ab **Februar 2027** öffnen Apps in **Managed Environments** nur noch für Personen mit Premium-Lizenz (Power Apps Premium, Power Automate Premium oder Dynamics 365 Enterprise mit Power-Apps-Rechten) – auch Standard-Apps ([Microsoft](https://learn.microsoft.com/en-us/power-platform/admin/managed-environment-licensing)). Die Auswertung zeigt **alle Berechtigten** der Apps in Managed Environments – Besitzer, Mitbesitzer, Benutzer und Mitglieder freigegebener Gruppen (auch verschachtelt, über Microsoft Graph `transitiveMembers`) –, ihre **Lizenzen live über Microsoft Graph** und wer die Apps in den letzten 30 Tagen geöffnet hat (CoE-Audit-Log). Reiter Personen / Environments / Apps, Filter „Ohne Premium“, CSV-Export, Countdown. Environments mit Pay-as-you-go für Power Apps werden erkannt, wenn die Power Platform API freigegeben ist. Benötigt die Graph-Berechtigungen `User.Read.All` und `GroupMember.Read.All` (Skript `-Licenses`). **Pipelines:** Kachel „Ziel einer Pipeline“ und Spalte „Pipelines“ bei den Environments – Managed Environments, die **Ziel einer Pipeline** sind, können nicht auf „nicht verwaltet“ zurück (Microsoft verlangt Managed für Pipeline-Ziele); Entwicklungs-Environments und Pipelines-Hosts sind gekennzeichnet (Daten aus „Pipelines-Hosts“). |
@@ -92,7 +93,9 @@ Ergebnis: `sharepoint/solution/coe-cockpit.sppkg`
    Anforderung **Dynamics CRM – user_impersonation** genehmigen. Ohne diese Genehmigung kann das Webpart keine Daten laden.
    Für „Betroffen ab Februar 2027“ und „Lizenzen je Benutzer“ **Microsoft Graph – User.Read.All**, **GroupMember.Read.All** und
    **Organization.Read.All** genehmigen (optional; Lizenzprüfung, gekaufte/freie Lizenzen). Für „Was ändert Microsoft?“
-   **Microsoft Graph – ServiceMessage.Read.All** genehmigen (optional; Skript `-MessageCenter`).
+   **Microsoft Graph – ServiceMessage.Read.All** genehmigen (optional; Skript `-MessageCenter`). Für **„Meine Rollen (PIM)“**
+   **Microsoft Graph – RoleEligibilitySchedule.Read.Directory, RoleAssignmentSchedule.ReadWrite.Directory, RoleManagementPolicy.Read.Directory**
+   (optional; Skript `-Pim`, Hinweise unter [Meine Rollen (PIM)](#meine-rollen-pim)).
    Für den automatischen E-Mail-Versand zusätzlich **Microsoft Graph – Mail.Send** genehmigen (optional; ohne diese
    Genehmigung funktioniert „In Outlook öffnen“ bzw. „Nacheinander in Outlook“ weiterhin). Für **Copilot-Credits und
    Abrechnungspläne** die drei Lese-Anforderungen der **Power Platform API** genehmigen (optional). Für die **Aktionen** (Quarantäne,
@@ -256,6 +259,33 @@ bzw. Lesezugriff auf die Pipelines-Tabellen im Host).
 - **Platform host:** Persönliche Pipelines der Maker liegen in einem von Microsoft verwalteten Host, den nur das Admin Center
   (Deployment → Platform host) zeigt; dafür gibt es keine dokumentierte Schnittstelle.
 - **Betroffen ab Februar 2027** nutzt dieselben Daten: Pipeline-Ziele bleiben Managed.
+
+## Meine Rollen (PIM)
+
+Jede Person sieht im Cockpit **nur die Entra-Rollen, für die sie in Privileged Identity Management berechtigt ist** (keine anderen Rollen des Tenants, keine dauerhaften Zuweisungen), und kann sie aktivieren und vorzeitig beenden –
+live über Microsoft Graph (`/roleManagement/directory`):
+
+| Was | Schnittstelle |
+|---|---|
+| Berechtigte Rollen | `GET roleEligibilityScheduleInstances/filterByCurrentUser(on='principal')` |
+| Aktive Rollen | `GET roleAssignmentScheduleInstances/filterByCurrentUser(on='principal')` |
+| Ausstehende Anfragen | `GET roleAssignmentScheduleRequests/filterByCurrentUser(on='principal')` (Status „PendingApproval“) |
+| Regeln der Rolle | `GET /policies/roleManagementPolicyAssignments` (Dauer, Begründung, Ticket, MFA, Genehmigung, Authentifizierungskontext) |
+| Aktivieren / Beenden | `POST roleAssignmentScheduleRequests` mit `selfActivate` bzw. `selfDeactivate` – immer für die angemeldete Person |
+
+- **Nur Selbst-Aktionen:** Das Cockpit schickt ausschließlich `selfActivate`/`selfDeactivate` mit der eigenen Objekt-ID. Rollen für andere
+  zuweisen oder Berechtigungen ändern kann man darüber nicht. Microsoft prüft jede Anfrage gegen die Regeln der Rolle und protokolliert sie
+  im **Entra-Audit-Log** (keine zusätzliche SharePoint-Liste).
+- **MFA:** Verlangt die Rolle MFA, klappt die Aktivierung, wenn die SharePoint-Sitzung mit MFA angemeldet wurde; sonst meldet das Cockpit das
+  und verweist aufs PIM-Portal. Rollen mit **Authentifizierungskontext** (Conditional Access) und Berechtigungen **über Gruppen** (PIM für
+  Gruppen) gehen nur im PIM-Portal.
+- Nach dem Aktivieren dauert es oft 1–2 Minuten, bis die Rolle im Anmelde-Token steht; das Abzeichen prüft automatisch nach.
+- Eine gerade aktivierte Rolle lässt sich laut Microsoft erst nach 5 Minuten wieder beenden.
+- **Berechtigungen** (Skript `-Pim`): Microsoft Graph `RoleEligibilitySchedule.Read.Directory`, `RoleAssignmentSchedule.ReadWrite.Directory`,
+  `RoleManagementPolicy.Read.Directory`. **Achtung:** Wie alle SPFx-Berechtigungen gilt `RoleAssignmentSchedule.ReadWrite.Directory` für
+  **alle** Webparts im Tenant. Eine normale Person kann damit nur eigene berechtigte Rollen aktivieren; ein Webpart, das ein Administrator für
+  privilegierte Rollen öffnet, könnte damit aber in dessen Namen Rollen zuweisen. Deshalb nur vertrauenswürdige Lösungen im App-Katalog zulassen.
+  Ausschalten: Webpart-Einstellungen → Ansichten → „Meine Rollen (PIM)“.
 
 ## Copilot-Credits und Abrechnungspläne (live)
 

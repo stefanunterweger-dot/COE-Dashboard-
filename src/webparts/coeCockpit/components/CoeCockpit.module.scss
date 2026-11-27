@@ -4695,3 +4695,47 @@ a.ovHeroChip {
   color: #ffffff;
   background: var(--coe-status-good);
 }
+
+// ===================== Meine Rollen (PIM) =====================
+.mrBody {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.mrCard {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 14px;
+  border: 1px solid var(--coe-border);
+  border-radius: 10px;
+  background: var(--coe-bg);
+}
+
+.mrHead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  justify-content: space-between;
+}
+
+.mrTitle {
+  min-width: 0;
+  font-size: 14px;
+  color: var(--coe-text);
+}
+
+.mrDesc {
+  font-size: 12px;
+  color: var(--coe-text-2);
+}
+
+.mrForm {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--coe-border-soft);
+}

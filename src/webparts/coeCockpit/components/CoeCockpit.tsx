@@ -33,6 +33,7 @@ import { CopilotCreditsView } from './CopilotCreditsView';
 import { SolutionContents } from './SolutionContents';
 import { SettingsPanel } from './SettingsPanel';
 import { RoleBadge } from './RoleBadge';
+import { MyRolesPanel } from './MyRolesPanel';
 import { PremiumView } from './PremiumView';
 import { PREMIUM_KEY } from '../models/premiumLicensing';
 import { IUsageTarget, UsageNotify, usageLogKey } from './UsageNotify';
@@ -124,6 +125,8 @@ export interface ICoeCockpitProps {
   showDlp?: boolean;
   /** „Pipelines-Hosts“ – alle Pipelines-Hosts mit Pipelines und Environments (Standard: an) */
   showPipelineHosts?: boolean;
+  /** „Meine Rollen“ – eigene PIM-Rollen im Cockpit aktivieren (Standard: an) */
+  showMyRoles?: boolean;
   /** Dataverse-URL des Pipelines-Host-Environments (leer = ALM-Pipelines ausblenden). */
   pipelinesHostUrl: string;
   /** Vorlage für die E-Mail an die Maker betroffener Developer-Environments. */
@@ -373,6 +376,14 @@ const CoeCockpit: React.FC<ICoeCockpitProps> = props => {
     );
   }, [props.aadTokenProviderFactory, roleResources.join('|')]);
   React.useEffect(() => { checkRole(false); }, [checkRole]);
+  // „Meine Rollen“ (PIM): nach dem Aktivieren/Beenden die Rolle mehrmals neu prüfen – Entra braucht oft 1–2 Minuten
+  const [rolesOpen, setRolesOpen] = React.useState<boolean>(false);
+  const recheckTimers = React.useRef<number[]>([]);
+  React.useEffect(() => () => { recheckTimers.current.forEach(t => window.clearTimeout(t)); }, []);
+  const rolesChanged = React.useCallback((): void => {
+    recheckTimers.current.forEach(t => window.clearTimeout(t));
+    recheckTimers.current = [20000, 60000, 120000].map(ms => window.setTimeout(() => checkRole(true), ms));
+  }, [checkRole]);
   /** Rolle „Power Platform Administrator“ bzw. „Globaler Administrator“ gerade aktiv? */
   const adminRoleActive = !!roleStatus && roleStatus.state === 'active';
   /**
@@ -1963,6 +1974,7 @@ const CoeCockpit: React.FC<ICoeCockpitProps> = props => {
                 onRecheck={() => checkRole(true)}
                 actionsHint={isGroupMember && !!props.showActions}
                 themeVars={themeVars}
+                onManageRoles={props.showMyRoles !== false ? () => setRolesOpen(true) : undefined}
               />
             )}
             {lastLoaded && <span className={styles.metaText}>Aktualisiert {formatTime(lastLoaded)}</span>}
@@ -2081,6 +2093,15 @@ const CoeCockpit: React.FC<ICoeCockpitProps> = props => {
             }
             : undefined}
         />
+
+        {rolesOpen && (
+          <MyRolesPanel
+            graphFactory={props.msGraphClientFactory}
+            themeVars={themeVars}
+            onDismiss={() => setRolesOpen(false)}
+            onChanged={rolesChanged}
+          />
+        )}
 
         <ActionDialog
           target={actionTarget}

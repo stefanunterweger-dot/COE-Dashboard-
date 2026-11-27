@@ -14,6 +14,12 @@
     -MessageCenter     Microsoft Graph „ServiceMessage.Read.All“ – Ansicht „Was ändert Microsoft?“ (Message Center)
     -Dlp               PowerApps Service „User“ – Ansicht „DLP-Auswirkungsanalyse“ (DLP-Richtlinien live lesen, kopieren,
                        ändern, löschen; dieselbe Schnittstelle wie der Connector „Power Platform for Admins V2“)
+    -Pim               Microsoft Graph „RoleEligibilitySchedule.Read.Directory“, „RoleAssignmentSchedule.ReadWrite.Directory“,
+                       „RoleManagementPolicy.Read.Directory“ – „Meine Rollen“: eigene, in PIM berechtigte Entra-Rollen im Cockpit
+                       aktivieren und beenden. Das Cockpit führt nur Selbst-Aktionen aus (selfActivate/selfDeactivate).
+                       ACHTUNG: Wie alle SPFx-Berechtigungen gilt „RoleAssignmentSchedule.ReadWrite.Directory“ für ALLE Webparts im
+                       Tenant – im Namen eines Administrators für privilegierte Rollen könnte ein anderes Webpart damit Rollen zuweisen.
+                       Nur vertrauenswürdige Lösungen im App-Katalog zulassen.
     -PowerPlatformApi  Power Platform API „Licensing.Allocations.Read“, „Licensing.BillingPolicies.Read“,
                        „EnvironmentManagement.Environments.Read“ – Ansichten „Copilot-Credits“ und „Abrechnungspläne“
     -Actions           Aktionen direkt im Webpart (ohne Flow, im Namen der angemeldeten Person):
@@ -43,6 +49,8 @@
   .\Grant-CoeCockpitPermissions.ps1 -MessageCenter
 .EXAMPLE
   .\Grant-CoeCockpitPermissions.ps1 -Dlp
+.EXAMPLE
+  .\Grant-CoeCockpitPermissions.ps1 -Pim
 #>
 param(
   [switch]$Dataverse,
@@ -50,12 +58,13 @@ param(
   [switch]$Licenses,
   [switch]$MessageCenter,
   [switch]$Dlp,
+  [switch]$Pim,
   [switch]$PowerPlatformApi,
   [switch]$Actions
 )
 $ErrorActionPreference = 'Stop'
-if (-not $Dataverse -and -not $MailSend -and -not $Licenses -and -not $MessageCenter -and -not $Dlp -and -not $PowerPlatformApi -and -not $Actions) {
-  $Dataverse = $true; $MailSend = $true; $Licenses = $true; $MessageCenter = $true; $Dlp = $true; $PowerPlatformApi = $true; $Actions = $true
+if (-not $Dataverse -and -not $MailSend -and -not $Licenses -and -not $MessageCenter -and -not $Dlp -and -not $Pim -and -not $PowerPlatformApi -and -not $Actions) {
+  $Dataverse = $true; $MailSend = $true; $Licenses = $true; $MessageCenter = $true; $Dlp = $true; $Pim = $true; $PowerPlatformApi = $true; $Actions = $true
 }
 
 # Install-Module Microsoft.Graph.Applications, Microsoft.Graph.Identity.SignIns -Scope CurrentUser   # nur falls noch nicht installiert
@@ -119,6 +128,11 @@ if ($Licenses) {
 
 if ($MessageCenter) {
   Grant-Scopes $graph @('ServiceMessage.Read.All')
+}
+
+if ($Pim) {
+  # nur eigene PIM-Rollen: lesen, Regeln lesen, selbst aktivieren/beenden
+  Grant-Scopes $graph @('RoleEligibilitySchedule.Read.Directory', 'RoleAssignmentSchedule.ReadWrite.Directory', 'RoleManagementPolicy.Read.Directory')
 }
 
 if ($Dlp -or $Actions) {
