@@ -169,10 +169,10 @@ export const MyRolesPanel: React.FC<IMyRolesPanelProps> = props => {
             </div>
           </div>
         )}
-        {form !== r.key && (canActivate || (r.active && !r.permanent && r.eligible) || ((r.viaGroup || (p && p.authContext)) && !r.active)) && (
+        {form !== r.key && (canActivate || (r.active && r.selfActivated) || ((r.viaGroup || (p && p.authContext)) && !r.active)) && (
           <div className={styles.roleCalloutButtons}>
             {canActivate && <PrimaryButton text="Aktivieren" iconProps={{ iconName: 'Unlock' }} disabled={!!busy} onClick={() => openForm(r)} />}
-            {r.active && !r.permanent && r.eligible && (
+            {r.active && r.selfActivated && (
               <DefaultButton text={busy === r.key ? 'Wird beendet …' : 'Vorzeitig beenden'} iconProps={{ iconName: 'Lock' }} disabled={!!busy} onClick={() => { deactivate(r).catch(() => setBusy('')); }} />
             )}
             {(r.viaGroup || (p && p.authContext)) && !r.active && (

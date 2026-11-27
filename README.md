@@ -172,12 +172,20 @@ Personen, die **Mitglied der SharePoint-Gruppe** (Standard „CoE Cockpit Admins
 Rollen-Abzeichen rechts oben. Ist die Rolle nicht aktiv, sind die Schaltflächen ausgeblendet; Gruppenmitglieder sehen stattdessen einen Hinweis
 („In PIM aktivieren, danach ‚Erneut prüfen‘“). Die E-Mail-Funktionen („Nachfrage Verwendung“, „Maker per E-Mail verständigen“) und das
 Aktionsprotokoll brauchen nur die Gruppenmitgliedschaft. Für alle anderen ist der Abschnitt „Aktionen“ ausgeblendet.
+**Wichtig:** Personen **direkt** in die SharePoint-Gruppe aufnehmen – eine Mitgliedschaft über eine darin enthaltene Entra-/Microsoft-365-Gruppe
+erkennen weder das Cockpit noch der Flow.
 
 **Regeln:**
 - Löschen nie, wenn die App bzw. der Flow **Teil einer Solution** ist (CoE-Felder „Is Solution App“ / „Is Solution Flow“, vor dem Löschen frisch
   gelesen; unbekannt = gesperrt). Bots werden nicht gelöscht.
 - Optional (Standard: an): Löschen erst, wenn die App **in Quarantäne** bzw. der Flow **ausgeschaltet** ist.
 - Pro Ressource immer nur ein offener Auftrag; eine erledigte Environment-Aktion wird bis zum nächsten CoE-Sync (max. 60 Minuten) nicht noch einmal angeboten.
+  Ein Eintrag, der länger als 15 Minuten auf „In Arbeit“ steht (z. B. Protokoll nicht abgeschlossen), sperrt die Ressource nicht mehr; das Cockpit
+  meldet es, wenn ein Protokolleintrag nicht abgeschlossen werden konnte.
+- **Quarantäne:** Das Cockpit setzt im CoE „App Is Quarantined“. Ist im CoE der Flow „Admin | Set app quarantine status“ eingeschaltet, reagiert er darauf
+  und schickt dem Maker die CoE-Benachrichtigung (Quarantäne bzw. Freigabe) – wie bei Quarantäne über die CoE-Apps.
+- **Personen per E-Mail:** Zielpersonen, die nicht im CoE stehen, sucht das Cockpit zuerst über den UPN und dann über die E-Mail-Adresse (`mail`) –
+  auch wenn E-Mail-Adresse und UPN verschieden sind.
 
 **Direkte Aufrufe**
 
@@ -278,7 +286,8 @@ bzw. Lesezugriff auf die Pipelines-Tabellen im Host).
 
 - **Hosts finden:** Das Cockpit fragt jedes Environment mit Dataverse aus dem CoE nach der Tabelle „Deployment Environment“
   (`deploymentenvironments`, eine Zeile). Wo Einträge stehen, ist ein Pipelines-Host. Das Ergebnis bleibt 24 Stunden im Browser
-  (nur vollständige Suchen ohne „Zugriff verweigert“); „Hosts neu suchen“ startet sie neu. Der Host aus den Webpart-Einstellungen ist immer dabei.
+  (mit Environments ohne Zugriff 6 Stunden; nicht gemerkt, wenn die Mehrheit den Zugriff verweigert – dann ist meist die Rolle nicht aktiv);
+  „Hosts neu suchen“ startet sie neu. Der Host aus den Webpart-Einstellungen ist immer dabei.
 - **Daten je Host** (Microsoft Learn „Pipeline table reference“): Pipelines (`deploymentpipeline`), Phasen mit Ziel und Vorgänger
   (`deploymentstage`), Environments mit Rolle, Environment-ID, Prüfstatus und Fehlermeldung (`deploymentenvironment`), die letzten
   1.000 Bereitstellungen (`deploymentstagerun`). Die Entwicklungs-Environments je Pipeline kommen aus der N:N-Beziehung Pipeline ↔ Environment
@@ -318,6 +327,7 @@ live über Microsoft Graph (`/roleManagement/directory`):
   **alle** Webparts im Tenant. Eine normale Person kann damit nur eigene berechtigte Rollen aktivieren; ein Webpart, das ein Administrator für
   privilegierte Rollen öffnet, könnte damit aber in dessen Namen Rollen zuweisen. Deshalb nur vertrauenswürdige Lösungen im App-Katalog zulassen.
   Ausschalten: Webpart-Einstellungen → Ansichten → „Meine Rollen (PIM)“.
+- „Vorzeitig beenden“ gibt es nur für Rollen, die du selbst über PIM aktiviert hast (nicht für befristete Zuweisungen oder Rollen über Gruppen).
 
 ## Copilot-Credits und Abrechnungspläne (live)
 

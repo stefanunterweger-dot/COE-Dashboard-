@@ -474,9 +474,9 @@ export async function loadDrafts(service: DataverseService): Promise<IDlpListIte
 export async function saveDraft(service: DataverseService, w: IDlpWorking, connectors: IDlpConnector[]): Promise<string> {
   const def = toDefinition(w, connectors, true);
   const values = {
-    admin_name: w.draftName.trim() || w.displayName.trim(),
+    admin_name: (w.draftName.trim() || w.displayName.trim()).slice(0, 100),
     admin_apiversion: '2020-10-01',
-    admin_displayname: w.displayName.trim(),
+    admin_displayname: w.displayName.trim().slice(0, 100),
     admin_defaultconnectorclassification: w.defaultGroup,
     admin_scope: w.scope,
     admin_environments: JSON.stringify((def.environments || []).map(e => ({ name: e.name, type: e.type, id: e.id }))),

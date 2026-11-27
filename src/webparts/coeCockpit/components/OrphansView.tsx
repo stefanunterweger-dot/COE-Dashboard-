@@ -266,7 +266,9 @@ export const OrphansView: React.FC<IOrphansViewProps> = props => {
           onClose={changed => {
             setDialog(false);
             if (changed) {
-              setSelected({});
+              // nur die bearbeiteten Einträge abwählen – die übrigen (über dem Limit je Durchlauf) bleiben ausgewählt
+              const processed = selectedItems.slice(0, MAX_RUN).map(i => i.key);
+              setSelected(prev => { const n = { ...prev }; processed.forEach(k => { delete n[k]; }); return n; });
               props.onActionsChanged();
             }
           }}
@@ -316,10 +318,16 @@ const ReassignDialog: React.FC<{
           text = `${r.text}${r.note}`;
         } catch (e) {
           text = e instanceof Error ? e.message : String(e);
-          await props.actions.complete(id, e instanceof DirectActionError && e.kind === 'rejected' ? 'Abgelehnt' : 'Fehler', text.slice(0, 4000)).catch(() => undefined);
+          const logged = await props.actions.complete(id, e instanceof DirectActionError && e.kind === 'rejected' ? 'Abgelehnt' : 'Fehler', text.slice(0, 4000)).then(() => true, () => false);
+          if (!logged) {
+            text += ' (Aktionsprotokoll nicht abgeschlossen – Eintrag steht noch auf „In Arbeit“)';
+          }
         }
         if (ok) {
-          await props.actions.complete(id, 'Erledigt', text.slice(0, 4000)).catch(() => undefined);
+          const logged = await props.actions.complete(id, 'Erledigt', text.slice(0, 4000)).then(() => true, () => false);
+          if (!logged) {
+            text += ' (Aktionsprotokoll nicht abgeschlossen – Eintrag steht noch auf „In Arbeit“)';
+          }
         }
       } catch (e) {
         text = `Protokolleintrag nicht möglich – nicht ausgeführt: ${e instanceof Error ? e.message : String(e)}`;

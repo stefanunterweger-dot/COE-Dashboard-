@@ -42,6 +42,7 @@ export interface IDlpViewProps {
 
 type Tab = 'live' | 'draft' | 'tasks';
 const errText = (e: unknown): string => (e instanceof Error ? e.message : String(e));
+const LOGWARN = ' Hinweis: Der Eintrag im Aktionsprotokoll konnte nicht abgeschlossen werden (steht noch auf „In Arbeit“) – bitte in der Liste „CoE Cockpit Aktionen“ nachtragen.';
 const csvEsc = (v: string): string => (/[;"\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v);
 const dateCell = (v: string): React.ReactNode => (v ? formatDate(new Date(v)) : <span className={styles.muted}>–</span>);
 
@@ -461,13 +462,16 @@ export const DlpView: React.FC<IDlpViewProps> = props => {
             }
             try {
               await api.remove(it.id);
-              await props.actions.complete(logId, 'Erledigt', `Richtlinie „${it.displayName}“ (${scopeText(it, envLabel)}) im Tenant gelöscht.`).catch(() => undefined);
-              setNotice({ type: MessageBarType.success, text: `Die Richtlinie „${it.displayName}“ wurde im Tenant gelöscht und im Aktionsprotokoll vermerkt.` });
+              const logged = await props.actions.complete(logId, 'Erledigt', `Richtlinie „${it.displayName}“ (${scopeText(it, envLabel)}) im Tenant gelöscht.`).then(() => true, () => false);
+              setNotice({
+                type: logged ? MessageBarType.success : MessageBarType.warning,
+                text: `Die Richtlinie „${it.displayName}“ wurde im Tenant gelöscht${logged ? ' und im Aktionsprotokoll vermerkt.' : `.${LOGWARN}`}`
+              });
               setSelected('');
               load(false);
             } catch (e) {
-              await props.actions.complete(logId, e instanceof DirectActionError && e.kind === 'rejected' ? 'Abgelehnt' : 'Fehler', errText(e).slice(0, 4000)).catch(() => undefined);
-              setNotice({ type: MessageBarType.error, text: errText(e) });
+              const logged = await props.actions.complete(logId, e instanceof DirectActionError && e.kind === 'rejected' ? 'Abgelehnt' : 'Fehler', errText(e).slice(0, 4000)).then(() => true, () => false);
+              setNotice({ type: MessageBarType.error, text: logged ? errText(e) : `${errText(e)}${LOGWARN}` });
             }
             props.onActionsChanged();
           }}

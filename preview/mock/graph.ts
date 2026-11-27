@@ -5,6 +5,8 @@ import { GRAPH_GROUPS, GRAPH_PEOPLE } from './data';
 export interface ISentMail { at: string; subject: string; to: string[]; cc: string[]; html: string }
 
 interface IGraphWindow {
+  /** E-Mail-Adresse → UPN (Personen, deren E-Mail-Adresse nicht der UPN ist) */
+  __coeMailAliases?: { [mail: string]: string };
   /** Versendete Mails (zum Prüfen in Tests). */
   __sentMails?: ISentMail[];
   /** true = Berechtigung Mail.Send nicht genehmigt. */
@@ -124,6 +126,14 @@ export function mockGraphGet(url: string): Promise<IMockResponse> {
       const key = decodeURIComponent(user[1]).toLowerCase();
       const p = GRAPH_PEOPLE.filter(x => x.upn.toLowerCase() === key || x.id.toLowerCase() === key)[0];
       resolve(p ? respond(200, { id: p.id }) : respond(404, { error: { code: 'Request_ResourceNotFound', message: `Resource '${key}' does not exist.` } }));
+      return;
+    }
+    // Person über die E-Mail-Adresse suchen ($filter=mail eq '…' or userPrincipalName eq '…')
+    const byMail = /[?&]\$filter=([^&]+)/.exec(url);
+    if (/\/v1\.0\/users\?/.test(url) && byMail && /mail eq/.test(decodeURIComponent(byMail[1]))) {
+      const wanted = (/mail eq '((?:[^']|'')*)'/.exec(decodeURIComponent(byMail[1])) || [])[1] || '';
+      const key = wanted.replace(/''/g, "'").toLowerCase();
+      resolve(respond(200, { value: GRAPH_PEOPLE.filter(x => x.upn.toLowerCase() === key || (w.__coeMailAliases || {})[key] === x.upn.toLowerCase()).map(x => ({ id: x.id })) }));
       return;
     }
     // Benutzer mit zugewiesenen Lizenzen (Seiten zu 40, damit das Weiterblättern mitgetestet wird)

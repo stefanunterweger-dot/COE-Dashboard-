@@ -398,8 +398,18 @@ const CoeCockpit: React.FC<ICoeCockpitProps> = props => {
     service,
     async (mail: string) => {
       const graph = await props.msGraphClientFactory.getClient('3');
-      const u = await graph.api(`/users/${encodeURIComponent(mail)}`).version('v1.0').select('id').get() as { id?: string };
-      return u && u.id ? u.id : undefined;
+      try {
+        const u = await graph.api(`/users/${encodeURIComponent(mail)}`).version('v1.0').select('id').get() as { id?: string };
+        if (u && u.id) {
+          return u.id;
+        }
+      } catch {
+        // nicht als UPN gefunden (z. B. E-Mail-Adresse ≠ UPN, Gäste) – über die E-Mail-Adresse suchen
+      }
+      const v = mail.trim().replace(/'/g, "''");
+      const res = await graph.api('/users').version('v1.0').filter(`mail eq '${v}' or userPrincipalName eq '${v}'`).select('id').top(2).get() as { value?: { id?: string }[] };
+      const list = (res && res.value) || [];
+      return list.length === 1 && list[0].id ? list[0].id : undefined;
     }
   ), [props.aadHttpClientFactory, ppApi, service, props.msGraphClientFactory]);
   // Gemeinsames Versandprotokoll (wer hat welches Environment wann verständigt)
@@ -1690,7 +1700,9 @@ const CoeCockpit: React.FC<ICoeCockpitProps> = props => {
     const rec = actionRecord() || panel.record;
     const res = canAct && (isDev || panel.table.logicalName !== 'admin_environment') ? resourceOf(panel.table.logicalName, rec) : undefined;
     if (res && rec.admin_appdeleted !== true && rec.admin_flowdeleted !== true && rec.admin_solutiondeleted !== true) {
-      const pending = (actionItems || []).some(i => i.resourceId === res.id && (i.status === 'Angefordert' || i.status === 'In Arbeit'));
+      // „In Arbeit“ länger als 15 Minuten gilt als hängengeblieben (z. B. Protokoll nicht abgeschlossen) und sperrt nicht mehr
+      const pending = (actionItems || []).some(i => i.resourceId === res.id && (i.status === 'Angefordert'
+        || (i.status === 'In Arbeit' && !(Date.now() - Date.parse(i.created) > 15 * 60000))));
       // Environment-Aktionen setzt Microsoft im Hintergrund um, das CoE zeigt sie erst nach dem nächsten Sync:
       // dieselbe Aktion deshalb 60 Minuten nach „Erledigt“ nicht noch einmal anbieten.
       const recentEnv = (code: string): IActionItem | undefined => res.type !== 'environment' ? undefined : (actionItems || []).filter(i =>

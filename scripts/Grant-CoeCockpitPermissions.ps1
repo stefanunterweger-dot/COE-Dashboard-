@@ -82,10 +82,14 @@ $spfx | Format-Table DisplayName, AppId, Id
 function Get-ResourceSp([string]$appId, [string]$name) {
   $sp = Get-MgServicePrincipal -Filter "appId eq '$appId'"
   if (-not $sp) {
-    $sp = New-MgServicePrincipal -AppId $appId
+    $created = New-MgServicePrincipal -AppId $appId
     Write-Host "Dienstprinzipal „$name“ im Tenant angelegt."
-    Start-Sleep -Seconds 10
-    $sp = Get-MgServicePrincipal -Filter "appId eq '$appId'"
+    # nach dem Anlegen kann es dauern, bis er gefunden wird – bis zu 1 Minute warten, sonst das angelegte Objekt verwenden
+    for ($i = 0; $i -lt 6 -and -not $sp; $i++) {
+      Start-Sleep -Seconds 10
+      $sp = Get-MgServicePrincipal -Filter "appId eq '$appId'"
+    }
+    if (-not $sp) { $sp = Get-MgServicePrincipal -ServicePrincipalId $created.Id }
   }
   return $sp
 }

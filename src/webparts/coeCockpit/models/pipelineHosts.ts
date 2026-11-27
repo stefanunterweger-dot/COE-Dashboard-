@@ -137,7 +137,9 @@ export function readHostScan(): IHostScan | undefined {
   try {
     const raw = window.localStorage.getItem(CACHE_KEY);
     const v = raw ? JSON.parse(raw) as IHostScan : undefined;
-    return v && Array.isArray(v.hosts) && Date.now() - v.at < CACHE_HOURS * 3600000 ? v : undefined;
+    // mit verweigerten Environments nur 6 Stunden gültig, sonst 24 Stunden
+    const hours = v && v.denied ? 6 : CACHE_HOURS;
+    return v && Array.isArray(v.hosts) && Date.now() - v.at < hours * 3600000 ? v : undefined;
   } catch {
     return undefined;
   }
@@ -187,8 +189,8 @@ export async function scanHosts(factory: AadHttpClientFactory, envs: ICoeEnv[], 
   };
   await Promise.all([worker(), worker(), worker(), worker(), worker(), worker()]);
   const result: IHostScan = { hosts: found.sort((a, b) => a.name.localeCompare(b.name)), checked: done, denied, failed, at: Date.now() };
-  // nur vollständige Suchen merken, bei denen kein Environment den Zugriff verweigert hat (sonst z. B. Rolle nicht aktiv)
-  if (alive() && done === list.length && denied === 0) {
+  // vollständige Suchen merken – außer die Mehrheit der Environments hat den Zugriff verweigert (dann ist meist die Rolle nicht aktiv)
+  if (alive() && done === list.length && denied * 2 < Math.max(1, done)) {
     writeHostScan(result);
   }
   return result;
@@ -216,6 +218,9 @@ export function mergeHosts(configuredUrl: string, scan: IHostScan | undefined, e
 // ---------------------------------------------------------------------------------------------------------------
 
 function runState(label: string): RunState {
+  if (/not ?started|nicht gestartet/i.test(label)) {
+    return '';
+  }
   if (/succe|erfolg/i.test(label)) {
     return 'ok';
   }

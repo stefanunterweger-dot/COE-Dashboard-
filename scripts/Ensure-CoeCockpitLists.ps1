@@ -305,8 +305,14 @@ function Confirm-Permissions($Def, $List) {
   if ($group) { $want += [pscustomobject]@{ Label = "Gruppe „$GroupName“"; Group = $group.Title; User = $null; Role = $contribute; Id = $group.Id } }
   if ($owners) { $want += [pscustomobject]@{ Label = "Websitebesitzer „$($owners.Title)“"; Group = $owners.Title; User = $null; Role = $full; Id = $owners.Id } }
   if ($FlowServiceAccount) {
-    $svc = Get-OrNull { New-PnPUser -LoginName $FlowServiceAccount }
+    if ($CheckOnly) {
+      # nur nachsehen – New-PnPUser (EnsureUser) würde das Konto in die Website eintragen
+      $svc = Get-OrNull { Get-PnPUser | Where-Object { $_.Email -eq $FlowServiceAccount -or $_.LoginName -like "*|$FlowServiceAccount" } | Select-Object -First 1 }
+    } else {
+      $svc = Get-OrNull { New-PnPUser -LoginName $FlowServiceAccount }
+    }
     if ($svc) { $want += [pscustomobject]@{ Label = "Flow-Dienstkonto $FlowServiceAccount"; Group = $null; User = $FlowServiceAccount; Role = $contribute; Id = $svc.Id } }
+    elseif ($CheckOnly) { Add-Result $title "Flow-Dienstkonto $FlowServiceAccount" 'FEHLT' 'noch nicht auf der Website bzw. ohne Berechtigung' }
     else { Add-Result $title "Flow-Dienstkonto $FlowServiceAccount" 'FEHLER' 'Konto nicht gefunden' }
   }
   foreach ($w in $want) {
@@ -322,6 +328,10 @@ function Confirm-Permissions($Def, $List) {
   # weitere Berechtigte nur melden (nicht automatisch entfernen)
   $allowed = @($want | ForEach-Object { $_.Id })
   $ctx = Get-PnPContext
+  # die ausführende Person bekommt beim Aufheben der Vererbung automatisch Vollzugriff – kein Fehler
+  $me = $ctx.Web.CurrentUser
+  $ctx.Load($me)
+  $ctx.ExecuteQuery()
   $listObj = Get-PnPList -Identity $title
   $assignments = $listObj.RoleAssignments
   $ctx.Load($assignments)
@@ -329,7 +339,9 @@ function Confirm-Permissions($Def, $List) {
   foreach ($a in $assignments) {
     $ctx.Load($a.Member)
     $ctx.ExecuteQuery()
-    if ($allowed -notcontains $a.PrincipalId) {
+    if ($a.PrincipalId -eq $me.Id) {
+      Add-Result $title "Ausführende Person: $($a.Member.Title)" 'OK' 'Vollzugriff durch das Aufheben der Vererbung – kann bleiben oder von Hand entfernt werden'
+    } elseif ($allowed -notcontains $a.PrincipalId) {
       Add-Result $title "Weitere Berechtigung: $($a.Member.Title)" 'WARNUNG' 'nicht vorgesehen – bitte prüfen'
     }
   }

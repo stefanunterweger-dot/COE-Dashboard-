@@ -50,6 +50,7 @@ const PAGE = 200;
 const CHIP: { [g in DlpGroup]: string } = { Confidential: styles.dlpChipBusiness, General: styles.dlpChipGeneral, Blocked: styles.dlpChipBlocked };
 const GROUP_ICON: { [g in DlpGroup]: string } = { Confidential: 'Lock', General: 'Unlock', Blocked: 'Blocked2' };
 const errText = (e: unknown): string => (e instanceof Error ? e.message : String(e));
+const LOGWARN = ' Hinweis: Der Eintrag im Aktionsprotokoll konnte nicht abgeschlossen werden (steht noch auf „In Arbeit“) – bitte in der Liste „CoE Cockpit Aktionen“ nachtragen.';
 const csvEsc = (v: string): string => (/[;"\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v);
 
 type SaveKind = 'update' | 'create';
@@ -312,7 +313,7 @@ export const DlpEditor: React.FC<IDlpEditorProps> = props => {
     setNotice(undefined);
     let existing: { [k: string]: true } = {};
     try {
-      (await loadTasks(props.service)).filter(t => t.policyName === w.displayName.trim()).forEach(t => { existing[t.resourceCoeId] = true; });
+      (await loadTasks(props.service)).filter(t => t.policyName === w.displayName.trim().slice(0, 100)).forEach(t => { existing[t.resourceCoeId] = true; });
     } catch (e) {
       setNotice({ type: MessageBarType.error, text: `Die CoE-Tabelle „DLP Impact Analysis“ ist nicht lesbar: ${errText(e)}` });
       return;
@@ -432,13 +433,17 @@ export const DlpEditor: React.FC<IDlpEditorProps> = props => {
         }
         setSavedKey(keyOf(w));
       }
-      await props.actions.complete(logId, 'Erledigt', text.slice(0, 4000)).catch(() => undefined);
+      const logged = await props.actions.complete(logId, 'Erledigt', text.slice(0, 4000)).then(() => true, () => false);
       setChanged(true);
-      setNotice({ type: MessageBarType.success, text: kind === 'update' ? 'Die Richtlinie wurde im Tenant geändert und im Aktionsprotokoll vermerkt.' : 'Die Richtlinie wurde im Tenant angelegt und im Aktionsprotokoll vermerkt.' });
+      setNotice({
+        type: logged ? MessageBarType.success : MessageBarType.warning,
+        text: (kind === 'update' ? 'Die Richtlinie wurde im Tenant geändert' : 'Die Richtlinie wurde im Tenant angelegt')
+          + (logged ? ' und im Aktionsprotokoll vermerkt.' : `.${LOGWARN}`)
+      });
     } catch (e) {
       const msg = errText(e);
-      await props.actions.complete(logId, e instanceof DirectActionError && e.kind === 'rejected' ? 'Abgelehnt' : 'Fehler', msg.slice(0, 4000)).catch(() => undefined);
-      setNotice({ type: MessageBarType.error, text: msg });
+      const logged = await props.actions.complete(logId, e instanceof DirectActionError && e.kind === 'rejected' ? 'Abgelehnt' : 'Fehler', msg.slice(0, 4000)).then(() => true, () => false);
+      setNotice({ type: MessageBarType.error, text: logged ? msg : `${msg}${LOGWARN}` });
     }
     props.onActionsChanged();
     setBusy('');

@@ -37,6 +37,8 @@ export interface IMyRole {
   active: boolean;
   /** dauerhaft zugewiesen (nicht über PIM aktiviert) */
   permanent: boolean;
+  /** selbst über PIM aktiviert (direkt) – nur dann lässt sich die Rolle vorzeitig beenden */
+  selfActivated: boolean;
   activeUntil: string;
   pending: boolean;
   policy?: IRolePolicy;
@@ -192,7 +194,7 @@ export async function loadMyRoles(factory: MSGraphClientFactory): Promise<IMyRol
     return {
       key: keyOf(i), roleDefinitionId: String(i.roleDefinitionId || def.id || ''), name: String(def.displayName || i.roleDefinitionId || ''),
       description: String(def.description || ''), directoryScopeId: String(i.directoryScopeId || '/'), eligible: false, viaGroup: false,
-      eligibleUntil: '', active: false, permanent: false, activeUntil: '', pending: false
+      eligibleUntil: '', active: false, permanent: false, selfActivated: false, activeUntil: '', pending: false
     };
   };
   eligible.forEach(i => {
@@ -208,7 +210,9 @@ export async function loadMyRoles(factory: MSGraphClientFactory): Promise<IMyRol
   active.forEach(i => {
     const r = map[keyOf(i)] = map[keyOf(i)] || base(i);
     r.active = true;
-    r.permanent = !/activated/i.test(String(i.assignmentType || '')) && !i.endDateTime;
+    const activated = /activated/i.test(String(i.assignmentType || ''));
+    r.permanent = !activated && !i.endDateTime;
+    r.selfActivated = r.selfActivated || (activated && !/group/i.test(String(i.memberType || '')));
     r.activeUntil = String(i.endDateTime || '');
   });
   pending.forEach(i => {

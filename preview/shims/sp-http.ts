@@ -56,10 +56,20 @@ export class AadHttpClientFactory {
   }
 }
 
+interface IGraphRequest {
+  post(body: unknown): Promise<unknown>;
+  get(): Promise<unknown>;
+  select(s: string): IGraphRequest;
+  filter(f: string): IGraphRequest;
+  top(n: number): IGraphRequest;
+}
+
 /** Ersatz für MSGraphClientV3: leitet Aufrufe an die simulierte Graph-API (wirft wie GraphError). */
 export class MSGraphClientV3 {
-  public api(path: string): { version(v: string): { post(body: unknown): Promise<unknown>; get(): Promise<unknown>; select(s: string): { get(): Promise<unknown> } }; post(body: unknown): Promise<unknown>; get(): Promise<unknown> } {
-    const full = (version: string): string => (/^https:/.test(path) ? path : `https://graph.microsoft.com/${version}${path}`);
+  public api(path: string): { version(v: string): IGraphRequest; post(body: unknown): Promise<unknown>; get(): Promise<unknown> } {
+    const base = (version: string): string => (/^https:/.test(path) ? path : `https://graph.microsoft.com/${version}${path}`);
+    let query: string[] = [];
+    const full = (version: string): string => (query.length ? `${base(version)}${base(version).indexOf('?') >= 0 ? '&' : '?'}${query.join('&')}` : base(version));
     const handle = async (res: IMockResponse): Promise<unknown> => {
       const text = await res.text();
       if (res.ok) {
@@ -70,8 +80,15 @@ export class MSGraphClientV3 {
     };
     const send = (version: string, body: unknown): Promise<unknown> => (isPimUrl(full(version)) ? mockPim('POST', full(version), JSON.stringify(body)) : mockGraphPost(full(version), JSON.stringify(body))).then(handle);
     const get = (version: string): Promise<unknown> => (isPimUrl(full(version)) ? mockPim('GET', full(version)) : mockGraphGet(full(version))).then(handle);
+    const request = (v: string): IGraphRequest => ({
+      post: (b: unknown) => send(v, b),
+      get: () => get(v),
+      select: (s: string) => { query = query.concat(`$select=${s}`); return request(v); },
+      filter: (f: string) => { query = query.concat(`$filter=${encodeURIComponent(f)}`); return request(v); },
+      top: (n: number) => { query = query.concat(`$top=${n}`); return request(v); }
+    });
     return {
-      version: (v: string) => ({ post: (b: unknown) => send(v, b), get: () => get(v), select: () => ({ get: () => get(v) }) }),
+      version: (v: string) => request(v),
       post: (b: unknown) => send('v1.0', b),
       get: () => get('v1.0')
     };
