@@ -49,6 +49,8 @@ import { STORAGE_KEY } from '../models/storage';
 import { StorageView } from './StorageView';
 import { DLP_KEY } from '../models/dlp';
 import { DlpView } from './DlpView';
+import { loadPipelineIndex, PIPELINES_KEY } from '../models/pipelineHosts';
+import { PipelinesView } from './PipelinesView';
 import { MESSAGES_KEY } from '../models/messageCenter';
 import { MessageCenterView } from './MessageCenterView';
 import { PowerPlatformApiService, PPAPI_RESOURCE } from '../services/PowerPlatformApiService';
@@ -120,6 +122,8 @@ export interface ICoeCockpitProps {
   showMessageCenter?: boolean;
   /** „DLP-Auswirkungsanalyse“ (Standard: an) */
   showDlp?: boolean;
+  /** „Pipelines-Hosts“ – alle Pipelines-Hosts mit Pipelines und Environments (Standard: an) */
+  showPipelineHosts?: boolean;
   /** Dataverse-URL des Pipelines-Host-Environments (leer = ALM-Pipelines ausblenden). */
   pipelinesHostUrl: string;
   /** Vorlage für die E-Mail an die Maker betroffener Developer-Environments. */
@@ -551,7 +555,7 @@ const CoeCockpit: React.FC<ICoeCockpitProps> = props => {
       || (props.showPremium2027 !== false && activeKey === PREMIUM_KEY) || (props.showUserLicenses !== false && activeKey === USER_LICENSES_KEY)
       || (props.showOrphans !== false && activeKey === ORPHANS_KEY) || (props.showLicenseOptimization !== false && activeKey === LICENSE_OPT_KEY)
       || (props.showStorage !== false && activeKey === STORAGE_KEY) || (props.showMessageCenter !== false && activeKey === MESSAGES_KEY)
-      || (props.showDlp !== false && activeKey === DLP_KEY);
+      || (props.showDlp !== false && activeKey === DLP_KEY) || (props.showPipelineHosts !== false && activeKey === PIPELINES_KEY);
     if (!activeTable && tables.length && !waitingForDefault) {
       setActiveKey(tables[0].key);
     }
@@ -1270,11 +1274,17 @@ const CoeCockpit: React.FC<ICoeCockpitProps> = props => {
   const inStorage = props.showStorage !== false && activeKey === STORAGE_KEY;
   const inMessages = props.showMessageCenter !== false && activeKey === MESSAGES_KEY;
   const inDlp = props.showDlp !== false && activeKey === DLP_KEY;
+  const inPipelineHosts = props.showPipelineHosts !== false && activeKey === PIPELINES_KEY;
   /** Warum „Verwaiste Ressourcen“ nicht neu zuweisen darf (leer = darf). */
   const orphanActHint = canAct ? '' : !props.showActions ? 'Aktionen sind in den Webpart-Einstellungen ausgeschaltet.'
     : !isGroupMember ? `Neu zuweisen dürfen Mitglieder der SharePoint-Gruppe „${props.actionsGroup}“ mit aktiver Rolle „Power Platform Administrator“.`
       : !adminRoleActive ? 'Neu zuweisen ist ausgeblendet, weil die Rolle „Power Platform Administrator“ gerade nicht aktiv ist (PIM).'
         : 'Die Aktionsliste ist noch nicht eingerichtet (Webpart-Einstellungen → Aktionen).';
+  /** Pipelines aller Hosts – für die Februar-Auswertung (Pipeline-Ziele müssen Managed bleiben) */
+  const loadPipelines = React.useCallback(
+    () => (service ? loadPipelineIndex(props.aadHttpClientFactory, service, props.pipelinesHostUrl || '') : Promise.reject(new Error('Kein CoE-Environment'))),
+    [service, props.aadHttpClientFactory, props.pipelinesHostUrl]
+  );
   /** Warum die DLP-Ansicht nicht speichern darf (leer = darf). */
   const dlpActHint = canAct ? '' : !props.showActions ? 'Bearbeiten, Kopieren und Löschen sind aus, weil die Aktionen in den Webpart-Einstellungen ausgeschaltet sind.'
     : !isGroupMember ? `Bearbeiten, Kopieren und Löschen dürfen Mitglieder der SharePoint-Gruppe „${props.actionsGroup}“ mit aktiver Rolle „Power Platform Administrator“.`
@@ -1291,6 +1301,16 @@ const CoeCockpit: React.FC<ICoeCockpitProps> = props => {
 
   const renderMain = (): JSX.Element => (inMessages
     ? <MessageCenterView graphFactory={props.msGraphClientFactory} reloadKey={String(reloadTick)} />
+    : inPipelineHosts && service
+    ? (
+      <PipelinesView
+        service={service}
+        factory={props.aadHttpClientFactory}
+        configuredHost={props.pipelinesHostUrl || ''}
+        reloadKey={String(reloadTick)}
+        onOpenEnvironment={id => openRelated('admin_environment', id)}
+      />
+    )
     : inDlp && service
     ? (
       <DlpView
@@ -1336,6 +1356,7 @@ const CoeCockpit: React.FC<ICoeCockpitProps> = props => {
         managedField={props.devEnvManagedField}
         reloadKey={String(reloadTick)}
         onOpenApp={id => openRelated('admin_app', id)}
+        loadPipelines={props.showPipelineHosts !== false ? loadPipelines : undefined}
       />
     )
     : inCredits
@@ -1871,6 +1892,9 @@ const CoeCockpit: React.FC<ICoeCockpitProps> = props => {
   if (props.showActions && actionSetup && actionSetup.listExists && isGroupMember) {
     navItems.push({ key: ACTION_LOG_KEY, title: 'Aktionsprotokoll', icon: 'History', group: GROUP_GOVERNANCE, active: !!inActionLog, onClick: () => setActiveKey(ACTION_LOG_KEY) });
   }
+  if (props.showPipelineHosts !== false) {
+    navItems.push({ key: PIPELINES_KEY, title: 'Pipelines-Hosts', icon: 'Rocket', group: GROUP_ALM, active: !!inPipelineHosts, onClick: () => setActiveKey(PIPELINES_KEY) });
+  }
   pipelineTables.forEach(t => navItems.push({
     key: t.key, title: t.title, icon: isLocked(t.key) ? 'Lock' : t.icon, group: GROUP_ALM, count: countFor(t),
     active: t.key === activeKey, locked: isLocked(t.key), onClick: () => setActiveKey(t.key)
@@ -1971,7 +1995,7 @@ const CoeCockpit: React.FC<ICoeCockpitProps> = props => {
           <>
             {renderAccessNotice()}
 
-            {showKpis && !inOverview && !inSecurity && !inCredits && !inPremium && !inUserLicenses && !inOrphans && !inLicenseOpt && !inStorage && !inMessages && !inDlp && <KpiStrip tables={tables} kpis={kpis} activeKey={activeKey} onSelect={setActiveKey} />}
+            {showKpis && !inOverview && !inSecurity && !inCredits && !inPremium && !inUserLicenses && !inOrphans && !inLicenseOpt && !inStorage && !inMessages && !inDlp && !inPipelineHosts && <KpiStrip tables={tables} kpis={kpis} activeKey={activeKey} onSelect={setActiveKey} />}
 
             {navItems.length > 0 && !useSideNav && (
               <nav className={styles.tabs} role="tablist" aria-label="Tabellen">

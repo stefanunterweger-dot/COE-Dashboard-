@@ -11,6 +11,7 @@ import {
   IPremiumApp, IPremiumData, IPremiumEnv, IPremiumUser, LICENSE_LABEL, LicenseStatus, loadPremiumImpact, PREMIUM_DEADLINE, PREMIUM_INFO_URL, USAGE_DAYS
 } from '../models/premiumLicensing';
 import { DataverseService } from '../services/DataverseService';
+import { IPipelineIndex, pipelineInfo } from '../models/pipelineHosts';
 import { PowerPlatformApiService, PPAPI_VERSIONS } from '../services/PowerPlatformApiService';
 import { downloadText, formatDate, formatNumber } from '../utils/format';
 
@@ -26,6 +27,8 @@ export interface IPremiumViewProps {
   managedField: string;
   reloadKey: string;
   onOpenApp: (appId: string) => void;
+  /** Pipelines aller Hosts (Environments, die Ziel einer Pipeline sind, müssen Managed bleiben) */
+  loadPipelines?: () => Promise<IPipelineIndex>;
 }
 
 // Zwischenspeicher über Ansichtswechsel hinweg
@@ -63,6 +66,21 @@ export const PremiumView: React.FC<IPremiumViewProps> = props => {
   const [filter, setFilter] = React.useState<UserFilter>('all');
   const [search, setSearch] = React.useState<string>('');
   const [open, setOpen] = React.useState<string>('');
+  const [pipes, setPipes] = React.useState<IPipelineIndex | undefined>(undefined);
+  const [pipeState, setPipeState] = React.useState<'off' | 'loading' | 'ready' | 'error'>(props.loadPipelines ? 'loading' : 'off');
+  const [pipeProblem, setPipeProblem] = React.useState<string>('');
+  const [onlyPipelineEnvs, setOnlyPipelineEnvs] = React.useState<boolean>(false);
+  React.useEffect(() => {
+    if (!props.loadPipelines) {
+      setPipeState('off');
+      return;
+    }
+    let alive = true;
+    setPipeState('loading');
+    props.loadPipelines().then(ix => { if (alive) { setPipes(ix); setPipeState('ready'); } },
+      (e: Error) => { if (alive) { setPipeProblem(e.message); setPipeState('error'); } });
+    return () => { alive = false; };
+  }, [props.loadPipelines, props.reloadKey]);
 
   const load = (force: boolean): void => {
     if (!force && cache && cache.key === key) {
@@ -182,7 +200,10 @@ export const PremiumView: React.FC<IPremiumViewProps> = props => {
     { key: 'envs', label: 'Environments', sort: u => envNames(u).join(', '), render: u => <span className={styles.ccName} title={envNames(u).join('\n')}>{envNames(u).join(', ')}</span> },
     { key: 'launches', label: `Geöffnet (${USAGE_DAYS} T.)`, numeric: true, sort: u => u.launches, render: u => (data.usageAvailable ? formatNumber(u.launches) : '–') }
   ];
-  const envCols: IColumn<IPremiumEnv>[] = [
+  const pipeOf = (e: IPremiumEnv): ReturnType<typeof pipelineInfo> => pipelineInfo(pipes, e.id);
+  const pipelineTargets = data.envs.filter(e => { const i = pipeOf(e); return !!i && i.target.length > 0; });
+  const isPipelineTarget = (e: IPremiumEnv): boolean => { const i = pipeOf(e); return !!i && i.target.length > 0; };
+  const envCols: IColumn<IPremiumEnv>[] = ([
     { key: 'name', label: 'Environment', sort: e => e.name.toLowerCase(), render: e => <a className={`${styles.link} ${styles.ccName}`} href={`https://admin.powerplatform.microsoft.com/environments/${encodeURIComponent(e.id)}/hub`} target="_blank" rel="noopener noreferrer">{e.name}</a> },
     { key: 'type', label: 'Typ', sort: e => e.type, render: e => e.type || '–' },
     { key: 'apps', label: 'Apps', numeric: true, sort: e => e.apps, render: e => formatNumber(e.apps) },
@@ -194,7 +215,26 @@ export const PremiumView: React.FC<IPremiumViewProps> = props => {
           {e.users.length > 0 && <span className={styles.ccMeter} title={`${formatNumber(Math.round((e.unlicensed / e.users.length) * 100))} % ohne Premium`}><span className={`${styles.ccMeterFill} ${styles.ccMeterFull}`} style={{ width: `${(e.unlicensed / e.users.length) * 100}%` }} /></span>}
         </span>)
     }
-  ];
+  ] as IColumn<IPremiumEnv>[]).concat(pipeState === 'off' ? [] : [{
+    key: 'pipelines', label: 'Pipelines', title: 'Ziel einer Pipeline: Managed lässt sich nicht zurücknehmen (Microsoft verlangt Managed für Pipeline-Ziele)',
+    sort: (e: IPremiumEnv) => { const i = pipeOf(e); return i ? i.target.length * 100 + i.dev.length + (i.host ? 1 : 0) : -1; },
+    render: (e: IPremiumEnv) => {
+      if (pipeState === 'loading') {
+        return <span className={styles.muted}>…</span>;
+      }
+      const i = pipeOf(e);
+      if (!i) {
+        return <span className={styles.muted}>{pipeState === 'error' ? '–' : 'keine'}</span>;
+      }
+      return (
+        <span className={styles.dlpChips}>
+          {i.target.length > 0 && <Pill tone="danger" title={`Ziel in: ${i.target.join(', ')} – muss Managed bleiben`}>Ziel in {formatNumber(i.target.length)} Pipeline{i.target.length === 1 ? '' : 's'} – bleibt Managed</Pill>}
+          {i.dev.length > 0 && <Pill tone="neutral" title={`Entwicklung in: ${i.dev.join(', ')}`}>Entwicklung ({formatNumber(i.dev.length)})</Pill>}
+          {i.host && <Pill tone="info">Pipelines-Host</Pill>}
+        </span>
+      );
+    }
+  }]);
   const appCols: IColumn<IPremiumApp>[] = [
     { key: 'name', label: 'App', sort: a => a.name.toLowerCase(), render: a => <button type="button" className={`${styles.textButton} ${styles.ccName}`} onClick={e => { e.stopPropagation(); props.onOpenApp(a.id); }}>{a.name}</button> },
     { key: 'env', label: 'Environment', sort: a => a.envName, render: a => <span className={styles.ccName}>{a.envName}</span> },
@@ -216,9 +256,14 @@ export const PremiumView: React.FC<IPremiumViewProps> = props => {
       {hero}
       {notices}
       <div className={styles.ccGrid}>
-        <Tile label="Managed Environments" hint={`davon ${formatNumber(data.envs.filter(e => e.apps > 0).length)} mit Apps`} icon="Shield" tone={styles.ovToneInfo} value={formatNumber(data.envs.length)} onClick={() => setMode('envs')} active={mode === 'envs'} />
+        <Tile label="Managed Environments" hint={`davon ${formatNumber(data.envs.filter(e => e.apps > 0).length)} mit Apps`} icon="Shield" tone={styles.ovToneInfo} value={formatNumber(data.envs.length)} onClick={() => { setMode('envs'); setOnlyPipelineEnvs(false); }} active={mode === 'envs' && !onlyPipelineEnvs} />
         <Tile label="Apps" hint={`${formatNumber(usedApps.length)} mit Berechtigten`} icon="AppIconDefault" tone={styles.ovToneInfo} value={formatNumber(data.apps.length)} onClick={() => setMode('apps')} active={mode === 'apps'} />
         <Tile label="Berechtigte Personen" hint={data.usageAvailable ? `${formatNumber(data.users.filter(u => u.launches > 0).length)} haben in ${USAGE_DAYS} Tagen eine App geöffnet` : 'Besitzer, Mitbesitzer, Benutzer, Gruppen'} icon="People" tone={styles.ovToneInfo} value={formatNumber(data.users.length)} onClick={() => { setMode('users'); setFilter('all'); }} active={mode === 'users' && filter === 'all'} />
+        {pipeState !== 'off' && (
+          <Tile label="Ziel einer Pipeline" hint={pipeState === 'loading' ? 'Pipelines werden gelesen …' : pipeState === 'error' ? 'Pipelines nicht lesbar' : 'Managed lässt sich hier nicht zurücknehmen'}
+            icon="Rocket" tone={pipelineTargets.length ? styles.ovToneSerious : styles.ovToneInfo} value={pipeState === 'ready' ? formatNumber(pipelineTargets.length) : '–'}
+            onClick={pipeState === 'ready' ? () => { setMode('envs'); setOnlyPipelineEnvs(true); } : undefined} active={mode === 'envs' && onlyPipelineEnvs} />
+        )}
         <Tile label="Ohne Premium-Lizenz" hint={`in ${formatNumber(envsWithImpact.length)} Environment(s) – wären ab Februar 2027 gesperrt`} icon="Blocked2" tone={blocked.length ? styles.ovToneCritical : styles.ovToneInfo} value={data.licenseState === 'ok' ? formatNumber(blocked.length) : '–'} onClick={() => { setMode('users'); setFilter('blocked'); }} active={mode === 'users' && filter === 'blocked'} />
       </div>
       <section className={styles.ovCard}>
@@ -271,11 +316,20 @@ export const PremiumView: React.FC<IPremiumViewProps> = props => {
         {mode === 'envs' && (
           <SortTable<IPremiumEnv>
             columns={envCols}
-            rows={data.envs.filter(e => !q || e.name.toLowerCase().indexOf(q) >= 0)}
+            rows={data.envs.filter(e => (!q || e.name.toLowerCase().indexOf(q) >= 0) && (!onlyPipelineEnvs || isPipelineTarget(e)))}
             rowKey={e => e.id}
             initial={{ key: 'unlicensed', desc: true }}
-            empty="Keine Managed Environments gefunden."
+            empty={onlyPipelineEnvs ? 'Kein Managed Environment ist Ziel einer Pipeline.' : 'Keine Managed Environments gefunden.'}
           />
+        )}
+        {mode === 'envs' && pipeState !== 'off' && (
+          <div className={styles.ccFoot}>
+            {pipeState === 'error'
+              ? <span><Icon iconName="Warning" /> Pipelines nicht lesbar: {pipeProblem}</span>
+              : <span>„Pipelines“: live aus allen Pipelines-Hosts{pipes ? ` (${formatNumber(pipes.hosts)} Hosts${pipes.unreadable.length ? `, nicht lesbar: ${pipes.unreadable.join(', ')}` : ''})` : ''}.
+                Ziel-Environments einer Pipeline müssen Managed sein – Managed lässt sich dort nicht zurücknehmen. Entwicklungs-Environments müssen nicht Managed sein.</span>}
+            {onlyPipelineEnvs && <button type="button" className={styles.textButton} onClick={() => setOnlyPipelineEnvs(false)}>Alle Managed Environments zeigen</button>}
+          </div>
         )}
         {mode === 'apps' && (
           <SortTable<IPremiumApp>

@@ -184,6 +184,9 @@ export const SettingsPanel: React.FC<ISettingsPanelProps> = props => {
             <Row label="DLP-Auswirkungsanalyse" description="Wie die CoE-App „Data Policy Impact Analysis“: Richtlinien live, Auswirkung aus dem CoE, Entwürfe und Aufgabenliste im CoE.">
               <Toggle checked={v.showDlp} onChange={(_e, c) => set({ showDlp: !!c })} />
             </Row>
+            <Row label="Pipelines-Hosts" description="Alle Pipelines-Hosts mit ihren Pipelines und Environments (live, nur lesen). Markiert in „Betroffen ab Februar 2027“ die Pipeline-Ziele.">
+              <Toggle checked={v.showPipelineHosts} onChange={(_e, c) => set({ showPipelineHosts: !!c })} />
+            </Row>
             <Row label="Default Environment" description="Eigener Bereich – Details unter „Default Environment“">
               <Toggle checked={v.showDefaultEnvironment} onChange={(_e, c) => set({ showDefaultEnvironment: !!c })} />
             </Row>
@@ -329,7 +332,8 @@ export const SettingsPanel: React.FC<ISettingsPanelProps> = props => {
               selectedKey={v.pipelinesHostUrl}
               onChange={(_e, o) => set({ pipelinesHostUrl: o ? String(o.key) : '' })}
             />
-            <div className={styles.setStatus}>Das Environment mit der App „Deployment Pipeline Configuration“. „Keine“ blendet die ALM-Pipelines aus.</div>
+            <div className={styles.setStatus}>Das Environment mit der App „Deployment Pipeline Configuration“ – zeigt dessen Bereitstellungen, Pipelines und Pipeline-Environments als Tabellen. „Keine“ blendet diese Tabellen aus.
+              Alle weiteren Hosts findet die Ansicht „Pipelines-Hosts“ selbst.</div>
           </div>
         );
       case 'display':

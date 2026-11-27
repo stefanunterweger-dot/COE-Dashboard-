@@ -12,6 +12,7 @@ import { resetPremiumCache } from '../src/webparts/coeCockpit/components/Premium
 import { resetUserLicenseCache } from '../src/webparts/coeCockpit/models/userLicenses';
 import { resetMessageCache } from '../src/webparts/coeCockpit/models/messageCenter';
 import { resetDlpCache } from '../src/webparts/coeCockpit/models/dlp';
+import { resetPipelineCache } from '../src/webparts/coeCockpit/models/pipelineHosts';
 import { IWebPartSettings } from '../src/webparts/coeCockpit/models/settings';
 import { IMailTemplateOverrides } from '../src/webparts/coeCockpit/models/mailTemplates';
 import { ActionService, IActionSetupState } from '../src/webparts/coeCockpit/services/ActionService';
@@ -124,6 +125,7 @@ const App: React.FC = () => {
     showStorage: true,
     showMessageCenter: true,
     showDlp: true,
+    showPipelineHosts: true,
     mailTemplates: {} as IMailTemplateOverrides
   });
   const notify = React.useMemo(() => ({
@@ -136,7 +138,7 @@ const App: React.FC = () => {
   const [notMember, setNotMember] = React.useState<boolean>(false);
   const [noUserRead, setNoUserRead] = React.useState<boolean>(false);
   (window as unknown as { __coeDenyUserRead?: boolean }).__coeDenyUserRead = noUserRead;
-  React.useMemo(() => { resetPremiumCache(); resetUserLicenseCache(); resetMessageCache(); resetDlpCache(); }, [noUserRead, noAdmin]);
+  React.useMemo(() => { resetPremiumCache(); resetUserLicenseCache(); resetMessageCache(); resetDlpCache(); resetPipelineCache(true); }, [noUserRead, noAdmin]);
   (window as unknown as { __spNotMember?: boolean }).__spNotMember = notMember;
   // ohne Admin-Rolle liefert die DLP-Schnittstelle 403 – das Cockpit zeigt dann die Richtlinien aus dem CoE
   (window as unknown as { __coeBapDown?: boolean }).__coeBapDown = noAdmin;
@@ -243,6 +245,7 @@ const App: React.FC = () => {
           showStorage={p.showStorage}
           showMessageCenter={p.showMessageCenter}
           showDlp={p.showDlp}
+          showPipelineHosts={p.showPipelineHosts}
           pipelinesHostUrl={p.pipelinesHostUrl}
           notify={notify}
           notifyAutoSend={p.notifyAutoSend}

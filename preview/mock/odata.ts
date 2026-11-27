@@ -253,7 +253,24 @@ function collection(t: ITableDef, all: Record<string, unknown>[], q: URLSearchPa
   }
   const skip = Number(q.get('$skiptoken') || 0);
   const pageRows = rows.slice(skip, skip + maxPage);
-  const body: Record<string, unknown> = { value: pageRows.map(r => project(t, r, select)) };
+  // $expand=<N:N-Navigation>($select=…) – verknüpfte Datensätze je Zeile
+  const expand = /^([a-z_]+)(?:\(\$select=([^)]*)\))?$/i.exec(q.get('$expand') || '');
+  if (q.get('$expand') && (!expand || !t.navs || !t.navs[expand[1]])) {
+    throw new ODataError(400, `Could not find a property named '${q.get('$expand')}' on type 'Microsoft.Dynamics.CRM.${t.logicalName}'.`);
+  }
+  const body: Record<string, unknown> = {
+    value: pageRows.map(r => {
+      const out = project(t, r, select);
+      if (expand) {
+        const home = DATABASES.filter(d => d.tables[t.logicalName] === t)[0];
+        const target = (home && home.tables[t.navs![expand[1]]]) || lookupTarget(t.navs![expand[1]])!;
+        const ids = ((r[`__nav_${expand[1]}`] || []) as unknown[]).map(x => String(x).toLowerCase());
+        const sel = expand[2] ? expand[2].split(',').map(x => x.trim()).filter(Boolean) : undefined;
+        out[expand[1]] = target.rows.filter(x => ids.indexOf(String(x[target.primaryId]).toLowerCase()) >= 0).map(x => project(target, x, sel));
+      }
+      return out;
+    })
+  };
   if (q.get('$count') === 'true') {
     body['@odata.count'] = Math.min(rows.length, 5000);
   }
@@ -290,6 +307,15 @@ function handle(url: string, headers: { [k: string]: string }): IMockResponse {
         LogicalName: t.logicalName, EntitySetName: t.entitySet,
         DisplayName: { UserLocalizedLabel: { Label: t.displayName } },
         IsCustomEntity: /^admin_/.test(t.logicalName), IsValidForAdvancedFind: true, IsIntersect: false, IsPrivate: false
+      }))
+    });
+  }
+  const mm = /^EntityDefinitions\(LogicalName='([^']+)'\)\/ManyToManyRelationships$/.exec(path);
+  if (mm) {
+    const t = tableByLogical(db, mm[1]);
+    return respond(200, {
+      value: Object.keys(t.navs || {}).map(nav => ({
+        SchemaName: nav, Entity1LogicalName: t.logicalName, Entity2LogicalName: t.navs![nav], Entity1NavigationPropertyName: nav, Entity2NavigationPropertyName: nav
       }))
     });
   }

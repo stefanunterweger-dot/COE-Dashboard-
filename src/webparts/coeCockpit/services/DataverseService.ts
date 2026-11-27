@@ -541,6 +541,11 @@ export class DataverseService {
     }
   }
 
+  /** Beliebige GET-Abfrage relativ zur Web API (z. B. mit $expand oder Metadaten); eine Seite. */
+  public raw<T>(pathOrUrl: string, maxPageSize?: number): Promise<T> {
+    return this._get<T>(pathOrUrl, maxPageSize);
+  }
+
   /** Kurzer Zugriffstest auf diese Umgebung (wirft bei fehlenden Rechten). */
   public async whoAmI(): Promise<{ UserId?: string }> {
     return this._get<{ UserId?: string }>('WhoAmI');

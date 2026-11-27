@@ -41,6 +41,7 @@
         "showStorage": true,
         "showMessageCenter": true,
         "showDlp": true,
+        "showPipelineHosts": true,
         "hideAppBar": true,
         "mailTemplates": {},
         "pipelinesHostUrl": "",

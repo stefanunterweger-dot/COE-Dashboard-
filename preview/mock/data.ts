@@ -622,6 +622,43 @@ for (let i = 0; i < 140; i++) {
   });
 }
 
+// Entwicklungs-Environments je Pipeline (N:N „deploymentpipeline_deploymentenvironment“) und je Bereitstellung
+pipelineSeeds.forEach(([name, dev]) => {
+  const pl = pipelines.filter(x => x.name === name)[0];
+  pl.__nav_deploymentpipeline_deploymentenvironment = [depEnv(dev)];
+});
+stageRuns.forEach(r => {
+  const pl = pipelines.filter(x => x.deploymentpipelineid === r._deploymentpipelineid_value)[0];
+  r._devdeploymentenvironment_value = (pl.__nav_deploymentpipeline_deploymentenvironment as unknown[])[0];
+});
+depEnvs.forEach(e => { (e as Record<string, unknown>).errormessage = e.validationstatus === 200000002 ? 'Das Environment ist bereits mit einem anderen Pipelines-Host verknüpft (Platform host).' : null; });
+
+// Zweiter Pipelines-Host: das CoE-Environment (feste IDs/Daten, ohne Zufallsgenerator)
+const h2Id = (n: number): string => `b2b20000-0000-4000-8000-${String(n).padStart(12, '0')}`;
+const h2Date = (days: number): string => new Date(Date.now() - days * 86400000).toISOString().replace(/\.\d{3}Z$/, 'Z');
+const h2Common = (days: number): Record<string, unknown> => ({ statecode: 0, createdon: h2Date(days + 30), modifiedon: h2Date(days) });
+const devEnvs2 = environments.filter(e => e.admin_environmentsku === 'Developer' && !e.admin_environmentdeleted).slice(0, 2);
+const h2EnvSeeds: [Record<string, unknown>, number][] = [[devEnvs2[0], 200000000], [devEnvs2[1], 200000000], [envNamed('CoE'), 200000001], [envNamed('Trial – Lukas Huber'), 200000001]];
+const depEnvs2 = h2EnvSeeds.map(([e, role], i) => ({
+  ...h2Common(40 - i), deploymentenvironmentid: h2Id(10 + i), name: String(e.admin_displayname), environmenttype: role, validationstatus: 200000001,
+  environmentid: e.admin_environmentid, errormessage: null
+}));
+const pipelines2: Record<string, unknown>[] = [
+  { ...h2Common(12), deploymentpipelineid: h2Id(1), name: 'COE Prod', description: null, _ownerid_value: sysUsers[0].systemuserid, __nav_deploymentpipeline_deploymentenvironment: [h2Id(10)] },
+  { ...h2Common(30), deploymentpipelineid: h2Id(2), name: 'Schulung', description: 'Schulungs-Apps für Citizen Developer', _ownerid_value: sysUsers[1].systemuserid, __nav_deploymentpipeline_deploymentenvironment: [h2Id(11)] }
+];
+const stages2: Record<string, unknown>[] = [
+  { ...h2Common(12), deploymentstageid: h2Id(20), name: 'Produktion', _deploymentpipelineid_value: h2Id(1), _targetdeploymentenvironmentid_value: h2Id(12), _previousdeploymentstageid_value: null },
+  { ...h2Common(30), deploymentstageid: h2Id(21), name: 'Test', _deploymentpipelineid_value: h2Id(2), _targetdeploymentenvironmentid_value: h2Id(13), _previousdeploymentstageid_value: null }
+];
+const stageRuns2: Record<string, unknown>[] = [
+  [30, 1, 20, 'CoEStarterKitCore', '4.50.6.0', 200000003, 1], [31, 1, 20, 'CoEStarterKitCore', '4.50.5.0', 200000004, 5], [32, 2, 21, 'SchulungsApps', '1.2.0.0', 200000003, 9]
+].map(([n, pl, st, art, ver, status, days]) => ({
+  ...h2Common(Number(days)), deploymentstagerunid: h2Id(Number(n)), artifactname: art, artifactversion: ver, _deploymentpipelineid_value: h2Id(Number(pl)),
+  _deploymentstageid_value: h2Id(Number(st)), stagerunstatus: status, _createdby_value: sysUsers[2].systemuserid, starttime: h2Date(Number(days)),
+  endtime: h2Date(Number(days) - 0.01), _devdeploymentenvironment_value: Number(pl) === 1 ? h2Id(10) : h2Id(11)
+}));
+
 // ---------- Tabellen-Definitionen ----------
 const A = (name: string, type: string, label: string, target?: string, options?: { [v: number]: string }): IAttr => ({ name, type, label, target, options });
 const STD = [A('statecode', 'State', 'Status'), A('createdon', 'DateTime', 'Erstellt am'), A('modifiedon', 'DateTime', 'Geändert am')];
@@ -643,6 +680,27 @@ function db(host: string, defs: ITableDef[]): IDatabase {
   return { host, tables };
 }
 const LK = (name: string, label: string, target: string): IAttr => A(name, 'Lookup', label, target);
+/** Tabellen der Power Platform Pipelines (je Host-Environment) */
+function pipelineTables(pl: Record<string, unknown>[], st: Record<string, unknown>[], runs: Record<string, unknown>[], envs: Record<string, unknown>[]): ITableDef[] {
+  return [
+    withNav(table('deploymentpipeline', 'deploymentpipelines', 'Bereitstellungspipeline', 'deploymentpipelineid', 'name', [
+      A('name', 'String', 'Name'), A('description', 'Memo', 'Beschreibung'), LK('ownerid', 'Besitzer', 'systemuser')
+    ], pl), { deploymentpipeline_deploymentenvironment: 'deploymentenvironment' }),
+    table('deploymentstage', 'deploymentstages', 'Bereitstellungsphase', 'deploymentstageid', 'name', [
+      A('name', 'String', 'Name'), LK('deploymentpipelineid', 'Pipeline', 'deploymentpipeline'),
+      LK('targetdeploymentenvironmentid', 'Zielumgebung', 'deploymentenvironment'), LK('previousdeploymentstageid', 'Vorherige Phase', 'deploymentstage')
+    ], st),
+    table('deploymentstagerun', 'deploymentstageruns', 'Ausführung der Bereitstellungsphase', 'deploymentstagerunid', 'artifactname', [
+      A('artifactname', 'String', 'Artefaktname'), A('artifactversion', 'String', 'Artefaktversion'), LK('deploymentpipelineid', 'Pipeline', 'deploymentpipeline'),
+      LK('deploymentstageid', 'Phase', 'deploymentstage'), A('stagerunstatus', 'Picklist', 'Status', undefined, RUN_STATUS), LK('createdby', 'Erstellt von', 'systemuser'),
+      A('starttime', 'DateTime', 'Startzeit'), A('endtime', 'DateTime', 'Endzeit'), LK('devdeploymentenvironment', 'Entwicklungsumgebung', 'deploymentenvironment')
+    ], runs),
+    table('deploymentenvironment', 'deploymentenvironments', 'Bereitstellungsumgebung', 'deploymentenvironmentid', 'name', [
+      A('name', 'String', 'Name'), A('environmenttype', 'Picklist', 'Umgebungstyp', undefined, ENV_ROLE),
+      A('validationstatus', 'Picklist', 'Validierungsstatus', undefined, VALIDATION), A('environmentid', 'String', 'Umgebungs-ID'), A('errormessage', 'String', 'Fehlermeldung')
+    ], envs)
+  ];
+}
 const ENV_LK = (name: string): IAttr => LK(name, 'Environment', 'admin_environment');
 const MAKER_LK = (name: string, label: string): IAttr => LK(name, label, 'admin_maker');
 
@@ -774,7 +832,9 @@ export const DATABASES: IDatabase[] = [
       A('admin_decision', 'Picklist', 'Decision', undefined, { 597910000: 'In progress', 597910001: 'Not required - Maker will delete', 597910002: 'Not required - Can be deleted by IT', 597910003: 'Required - Needs to be migrated', 597910004: 'Required - Maker will update app' }),
       A('admin_decisionstatus', 'Picklist', 'Decision status', undefined, { 597910000: 'In progress', 597910001: 'Completed' }),
       A('admin_actionrequiredon', 'DateTime', 'Action Required On')
-    ], dlpTasks)
+    ], dlpTasks),
+    // das CoE-Environment ist zugleich ein zweiter Pipelines-Host
+    ...pipelineTables(pipelines2, stages2, stageRuns2, depEnvs2)
   ]),
   db(DEFAULT_HOST, [
     table('solution', 'solutions', 'Lösung', 'solutionid', 'friendlyname', [
@@ -786,22 +846,7 @@ export const DATABASES: IDatabase[] = [
     ], publishers)
   ]),
   db(PIPELINES_HOST, [
-    table('deploymentpipeline', 'deploymentpipelines', 'Bereitstellungspipeline', 'deploymentpipelineid', 'name', [
-      A('name', 'String', 'Name'), A('description', 'Memo', 'Beschreibung'), LK('ownerid', 'Besitzer', 'systemuser')
-    ], pipelines),
-    table('deploymentstage', 'deploymentstages', 'Bereitstellungsphase', 'deploymentstageid', 'name', [
-      A('name', 'String', 'Name'), LK('deploymentpipelineid', 'Pipeline', 'deploymentpipeline'),
-      LK('targetdeploymentenvironmentid', 'Zielumgebung', 'deploymentenvironment'), LK('previousdeploymentstageid', 'Vorherige Phase', 'deploymentstage')
-    ], stages),
-    table('deploymentstagerun', 'deploymentstageruns', 'Ausführung der Bereitstellungsphase', 'deploymentstagerunid', 'artifactname', [
-      A('artifactname', 'String', 'Artefaktname'), A('artifactversion', 'String', 'Artefaktversion'), LK('deploymentpipelineid', 'Pipeline', 'deploymentpipeline'),
-      LK('deploymentstageid', 'Phase', 'deploymentstage'), A('stagerunstatus', 'Picklist', 'Status', undefined, RUN_STATUS), LK('createdby', 'Erstellt von', 'systemuser'),
-      A('starttime', 'DateTime', 'Startzeit'), A('endtime', 'DateTime', 'Endzeit')
-    ], stageRuns),
-    table('deploymentenvironment', 'deploymentenvironments', 'Bereitstellungsumgebung', 'deploymentenvironmentid', 'name', [
-      A('name', 'String', 'Name'), A('environmenttype', 'Picklist', 'Umgebungstyp', undefined, ENV_ROLE),
-      A('validationstatus', 'Picklist', 'Validierungsstatus', undefined, VALIDATION), A('environmentid', 'String', 'Umgebungs-ID')
-    ], depEnvs),
+    ...pipelineTables(pipelines, stages, stageRuns, depEnvs),
     table('systemuser', 'systemusers', 'Benutzer', 'systemuserid', 'fullname', [A('fullname', 'String', 'Vollständiger Name')], sysUsers)
   ])
 ];

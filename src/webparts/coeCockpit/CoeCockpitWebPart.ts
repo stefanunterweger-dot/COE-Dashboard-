@@ -60,6 +60,7 @@ export interface ICoeCockpitWebPartProps {
   showStorage: boolean;
   showMessageCenter: boolean;
   showDlp: boolean;
+  showPipelineHosts: boolean;
   hideAppBar: boolean;
   /** Dataverse-URL des Pipelines-Host-Environments (leer = ALM-Pipelines ausblenden). */
   pipelinesHostUrl: string;
@@ -147,6 +148,7 @@ export default class CoeCockpitWebPart extends BaseClientSideWebPart<ICoeCockpit
       showStorage: this.properties.showStorage !== false,
       showMessageCenter: this.properties.showMessageCenter !== false,
       showDlp: this.properties.showDlp !== false,
+      showPipelineHosts: this.properties.showPipelineHosts !== false,
       hideAppBar: this.properties.hideAppBar !== false,
       pipelinesHostUrl: normalizeDataverseUrl(this.properties.pipelinesHostUrl) || '',
       notify: {
@@ -227,6 +229,7 @@ export default class CoeCockpitWebPart extends BaseClientSideWebPart<ICoeCockpit
         showStorage: p.showStorage !== false,
         showMessageCenter: p.showMessageCenter !== false,
         showDlp: p.showDlp !== false,
+        showPipelineHosts: p.showPipelineHosts !== false,
         hideAppBar: p.hideAppBar !== false,
         pipelinesHostUrl: normalizeDataverseUrl(p.pipelinesHostUrl) || '',
         notifyAutoSend: p.notifyAutoSend !== false,
@@ -691,6 +694,7 @@ export default class CoeCockpitWebPart extends BaseClientSideWebPart<ICoeCockpit
                 PropertyPaneToggle('showOrphans', { label: 'Ansicht „Verwaiste Ressourcen“ anzeigen', checked: this.properties.showOrphans !== false }),
                 PropertyPaneToggle('showMessageCenter', { label: 'Ansicht „Was ändert Microsoft?“ anzeigen (Message Center)', checked: this.properties.showMessageCenter !== false }),
                 PropertyPaneToggle('showDlp', { label: 'Ansicht „DLP-Auswirkungsanalyse“ anzeigen', checked: this.properties.showDlp !== false }),
+                PropertyPaneToggle('showPipelineHosts', { label: 'Ansicht „Pipelines-Hosts“ anzeigen (alle Hosts, nur lesen)', checked: this.properties.showPipelineHosts !== false }),
                 PropertyPaneDropdown('pipelinesHostUrl', {
                   label: 'Pipelines-Host-Environment',
                   options: this._pipelineHostOptions(),
