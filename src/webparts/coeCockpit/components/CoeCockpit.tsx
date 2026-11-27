@@ -1276,9 +1276,9 @@ const CoeCockpit: React.FC<ICoeCockpitProps> = props => {
       : !adminRoleActive ? 'Neu zuweisen ist ausgeblendet, weil die Rolle „Power Platform Administrator“ gerade nicht aktiv ist (PIM).'
         : 'Die Aktionsliste ist noch nicht eingerichtet (Webpart-Einstellungen → Aktionen).';
   /** Warum die DLP-Ansicht nicht speichern darf (leer = darf). */
-  const dlpActHint = canAct ? '' : !props.showActions ? 'Speichern und Löschen sind aus, weil die Aktionen in den Webpart-Einstellungen ausgeschaltet sind.'
-    : !isGroupMember ? `Speichern und Löschen dürfen Mitglieder der SharePoint-Gruppe „${props.actionsGroup}“ mit aktiver Rolle „Power Platform Administrator“.`
-      : !adminRoleActive ? 'Speichern und Löschen sind ausgeblendet, weil die Rolle „Power Platform Administrator“ gerade nicht aktiv ist (PIM).'
+  const dlpActHint = canAct ? '' : !props.showActions ? 'Bearbeiten, Kopieren und Löschen sind aus, weil die Aktionen in den Webpart-Einstellungen ausgeschaltet sind.'
+    : !isGroupMember ? `Bearbeiten, Kopieren und Löschen dürfen Mitglieder der SharePoint-Gruppe „${props.actionsGroup}“ mit aktiver Rolle „Power Platform Administrator“.`
+      : !adminRoleActive ? 'Bearbeiten, Kopieren und Löschen sind ausgeblendet, weil die Rolle „Power Platform Administrator“ gerade nicht aktiv ist (PIM).'
         : 'Die Aktionsliste ist noch nicht eingerichtet (Webpart-Einstellungen → Aktionen).';
   const devState = data[DEV_ENV_KEY];
   const devAffected = devState && devState.status === 'ready'

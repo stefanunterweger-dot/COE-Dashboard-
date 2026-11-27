@@ -213,7 +213,9 @@ export const DlpView: React.FC<IDlpViewProps> = props => {
       key: 'name', label: 'Name', sort: i => i.displayName.toLowerCase(),
       render: i => (
         <span className={styles.ulUser}>
-          <button type="button" className={styles.linkButton} onClick={e => { e.stopPropagation(); setSelected(i.key); open(i, i.source === 'draft' ? 'draft' : 'edit').catch(() => setOpening(false)); }}>{i.displayName || '(ohne Namen)'}</button>
+          {props.canAct
+            ? <button type="button" className={styles.linkButton} onClick={e => { e.stopPropagation(); setSelected(i.key); open(i, i.source === 'draft' ? 'draft' : 'edit').catch(() => setOpening(false)); }}>{i.displayName || '(ohne Namen)'}</button>
+            : <b>{i.displayName || '(ohne Namen)'}</b>}
           {i.source === 'draft' && i.draftName && i.draftName !== i.displayName && <span className={styles.muted}>Entwurf: {i.draftName}</span>}
         </span>
       )
@@ -266,7 +268,7 @@ export const DlpView: React.FC<IDlpViewProps> = props => {
     downloadText(`DLP-Aufgabenliste_${new Date().toISOString().slice(0, 10)}.csv`, '﻿' + lines.join('\r\n'), 'text/csv;charset=utf-8');
   };
 
-  if (editing && base) {
+  if (editing && base && props.canAct) {
     return (
       <DlpEditor
         working={editing}
@@ -357,12 +359,16 @@ export const DlpView: React.FC<IDlpViewProps> = props => {
 
         {tab !== 'tasks' && (
           <div className={styles.dlpCommands} role="toolbar" aria-label="Richtlinie">
-            <button type="button" className={styles.dlpCommand} disabled={!current || opening} onClick={() => current && open(current, current.source === 'draft' ? 'draft' : 'edit').catch(() => setOpening(false))}>
-              <Icon iconName="Edit" /> {props.canAct ? 'Bearbeiten / Analysieren' : 'Analysieren'}
-            </button>
-            <button type="button" className={styles.dlpCommand} disabled={!current || opening} onClick={() => current && open(current, 'copy').catch(() => setOpening(false))}>
-              <Icon iconName="Copy" /> Kopieren
-            </button>
+            {props.canAct && (
+              <>
+                <button type="button" className={styles.dlpCommand} disabled={!current || opening} onClick={() => current && open(current, current.source === 'draft' ? 'draft' : 'edit').catch(() => setOpening(false))}>
+                  <Icon iconName="Edit" /> Bearbeiten / Analysieren
+                </button>
+                <button type="button" className={styles.dlpCommand} disabled={!current || opening} onClick={() => current && open(current, 'copy').catch(() => setOpening(false))}>
+                  <Icon iconName="Copy" /> Kopieren
+                </button>
+              </>
+            )}
             <button type="button" className={styles.dlpCommand} disabled={!current || current.source === 'draft'} onClick={() => current && window.open(ppacPolicyUrl(current.id), '_blank', 'noopener')}>
               <Icon iconName="OpenInNewTab" /> Im Admin Center öffnen
             </button>
@@ -372,12 +378,14 @@ export const DlpView: React.FC<IDlpViewProps> = props => {
               </button>
             )}
             <span className={styles.grow} />
-            <button type="button" className={styles.dlpCommand} disabled={!base} onClick={() => setEditing(emptyWorking())}>
-              <Icon iconName="Add" /> Neue Richtlinie
-            </button>
+            {props.canAct && (
+              <button type="button" className={styles.dlpCommand} disabled={!base} onClick={() => setEditing(emptyWorking())}>
+                <Icon iconName="Add" /> Neue Richtlinie
+              </button>
+            )}
           </div>
         )}
-        {!props.canAct && props.actHint && tab !== 'tasks' && <div className={styles.ccWarnings}><div className={styles.muted}><Icon iconName="Info" /> {props.actHint} Analysieren geht trotzdem.</div></div>}
+        {!props.canAct && props.actHint && tab !== 'tasks' && <div className={styles.ccWarnings}><div className={styles.muted}><Icon iconName="Info" /> {props.actHint}</div></div>}
         {tab === 'draft' && draftError && <div className={styles.ccWarnings}><div className={styles.muted}><Icon iconName="Info" /> {draftError}</div></div>}
         {tab === 'tasks' && taskError && <div className={styles.ccWarnings}><div className={styles.muted}><Icon iconName="Info" /> {taskError}</div></div>}
 
@@ -416,7 +424,7 @@ export const DlpView: React.FC<IDlpViewProps> = props => {
             : tab === 'draft'
               ? 'Entwürfe aus der CoE-Tabelle „Data Policy Drafts“ – dieselben wie in der CoE-App. Sie ändern nichts im Tenant.'
               : source === 'live'
-                ? 'Live aus dem Tenant (Admin-Schnittstelle, deine Rechte). Zeile anklicken = auswählen, Name anklicken = öffnen.'
+                ? `Live aus dem Tenant (Admin-Schnittstelle, deine Rechte). Zeile anklicken = auswählen${props.canAct ? ', Name anklicken = öffnen' : ''}.`
                 : 'Stand aus dem CoE (letzter Sync). Für die Live-Ansicht die Rolle „Power Platform Administrator“ aktivieren.'}
         </div>
       </section>
