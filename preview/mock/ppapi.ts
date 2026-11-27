@@ -117,6 +117,19 @@ function route(url: URL): IMockResponse {
     const allocated = Object.keys(d.alloc).reduce((s, k) => s + d.alloc[k].allocated, 0);
     return respond(200, [{ currencyType: MCS, purchased: 100000, allocated }, { currencyType: 'AI', purchased: 0, allocated: 0 }]);
   }
+  if (path === '/licensing/tenantCapacity') {
+    // Verbrauch aus den CoE-Kapazitätsdaten der Vorschau, Kontingent fest
+    const coe = DATABASES.filter(x => x.host === COE_HOST)[0];
+    const rows = coe.tables.admin_environmentcapacity ? coe.tables.admin_environmentcapacity.rows : [];
+    const sum = (t: string): number => rows.filter(r => String(r.admin_capacitytype) === t).reduce((s2, r) => s2 + (Number(r.admin_actualconsumption) || 0), 0);
+    const cap = (t: string, total: number) => ({ capacityType: t, capacityUnits: 'MB', totalCapacity: total, maxCapacity: total, consumption: { actual: Math.round(sum(t)), rated: Math.round(sum(t) * 1.02) }, status: 'Available', overflowCapacity: [] });
+    const db = sum('Database');
+    return respond(200, {
+      tenantId: '8f3c2a1d-6b4e-4c7a-9d2f-1e5b7a9c3d40', licenseModelType: 'StorageDriven',
+      tenantCapacities: [cap('Database', Math.round(db / 0.86)), cap('File', Math.round(sum('File') / 0.42 + 1)), cap('Log', Math.round(sum('Log') / 0.95 + 1))],
+      capacitySummary: { status: 'Available', statusMessage: 'Database capacity more than 85 % used', statusMessageCode: 'DBCapacityMoreThanEightyFive' }
+    });
+  }
   if (path === `/licensing/entitlements/${MCS}`) {
     const allocated = Object.keys(d.alloc).reduce((s, k) => s + d.alloc[k].allocated, 0);
     const used = Object.keys(d.consumed).reduce((s, k) => s + d.consumed[k], 0);

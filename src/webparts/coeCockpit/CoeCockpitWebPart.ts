@@ -55,6 +55,10 @@ export interface ICoeCockpitWebPartProps {
   /** Auswertung „Betroffen ab Februar 2027“ (Premium-Lizenz in Managed Environments). */
   showPremium2027: boolean;
   showUserLicenses: boolean;
+  showOrphans: boolean;
+  showLicenseOptimization: boolean;
+  showStorage: boolean;
+  showMessageCenter: boolean;
   hideAppBar: boolean;
   /** Dataverse-URL des Pipelines-Host-Environments (leer = ALM-Pipelines ausblenden). */
   pipelinesHostUrl: string;
@@ -137,6 +141,10 @@ export default class CoeCockpitWebPart extends BaseClientSideWebPart<ICoeCockpit
       showCopilotCredits: this.properties.showCopilotCredits !== false,
       showPremium2027: this.properties.showPremium2027 !== false,
       showUserLicenses: this.properties.showUserLicenses !== false,
+      showOrphans: this.properties.showOrphans !== false,
+      showLicenseOptimization: this.properties.showLicenseOptimization !== false,
+      showStorage: this.properties.showStorage !== false,
+      showMessageCenter: this.properties.showMessageCenter !== false,
       hideAppBar: this.properties.hideAppBar !== false,
       pipelinesHostUrl: normalizeDataverseUrl(this.properties.pipelinesHostUrl) || '',
       notify: {
@@ -212,6 +220,10 @@ export default class CoeCockpitWebPart extends BaseClientSideWebPart<ICoeCockpit
         showCopilotCredits: p.showCopilotCredits !== false,
         showPremium2027: p.showPremium2027 !== false,
         showUserLicenses: p.showUserLicenses !== false,
+        showOrphans: p.showOrphans !== false,
+        showLicenseOptimization: p.showLicenseOptimization !== false,
+        showStorage: p.showStorage !== false,
+        showMessageCenter: p.showMessageCenter !== false,
         hideAppBar: p.hideAppBar !== false,
         pipelinesHostUrl: normalizeDataverseUrl(p.pipelinesHostUrl) || '',
         notifyAutoSend: p.notifyAutoSend !== false,
@@ -671,6 +683,10 @@ export default class CoeCockpitWebPart extends BaseClientSideWebPart<ICoeCockpit
                   label: 'Ansicht „Lizenzen je Benutzer“ anzeigen (live, Microsoft Graph)',
                   checked: this.properties.showUserLicenses !== false
                 }),
+                PropertyPaneToggle('showLicenseOptimization', { label: 'Ansicht „Lizenz-Optimierung“ anzeigen', checked: this.properties.showLicenseOptimization !== false }),
+                PropertyPaneToggle('showStorage', { label: 'Ansicht „Dataverse-Speicher“ anzeigen', checked: this.properties.showStorage !== false }),
+                PropertyPaneToggle('showOrphans', { label: 'Ansicht „Verwaiste Ressourcen“ anzeigen', checked: this.properties.showOrphans !== false }),
+                PropertyPaneToggle('showMessageCenter', { label: 'Ansicht „Was ändert Microsoft?“ anzeigen (Message Center)', checked: this.properties.showMessageCenter !== false }),
                 PropertyPaneDropdown('pipelinesHostUrl', {
                   label: 'Pipelines-Host-Environment',
                   options: this._pipelineHostOptions(),

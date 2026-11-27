@@ -46,6 +46,7 @@ const SKU_NAMES: { [sku: string]: string } = {
   VISIOCLIENT: 'Visio Plan 2', PROJECTPROFESSIONAL: 'Project Plan 3', PROJECTPREMIUM: 'Project Plan 5', SPE_F3: 'Microsoft 365 F3',
   O365_BUSINESS_ESSENTIALS: 'Microsoft 365 Business Basic', SMB_BUSINESS_PREMIUM: 'Microsoft 365 Business Premium', FLOW_FREE_ALL: 'Power Automate Free',
   CCIBOTS_PRIVPREV_VIRAL: 'Copilot Studio (Testversion)', DYN365_ENTERPRISE_P1_IW: 'Dynamics 365 P1 (Testversion)', MCOEV: 'Teams Phone',
+  POWERAPPS_P2: 'Power Apps Plan 2', POWERAPPS_P1: 'Power Apps Plan 1', FLOW_P2: 'Power Automate Plan 2', FLOW_P1: 'Power Automate Plan 1',
   WINDOWS_STORE: 'Windows Store for Business', RIGHTSMANAGEMENT_ADHOC: 'Rights Management Adhoc', STREAM: 'Microsoft Stream (Testversion)'
 };
 

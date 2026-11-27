@@ -41,6 +41,14 @@ import { IWebPartSettings } from '../models/settings';
 import { BILLING_KEY, CREDITS_KEY, GROUP_LICENSING } from '../models/copilotCredits';
 import { USER_LICENSES_KEY } from '../models/userLicenses';
 import { UserLicensesView } from './UserLicensesView';
+import { ORPHANS_KEY } from '../models/orphans';
+import { OrphansView } from './OrphansView';
+import { LICENSE_OPT_KEY } from '../models/licenseOptimization';
+import { LicenseOptimizationView } from './LicenseOptimizationView';
+import { STORAGE_KEY } from '../models/storage';
+import { StorageView } from './StorageView';
+import { MESSAGES_KEY } from '../models/messageCenter';
+import { MessageCenterView } from './MessageCenterView';
 import { PowerPlatformApiService, PPAPI_RESOURCE } from '../services/PowerPlatformApiService';
 import { DirectActionService } from '../services/DirectActionService';
 import { checkAdminRole, IRoleStatus } from '../services/RoleCheckService';
@@ -100,6 +108,14 @@ export interface ICoeCockpitProps {
   showUserLicenses?: boolean;
   /** SharePoint-App-Leiste links auf dieser Seite ausblenden (Standard: an) */
   hideAppBar?: boolean;
+  /** „Verwaiste Ressourcen“ (Standard: an) */
+  showOrphans?: boolean;
+  /** „Lizenz-Optimierung“ (Standard: an) */
+  showLicenseOptimization?: boolean;
+  /** „Dataverse-Speicher“ (Standard: an) */
+  showStorage?: boolean;
+  /** „Was ändert Microsoft?“ (Standard: an) */
+  showMessageCenter?: boolean;
   /** Dataverse-URL des Pipelines-Host-Environments (leer = ALM-Pipelines ausblenden). */
   pipelinesHostUrl: string;
   /** Vorlage für die E-Mail an die Maker betroffener Developer-Environments. */
@@ -528,7 +544,9 @@ const CoeCockpit: React.FC<ICoeCockpitProps> = props => {
     const waitingForDefault = (props.showDefaultEnvironment && isDefaultEnvKey(activeKey)) || (props.showOverview && activeKey === OVERVIEW_KEY)
       || (props.showSecurity && activeKey === SECURITY_KEY) || (props.showActions && activeKey === ACTION_LOG_KEY)
       || (props.showCopilotCredits && (activeKey === CREDITS_KEY || activeKey === BILLING_KEY))
-      || (props.showPremium2027 !== false && activeKey === PREMIUM_KEY) || (props.showUserLicenses !== false && activeKey === USER_LICENSES_KEY);
+      || (props.showPremium2027 !== false && activeKey === PREMIUM_KEY) || (props.showUserLicenses !== false && activeKey === USER_LICENSES_KEY)
+      || (props.showOrphans !== false && activeKey === ORPHANS_KEY) || (props.showLicenseOptimization !== false && activeKey === LICENSE_OPT_KEY)
+      || (props.showStorage !== false && activeKey === STORAGE_KEY) || (props.showMessageCenter !== false && activeKey === MESSAGES_KEY);
     if (!activeTable && tables.length && !waitingForDefault) {
       setActiveKey(tables[0].key);
     }
@@ -1242,6 +1260,15 @@ const CoeCockpit: React.FC<ICoeCockpitProps> = props => {
   const inCredits = props.showCopilotCredits && (activeKey === CREDITS_KEY || activeKey === BILLING_KEY);
   const inPremium = props.showPremium2027 !== false && activeKey === PREMIUM_KEY;
   const inUserLicenses = props.showUserLicenses !== false && activeKey === USER_LICENSES_KEY;
+  const inOrphans = props.showOrphans !== false && activeKey === ORPHANS_KEY;
+  const inLicenseOpt = props.showLicenseOptimization !== false && activeKey === LICENSE_OPT_KEY;
+  const inStorage = props.showStorage !== false && activeKey === STORAGE_KEY;
+  const inMessages = props.showMessageCenter !== false && activeKey === MESSAGES_KEY;
+  /** Warum „Verwaiste Ressourcen“ nicht neu zuweisen darf (leer = darf). */
+  const orphanActHint = canAct ? '' : !props.showActions ? 'Aktionen sind in den Webpart-Einstellungen ausgeschaltet.'
+    : !isGroupMember ? `Neu zuweisen dürfen Mitglieder der SharePoint-Gruppe „${props.actionsGroup}“ mit aktiver Rolle „Power Platform Administrator“.`
+      : !adminRoleActive ? 'Neu zuweisen ist ausgeblendet, weil die Rolle „Power Platform Administrator“ gerade nicht aktiv ist (PIM).'
+        : 'Die Aktionsliste ist noch nicht eingerichtet (Webpart-Einstellungen → Aktionen).';
   const devState = data[DEV_ENV_KEY];
   const devAffected = devState && devState.status === 'ready'
     ? {
@@ -1251,7 +1278,28 @@ const CoeCockpit: React.FC<ICoeCockpitProps> = props => {
     }
     : undefined;
 
-  const renderMain = (): JSX.Element => (inUserLicenses
+  const renderMain = (): JSX.Element => (inMessages
+    ? <MessageCenterView graphFactory={props.msGraphClientFactory} reloadKey={String(reloadTick)} />
+    : inStorage && service
+    ? <StorageView service={service} ppApi={ppApi} reloadKey={String(reloadTick)} onOpenEnvironment={id => openRelated('admin_environment', id)} />
+    : inLicenseOpt && service
+    ? <LicenseOptimizationView service={service} graphFactory={props.msGraphClientFactory} reloadKey={String(reloadTick)} />
+    : inOrphans && service
+    ? (
+      <OrphansView
+        service={service}
+        maxRecords={maxRecords}
+        reloadKey={String(reloadTick)}
+        canAct={canAct}
+        actHint={orphanActHint}
+        actions={actionService}
+        direct={directActions}
+        requestedBy={props.currentUser.displayName}
+        onOpen={(logical, id) => openRelated(logical, id)}
+        onActionsChanged={refreshActions}
+      />
+    )
+    : inUserLicenses
     ? <UserLicensesView graphFactory={props.msGraphClientFactory} reloadKey={String(reloadTick)} />
     : inPremium && service
     ? (
@@ -1757,7 +1805,9 @@ const CoeCockpit: React.FC<ICoeCockpitProps> = props => {
   interface INavItem { key: string; title: string; icon: string; group: string; count?: string; active: boolean; danger?: boolean; locked?: boolean; onClick: () => void }
   const navItems: INavItem[] = (props.showOverview
     ? [{ key: OVERVIEW_KEY, title: 'Übersicht', icon: 'ViewDashboard', group: START_GROUP, active: !!inOverview, onClick: () => setActiveKey(OVERVIEW_KEY) }]
-    : [] as INavItem[]).concat(tables.map(t => ({
+    : [] as INavItem[]).concat(props.showMessageCenter !== false
+    ? [{ key: MESSAGES_KEY, title: 'Was ändert Microsoft?', icon: 'Megaphone', group: START_GROUP, active: !!inMessages, onClick: () => setActiveKey(MESSAGES_KEY) }]
+    : []).concat(tables.map(t => ({
     key: t.key, title: t.title, icon: t.icon || 'Table', group: t.group || DEFAULT_GROUP,
     count: countFor(t), active: t.key === activeKey, onClick: () => setActiveKey(t.key)
   })));
@@ -1770,6 +1820,9 @@ const CoeCockpit: React.FC<ICoeCockpitProps> = props => {
   if (props.showPremium2027 !== false) {
     navItems.push({ key: PREMIUM_KEY, title: 'Betroffen ab Februar 2027', icon: 'Permissions', group: ANALYSIS_GROUP, active: !!inPremium, danger: true, onClick: () => setActiveKey(PREMIUM_KEY) });
   }
+  if (props.showOrphans !== false) {
+    navItems.push({ key: ORPHANS_KEY, title: 'Verwaiste Ressourcen', icon: 'UserRemove', group: ANALYSIS_GROUP, active: !!inOrphans, onClick: () => setActiveKey(ORPHANS_KEY) });
+  }
   if (props.showSecurity) {
     navItems.push({ key: SECURITY_KEY, title: 'Sicherheit & Freigaben', icon: 'Shield', group: ANALYSIS_GROUP, active: !!inSecurity, onClick: () => setActiveKey(SECURITY_KEY) });
   }
@@ -1779,6 +1832,12 @@ const CoeCockpit: React.FC<ICoeCockpitProps> = props => {
   }
   if (props.showUserLicenses !== false) {
     navItems.push({ key: USER_LICENSES_KEY, title: 'Lizenzen je Benutzer', icon: 'ContactCard', group: GROUP_LICENSING, active: !!inUserLicenses, onClick: () => setActiveKey(USER_LICENSES_KEY) });
+  }
+  if (props.showLicenseOptimization !== false) {
+    navItems.push({ key: LICENSE_OPT_KEY, title: 'Lizenz-Optimierung', icon: 'Savings', group: GROUP_LICENSING, active: !!inLicenseOpt, onClick: () => setActiveKey(LICENSE_OPT_KEY) });
+  }
+  if (props.showStorage !== false) {
+    navItems.push({ key: STORAGE_KEY, title: 'Dataverse-Speicher', icon: 'Database', group: GROUP_LICENSING, active: !!inStorage, onClick: () => setActiveKey(STORAGE_KEY) });
   }
   if (props.showActions && actionSetup && actionSetup.listExists && isGroupMember) {
     navItems.push({ key: ACTION_LOG_KEY, title: 'Aktionsprotokoll', icon: 'History', group: GROUP_GOVERNANCE, active: !!inActionLog, onClick: () => setActiveKey(ACTION_LOG_KEY) });
@@ -1883,7 +1942,7 @@ const CoeCockpit: React.FC<ICoeCockpitProps> = props => {
           <>
             {renderAccessNotice()}
 
-            {showKpis && !inOverview && !inSecurity && !inCredits && !inPremium && !inUserLicenses && <KpiStrip tables={tables} kpis={kpis} activeKey={activeKey} onSelect={setActiveKey} />}
+            {showKpis && !inOverview && !inSecurity && !inCredits && !inPremium && !inUserLicenses && !inOrphans && !inLicenseOpt && !inStorage && !inMessages && <KpiStrip tables={tables} kpis={kpis} activeKey={activeKey} onSelect={setActiveKey} />}
 
             {navItems.length > 0 && !useSideNav && (
               <nav className={styles.tabs} role="tablist" aria-label="Tabellen">

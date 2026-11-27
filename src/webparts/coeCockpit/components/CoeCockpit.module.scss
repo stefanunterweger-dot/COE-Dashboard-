@@ -4135,3 +4135,255 @@ button.solItem {
   color: var(--coe-text-2);
   font-variant-numeric: tabular-nums;
 }
+
+.linkButton {
+  padding: 0;
+  font: inherit;
+  font-weight: 600;
+  text-align: left;
+  color: var(--coe-text);
+  background: none;
+  border: 0;
+  cursor: pointer;
+
+  &:hover {
+    color: var(--coe-accent);
+    text-decoration: underline;
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--coe-accent);
+    outline-offset: 2px;
+  }
+}
+
+// Lizenz-Optimierung
+.loUnused {
+  color: var(--coe-danger);
+  background: var(--coe-danger-bg);
+}
+
+.loUsed {
+  color: var(--coe-success);
+  background: var(--coe-success-bg);
+}
+
+.loDayActive {
+  color: var(--coe-accent) !important;
+  background: #fff !important;
+  font-weight: 600;
+}
+
+.loPrices {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+  padding: 0 2px;
+  font-size: 13px;
+}
+
+.loPrice {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--coe-text);
+
+  input {
+    width: 64px;
+    height: 26px;
+    padding: 0 6px;
+    font: inherit;
+    text-align: right;
+    color: var(--coe-text);
+    background: var(--coe-bg);
+    border: 1px solid var(--coe-border);
+    border-radius: 6px;
+  }
+}
+
+// Dataverse-Speicher
+.stGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 12px;
+}
+
+.stCard {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px 16px;
+  background: var(--coe-bg);
+  border: 1px solid var(--coe-border);
+  border-radius: 10px;
+}
+
+.stTitle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--coe-text-2);
+}
+
+.stValue {
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--coe-text);
+  font-variant-numeric: tabular-nums;
+
+  span {
+    font-size: 13px;
+    font-weight: 400;
+    color: var(--coe-text-2);
+  }
+}
+
+.stMeter {
+  position: relative;
+  height: 8px;
+  overflow: hidden;
+  background: var(--coe-border-soft);
+  border-radius: 4px;
+
+  > span {
+    position: absolute;
+    inset: 0 auto 0 0;
+    background: var(--coe-status-ok, var(--coe-success));
+    border-radius: 4px;
+  }
+}
+
+.stMeterWarn > span {
+  background: var(--coe-status-warning, #f2a600);
+}
+
+.stMeterFull > span {
+  background: var(--coe-status-critical, #d13438);
+}
+
+.stHint {
+  font-size: 12px;
+  color: var(--coe-text-2);
+}
+
+.stBar {
+  display: inline-block;
+  width: 80px;
+  height: 6px;
+  margin-right: 8px;
+  vertical-align: middle;
+  background: var(--coe-border-soft);
+  border-radius: 3px;
+  overflow: hidden;
+
+  > span {
+    display: block;
+    height: 100%;
+    background: var(--coe-accent);
+  }
+}
+
+// „Was ändert Microsoft?“
+.mcList {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.mcItem {
+  border: 1px solid var(--coe-border);
+  border-radius: 10px;
+  background: var(--coe-bg);
+  overflow: hidden;
+}
+
+.mcHead {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  width: 100%;
+  padding: 12px 14px;
+  font: inherit;
+  text-align: left;
+  color: var(--coe-text);
+  background: none;
+  border: 0;
+  cursor: pointer;
+
+  &:hover {
+    background: var(--coe-hover);
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--coe-accent);
+    outline-offset: -2px;
+  }
+}
+
+.mcMain {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.mcTitle {
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.35;
+}
+
+.mcMeta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  font-size: 12px;
+  color: var(--coe-text-2);
+}
+
+.mcDue {
+  flex: 0 0 auto;
+  padding: 4px 10px;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+  color: var(--coe-warning);
+  background: var(--coe-warning-bg);
+  border-radius: 10px;
+}
+
+.mcDueSoon {
+  color: var(--coe-danger);
+  background: var(--coe-danger-bg);
+}
+
+.mcBody {
+  padding: 0 14px 12px;
+  border-top: 1px solid var(--coe-border-soft);
+
+  iframe {
+    width: 100%;
+    min-height: 280px;
+    margin-top: 10px;
+    border: 0;
+    background: #fff;
+    border-radius: 6px;
+  }
+}
+
+.mcLinks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 8px;
+  font-size: 13px;
+}
+
+a.ovHeroChip {
+  text-decoration: none;
+}

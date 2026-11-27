@@ -169,6 +169,18 @@ export const SettingsPanel: React.FC<ISettingsPanelProps> = props => {
             >
               <Toggle checked={v.showUserLicenses} onChange={(_e, c) => set({ showUserLicenses: !!c })} />
             </Row>
+            <Row label="Was ändert Microsoft?" description="Message Center live aus Microsoft Graph, gefiltert auf die Power Platform. Berechtigung „ServiceMessage.Read.All“ (Skript -MessageCenter).">
+              <Toggle checked={v.showMessageCenter} onChange={(_e, c) => set({ showMessageCenter: !!c })} />
+            </Row>
+            <Row label="Verwaiste Ressourcen" description="Apps und Flows ohne Besitzer (CoE) – gesammelt neu zuweisen (nur Gruppenmitglieder mit aktiver Rolle).">
+              <Toggle checked={v.showOrphans} onChange={(_e, c) => set({ showOrphans: !!c })} />
+            </Row>
+            <Row label="Lizenz-Optimierung" description="Premium-Lizenzen ohne Nutzung: Lizenzen live (Graph), Nutzung aus dem CoE-Audit-Log und den Flows.">
+              <Toggle checked={v.showLicenseOptimization} onChange={(_e, c) => set({ showLicenseOptimization: !!c })} />
+            </Row>
+            <Row label="Dataverse-Speicher" description="Kontingent Datenbank/Datei/Log live (Power Platform API), Verbrauch je Environment aus dem CoE.">
+              <Toggle checked={v.showStorage} onChange={(_e, c) => set({ showStorage: !!c })} />
+            </Row>
             <Row label="Default Environment" description="Eigener Bereich – Details unter „Default Environment“">
               <Toggle checked={v.showDefaultEnvironment} onChange={(_e, c) => set({ showDefaultEnvironment: !!c })} />
             </Row>

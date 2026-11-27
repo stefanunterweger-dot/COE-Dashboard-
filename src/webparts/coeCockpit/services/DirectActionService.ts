@@ -245,16 +245,18 @@ export class DirectActionService {
         const who = await this.target(req);
         if (isApp) {
           await this.call(POWERAPPS_RESOURCE, 'POST', `${app}/modifyAppOwner?${v2016}`, { roleForOldAppOwner: 'CanEdit', newAppOwner: who });
-          return {
-            text: `${req.targetName || who} ist jetzt Besitzer der App; der bisherige Besitzer ist Mitbesitzer.`,
-            note: await this.coeUpdate('admin_apps', req.coeRecordId, { 'admin_AppOwner@odata.bind': `/admin_makers(${who})` })
-          };
+          const note = await this.coeUpdate('admin_apps', req.coeRecordId, { 'admin_AppOwner@odata.bind': `/admin_makers(${who})` });
+          // nicht mehr verwaist (eigener Versuch – ältere CoE-Versionen kennen das Feld evtl. nicht)
+          await this.coeUpdate('admin_apps', req.coeRecordId, { cr5d5_appisorphaned: 'No' });
+          return { text: `${req.targetName || who} ist jetzt Besitzer der App; der bisherige Besitzer ist Mitbesitzer.`, note };
         }
         if (isFlow) {
           await this.call(FLOW_RESOURCE, 'POST', `${flow}/modifyOwners?${v2016}`, { put: [{ properties: { principal: { id: who, type: ptype }, roleName: 'CanEdit' } }] });
+          const note = await this.coeUpdate('admin_flows', req.coeRecordId, { 'admin_DerivedOwner@odata.bind': `/admin_makers(${who})` });
+          await this.coeUpdate('admin_flows', req.coeRecordId, { cr5d5_flowisorphaned: 'No' });
           return {
             text: `${req.targetName || who} ist jetzt Mitbesitzer des Flows. Den Ersteller eines Flows außerhalb einer Solution kann Power Automate nicht ändern.`,
-            note: await this.coeUpdate('admin_flows', req.coeRecordId, { 'admin_DerivedOwner@odata.bind': `/admin_makers(${who})` })
+            note
           };
         }
         break;

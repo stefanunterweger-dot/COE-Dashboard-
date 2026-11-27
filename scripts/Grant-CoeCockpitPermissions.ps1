@@ -11,6 +11,7 @@
     -Licenses          Microsoft Graph „User.Read.All“, „GroupMember.Read.All“ und „Organization.Read.All“ – Lizenzprüfung in
                        „Betroffen ab Februar 2027“ (Lizenzen der Berechtigten, Mitglieder freigegebener Gruppen) und
                        „Lizenzen je Benutzer“ (gekaufte/freie Lizenzen aus „subscribedSkus“)
+    -MessageCenter     Microsoft Graph „ServiceMessage.Read.All“ – Ansicht „Was ändert Microsoft?“ (Message Center)
     -PowerPlatformApi  Power Platform API „Licensing.Allocations.Read“, „Licensing.BillingPolicies.Read“,
                        „EnvironmentManagement.Environments.Read“ – Ansichten „Copilot-Credits“ und „Abrechnungspläne“
     -Actions           Aktionen direkt im Webpart (ohne Flow, im Namen der angemeldeten Person):
@@ -36,17 +37,20 @@
   .\Grant-CoeCockpitPermissions.ps1
 .EXAMPLE
   .\Grant-CoeCockpitPermissions.ps1 -Actions
+.EXAMPLE
+  .\Grant-CoeCockpitPermissions.ps1 -MessageCenter
 #>
 param(
   [switch]$Dataverse,
   [switch]$MailSend,
   [switch]$Licenses,
+  [switch]$MessageCenter,
   [switch]$PowerPlatformApi,
   [switch]$Actions
 )
 $ErrorActionPreference = 'Stop'
-if (-not $Dataverse -and -not $MailSend -and -not $Licenses -and -not $PowerPlatformApi -and -not $Actions) {
-  $Dataverse = $true; $MailSend = $true; $Licenses = $true; $PowerPlatformApi = $true; $Actions = $true
+if (-not $Dataverse -and -not $MailSend -and -not $Licenses -and -not $MessageCenter -and -not $PowerPlatformApi -and -not $Actions) {
+  $Dataverse = $true; $MailSend = $true; $Licenses = $true; $MessageCenter = $true; $PowerPlatformApi = $true; $Actions = $true
 }
 
 # Install-Module Microsoft.Graph.Applications, Microsoft.Graph.Identity.SignIns -Scope CurrentUser   # nur falls noch nicht installiert
@@ -106,6 +110,10 @@ if ($MailSend) {
 }
 if ($Licenses) {
   Grant-Scopes $graph @('User.Read.All', 'GroupMember.Read.All', 'Organization.Read.All')
+}
+
+if ($MessageCenter) {
+  Grant-Scopes $graph @('ServiceMessage.Read.All')
 }
 
 if ($PowerPlatformApi -or $Actions) {

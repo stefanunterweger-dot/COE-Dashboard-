@@ -10,6 +10,7 @@ import { ACTION_TIMING } from '../src/webparts/coeCockpit/components/ActionDialo
 import { resetCreditsCache } from '../src/webparts/coeCockpit/components/CopilotCreditsView';
 import { resetPremiumCache } from '../src/webparts/coeCockpit/components/PremiumView';
 import { resetUserLicenseCache } from '../src/webparts/coeCockpit/models/userLicenses';
+import { resetMessageCache } from '../src/webparts/coeCockpit/models/messageCenter';
 import { IWebPartSettings } from '../src/webparts/coeCockpit/models/settings';
 import { IMailTemplateOverrides } from '../src/webparts/coeCockpit/models/mailTemplates';
 import { ActionService, IActionSetupState } from '../src/webparts/coeCockpit/services/ActionService';
@@ -117,6 +118,10 @@ const App: React.FC = () => {
     deleteRequiresStop: true,
     showUserLicenses: true,
     hideAppBar: true,
+    showOrphans: true,
+    showLicenseOptimization: true,
+    showStorage: true,
+    showMessageCenter: true,
     mailTemplates: {} as IMailTemplateOverrides
   });
   const notify = React.useMemo(() => ({
@@ -129,7 +134,7 @@ const App: React.FC = () => {
   const [notMember, setNotMember] = React.useState<boolean>(false);
   const [noUserRead, setNoUserRead] = React.useState<boolean>(false);
   (window as unknown as { __coeDenyUserRead?: boolean }).__coeDenyUserRead = noUserRead;
-  React.useMemo(() => { resetPremiumCache(); resetUserLicenseCache(); }, [noUserRead, noAdmin]);
+  React.useMemo(() => { resetPremiumCache(); resetUserLicenseCache(); resetMessageCache(); }, [noUserRead, noAdmin]);
   (window as unknown as { __spNotMember?: boolean }).__spNotMember = notMember;
   (window as unknown as { __coePpApiDeny?: string }).__coePpApiDeny = noPpApi ? 'consent' : noAdmin ? 'forbidden' : '';
   React.useMemo(() => resetCreditsCache(), [noAdmin, noPpApi]);
@@ -229,6 +234,10 @@ const App: React.FC = () => {
           showCopilotCredits={p.showCopilotCredits}
           showUserLicenses={p.showUserLicenses}
           hideAppBar={p.hideAppBar}
+          showOrphans={p.showOrphans}
+          showLicenseOptimization={p.showLicenseOptimization}
+          showStorage={p.showStorage}
+          showMessageCenter={p.showMessageCenter}
           pipelinesHostUrl={p.pipelinesHostUrl}
           notify={notify}
           notifyAutoSend={p.notifyAutoSend}

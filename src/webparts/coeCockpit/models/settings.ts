@@ -21,6 +21,10 @@ export interface ISettingsValues {
   showCopilotCredits: boolean;
   showPremium2027: boolean;
   showUserLicenses: boolean;
+  showOrphans: boolean;
+  showLicenseOptimization: boolean;
+  showStorage: boolean;
+  showMessageCenter: boolean;
   pipelinesHostUrl: string;
   notifyAutoSend: boolean;
   notifyTone: 'sie' | 'du';

@@ -417,7 +417,7 @@ const connIdentities = Array.from({ length: 260 }, () => {
 const capacity: Record<string, unknown>[] = [];
 environments.filter(e => !e.admin_environmentdeleted && e.admin_environmentcdsinstanceurl).forEach(e => {
   [['Database', 1.0], ['File', 2.5], ['Log', 0.3]].forEach(([type, scale]) => {
-    const used = Math.round(rnd() * 4000 * (scale as number)) / 100;
+    const used = Math.round(rnd() * 4000 * (scale as number));
     capacity.push({ ...COMMON(), admin_environmentcapacityid: guid(), admin_capacitytype: type, _admin_environment_value: e.admin_environmentid, admin_actualconsumption: used, admin_ratedconsumption: Math.round(used * 1.05 * 100) / 100, admin_approvedcapacity: null, admin_percentusedofapproved: null, admin_capacityunit: 'MB', admin_environmentdeleted: false });
   });
 });
