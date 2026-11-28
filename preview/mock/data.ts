@@ -146,8 +146,9 @@ const environments = envSeeds.map(e => {
     admin_environmentname: e.sku === 'Default' ? `Default-${id}` : id,
     admin_displayname: e.name,
     admin_environmentsku: e.sku,
-    _admin_maker_value: maker.admin_makerid,
-    admin_environmentmakerdisplayname: maker.admin_displayname,
+    // Leere Developer-Environments: im CoE oft „SYSTEM“ als Ersteller (z. B. über das Admin Center angelegt) – dann kein Empfänger
+    _admin_maker_value: e.sku === 'Developer' && e.weight === 0 ? SYSTEM_MAKER.admin_makerid : maker.admin_makerid,
+    admin_environmentmakerdisplayname: e.sku === 'Developer' && e.weight === 0 ? 'SYSTEM' : maker.admin_displayname,
     admin_governanceprotectionlevel: e.level || null,
     admin_environmentruntimestate: e.disabled ? 'Disabled' : 'Enabled',
     admin_environmentstate: e.deleted ? 'Deleted' : 'Ready',
