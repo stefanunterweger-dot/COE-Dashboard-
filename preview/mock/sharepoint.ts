@@ -32,7 +32,7 @@ export function seedNotifyEntry(item: Record<string, unknown>): void {
   const l = all().lists[NOTIFY];
   l.exists = true;
   l.fields = ['EnvironmentId', 'SentAt', 'SentBy', 'SentByEmail', 'Method', 'Recipients', 'Subject'];
-  l.items.push(item);
+  l.items.push({ ...item, Id: l.nextId++, Created: new Date().toISOString() });
 }
 
 /** Vorbelegung der Aktionen: Gruppe mit dem angemeldeten Admin, eingerichtete Liste. */
@@ -202,6 +202,8 @@ function handle(method: 'GET' | 'POST', url: string, body: string | undefined, h
     if (orderby && !/^ID(%20|\s|\+)/.test(orderby) && list.items.length > 5000) {
       return respond(500, { 'odata.error': { message: { value: 'The attempted operation is prohibited because it exceeds the list view threshold.' } } });
     }
+    // von Tests direkt eingefügte Einträge bekommen wie in SharePoint eine ID
+    list.items.forEach(x => { if (x.Id === undefined) { x.Id = list.nextId++; } });
     const desc = /desc/i.test(decodeURIComponent(orderby));
     const top = Number((/\$top=(\d+)/.exec(u) || [])[1] || 100);
     const after = Number((/p_ID=(\d+)/.exec(u) || [])[1] || 0);
