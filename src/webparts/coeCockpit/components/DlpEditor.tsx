@@ -51,7 +51,11 @@ const CHIP: { [g in DlpGroup]: string } = { Confidential: styles.dlpChipBusiness
 const GROUP_ICON: { [g in DlpGroup]: string } = { Confidential: 'Lock', General: 'Unlock', Blocked: 'Blocked2' };
 const errText = (e: unknown): string => (e instanceof Error ? e.message : String(e));
 const LOGWARN = ' Hinweis: Der Eintrag im Aktionsprotokoll konnte nicht abgeschlossen werden (steht noch auf „In Arbeit“) – bitte in der Liste „CoE Cockpit Aktionen“ nachtragen.';
-const csvEsc = (v: string): string => (/[;"\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v);
+/** CSV-Feld: Trennzeichen/Anführungszeichen maskieren; Formeln (=, +, -, @ am Anfang – Namen kommen von Makern) mit ' entschärfen. */
+const csvEsc = (raw: string): string => {
+  const v = /^[=+\-@\t\r]/.test(raw) ? `'${raw}` : raw;
+  return /[;"\n\r]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v;
+};
 
 type SaveKind = 'update' | 'create';
 
@@ -69,6 +73,8 @@ export const DlpEditor: React.FC<IDlpEditorProps> = props => {
   const [impact, setImpact] = React.useState<IDlpImpactResult | undefined>(undefined);
   const [impactKey, setImpactKey] = React.useState<string>('');
   const [impactLoading, setImpactLoading] = React.useState<boolean>(false);
+  /** Regelstand, für den die letzte Berechnung fehlgeschlagen ist (kein automatischer Neuversuch in Schleife) */
+  const [impactFailedKey, setImpactFailedKey] = React.useState<string>('');
   const [impactError, setImpactError] = React.useState<string>('');
   const [impactKind, setImpactKind] = React.useState<'app' | 'flow'>('app');
   const [onlyNew, setOnlyNew] = React.useState<boolean>(false);
@@ -80,6 +86,9 @@ export const DlpEditor: React.FC<IDlpEditorProps> = props => {
   const [saveDialog, setSaveDialog] = React.useState<SaveKind | undefined>(undefined);
   const [leaveDialog, setLeaveDialog] = React.useState<boolean>(false);
   const [taskProgress, setTaskProgress] = React.useState<{ done: number; total: number; failed: number } | undefined>(undefined);
+  /** „Zur Aufgabenliste“ läuft (ab dem Klick, auch während die vorhandenen Einträge gelesen werden) */
+  const [taskBusy, setTaskBusy] = React.useState<boolean>(false);
+  const taskRunning = React.useRef<boolean>(false);
   const [changed, setChanged] = React.useState<boolean>(false);
   const keyOf = (x: IDlpWorking): string => JSON.stringify([x.displayName.trim(), x.draftName.trim(), x.defaultGroup, x.groups, x.scope, x.envs]);
   /** Stand beim Öffnen bzw. beim letzten Speichern (Entwurf/neue Richtlinie) */
@@ -123,7 +132,7 @@ export const DlpEditor: React.FC<IDlpEditorProps> = props => {
   const dirty = isDirty(w, connectors);
   /** Änderungen, die weder im Tenant noch als Entwurf gespeichert sind */
   const unsaved = w.mode === 'edit' && w.policy ? dirty : keyOf(w) !== savedKey;
-  const diff = diffConnectors(w, connectors);
+  const diff = diffConnectors(w, connectors, unblockable);
   const nameOk = w.displayName.trim().length > 0;
   const envOk = !needEnvs || w.scope === 'ExceptEnvironments' || w.envs.length > 0;
   const stateKey = JSON.stringify([w.defaultGroup, w.groups, w.scope, w.envs]);
@@ -135,30 +144,35 @@ export const DlpEditor: React.FC<IDlpEditorProps> = props => {
     }
     setStep(target);
     setVisited(prev => ({ ...prev, [target]: true }));
+    setImpactFailedKey('');
   };
 
   // Auswirkung berechnen, sobald der Schritt geöffnet wird (und neu, wenn sich die Regeln geändert haben)
   const runImpact = (fresh: boolean): void => {
     setImpactLoading(true);
     setImpactError('');
+    setImpactFailedKey('');
     const key = stateKey;
     loadInventory(props.service, props.maxRecords, fresh).then(inv => {
-      setImpact(computeImpact(w, inv, base.envs));
+      setImpact(computeImpact(w, inv, base.envs, unblockable));
       setImpactKey(key);
       setImpactSel({});
       setImpactLoading(false);
-    }, e => { setImpactError(`Inventar aus dem CoE nicht lesbar: ${errText(e)}`); setImpactLoading(false); });
+    }, e => { setImpactError(`Inventar aus dem CoE nicht lesbar: ${errText(e)}`); setImpactFailedKey(key); setImpactLoading(false); });
   };
+  // auch nach dem Ende einer Berechnung: wurden die Regeln währenddessen geändert, gilt das Ergebnis nicht mehr → neu berechnen
   React.useEffect(() => {
-    if ((step === 4 || step === 5) && impactKey !== stateKey && !impactLoading) {
+    if ((step === 4 || step === 5) && impactKey !== stateKey && !impactLoading && impactFailedKey !== stateKey) {
       runImpact(false);
     }
-  }, [step, stateKey]);
+  }, [step, stateKey, impactLoading]);
+  /** Ergebnis gehört zu den aktuellen Regeln */
+  const impactCurrent = !!impact && impactKey === stateKey;
 
   // ---------- Connectors ----------
   const q = conSearch.trim().toLowerCase();
-  const groupCount = (g: DlpGroup): number => connectors.filter(c => groupOf(w, c.id) === g).length;
-  const visibleCons = connectors.filter(c => groupOf(w, c.id) === group && (!q || c.displayName.toLowerCase().indexOf(q) >= 0 || c.name.toLowerCase().indexOf(q) >= 0));
+  const groupCount = (g: DlpGroup): number => connectors.filter(c => groupOf(w, c.id, unblockable) === g).length;
+  const visibleCons = connectors.filter(c => groupOf(w, c.id, unblockable) === group && (!q || c.displayName.toLowerCase().indexOf(q) >= 0 || c.name.toLowerCase().indexOf(q) >= 0));
   const selectedCons = visibleCons.filter(c => conSel[c.id.toLowerCase()]);
   const move = (to: DlpGroup): void => {
     const groups = { ...w.groups };
@@ -193,14 +207,14 @@ export const DlpEditor: React.FC<IDlpEditorProps> = props => {
     { key: 'apps', label: 'Apps', numeric: true, sort: c => c.apps, render: c => formatNumber(c.apps) },
     { key: 'flows', label: 'Flows', numeric: true, sort: c => c.flows, render: c => formatNumber(c.flows) },
     {
-      key: 'hint', label: 'Hinweis', sort: c => (w.base && groupOf(w.base, c.id) !== groupOf(w, c.id) ? 0 : 1),
+      key: 'hint', label: 'Hinweis', sort: c => (w.base && groupOf(w.base, c.id, unblockable) !== groupOf(w, c.id, unblockable) ? 0 : 1),
       render: c => {
         const id = c.id.toLowerCase();
-        const was = w.base ? groupOf(w.base, c.id) : undefined;
+        const was = w.base ? groupOf(w.base, c.id, unblockable) : undefined;
         return (
           <span className={styles.dlpChips}>
-            {was && was !== groupOf(w, c.id) && <Pill tone="warning" title="In dieser Sitzung verschoben">vorher {GROUP_LABEL[was]}</Pill>}
-            {!w.groups[id] && <Pill tone="neutral" title="Nicht ausdrücklich zugeordnet – gilt über die Standardgruppe">Standard</Pill>}
+            {was && was !== groupOf(w, c.id, unblockable) && <Pill tone="warning" title="In dieser Sitzung verschoben">vorher {GROUP_LABEL[was]}</Pill>}
+            {!w.groups[id] && <Pill tone="neutral" title={w.defaultGroup === 'Blocked' && unblockable[id] ? 'Nicht ausdrücklich zugeordnet – Standardgruppe ist „Blockiert“, nicht blockierbare Connectors gelten dann als Non-Business' : 'Nicht ausdrücklich zugeordnet – gilt über die Standardgruppe'}>Standard</Pill>}
             {unblockable[id] && <Pill tone="info" title="Lässt sich laut Microsoft nicht blockieren">nicht blockierbar</Pill>}
           </span>
         );
@@ -292,7 +306,7 @@ export const DlpEditor: React.FC<IDlpEditorProps> = props => {
     { key: 'mod', label: 'Geändert', sort: i => i.resource.modified, render: i => (i.resource.modified ? formatDate(new Date(i.resource.modified)) : <span className={styles.muted}>–</span>) }
   ]);
   const exportImpact = (): void => {
-    if (!impact) {
+    if (!impact || !impactCurrent) {
       return;
     }
     const rows = impact.apps.concat(impact.flows);
@@ -304,41 +318,53 @@ export const DlpEditor: React.FC<IDlpEditorProps> = props => {
     downloadText(`DLP-Auswirkung_${w.displayName.replace(/[\\/:*?"<>|]/g, '_')}_${new Date().toISOString().slice(0, 10)}.csv`, '﻿' + lines.join('\r\n'), 'text/csv;charset=utf-8');
   };
   const toTaskList = async (): Promise<void> => {
-    if (!impact) {
+    // nur ein Durchlauf gleichzeitig und nur mit dem Ergebnis für die aktuellen Regeln
+    if (!impact || !impactCurrent || taskRunning.current) {
       return;
     }
-    const all = impact.apps.concat(impact.flows);
-    const chosen = all.filter(i => impactSel[ikey(i)]);
-    const list = (chosen.length ? chosen : all.filter(i => !onlyNew || !i.already)).slice(0, MAX_TASKS);
-    setNotice(undefined);
-    let existing: { [k: string]: true } = {};
+    taskRunning.current = true;
+    setTaskBusy(true);
+    setTaskProgress(undefined);
     try {
-      (await loadTasks(props.service)).filter(t => t.policyName === w.displayName.trim().slice(0, 100)).forEach(t => { existing[t.resourceCoeId] = true; });
-    } catch (e) {
-      setNotice({ type: MessageBarType.error, text: `Die CoE-Tabelle „DLP Impact Analysis“ ist nicht lesbar: ${errText(e)}` });
-      return;
-    }
-    const todo = list.filter(i => !existing[i.resource.coeId.toLowerCase()]);
-    existing = {};
-    setTaskProgress({ done: 0, total: todo.length, failed: 0 });
-    let failed = 0;
-    let lastError = '';
-    for (let n = 0; n < todo.length; n++) {
+      const all = impact.apps.concat(impact.flows);
+      const chosen = all.filter(i => impactSel[ikey(i)]);
+      const candidates = chosen.length ? chosen : all.filter(i => !onlyNew || !i.already);
+      setNotice(undefined);
+      const existing: { [k: string]: true } = {};
       try {
-        await addTask(props.service, todo[n], w.displayName.trim(), w.policyName || '', conLabel);
+        (await loadTasks(props.service)).filter(t => t.policyName === w.displayName.trim().slice(0, 100)).forEach(t => { existing[t.resourceCoeId] = true; });
       } catch (e) {
-        failed++;
-        lastError = errText(e);
+        setNotice({ type: MessageBarType.error, text: `Die CoE-Tabelle „DLP Impact Analysis“ ist nicht lesbar: ${errText(e)}` });
+        return;
       }
-      setTaskProgress({ done: n + 1, total: todo.length, failed });
+      // erst die schon eingetragenen herausnehmen, dann kürzen – sonst kämen weitere Betroffene nie hinein
+      const pending = candidates.filter(i => !existing[i.resource.coeId.toLowerCase()]);
+      const todo = pending.slice(0, MAX_TASKS);
+      const skipped = candidates.length - pending.length;
+      const remaining = pending.length - todo.length;
+      setTaskProgress({ done: 0, total: todo.length, failed: 0 });
+      let failed = 0;
+      let lastError = '';
+      for (let n = 0; n < todo.length; n++) {
+        try {
+          await addTask(props.service, todo[n], w.displayName.trim(), w.policyName || '', conLabel);
+        } catch (e) {
+          failed++;
+          lastError = errText(e);
+        }
+        setTaskProgress({ done: n + 1, total: todo.length, failed });
+      }
+      setNotice({
+        type: failed || remaining ? MessageBarType.warning : MessageBarType.success,
+        text: `${formatNumber(todo.length - failed)} Einträge in die Aufgabenliste übernommen${skipped ? `, ${formatNumber(skipped)} standen schon drin` : ''}.`
+          + (remaining ? ` Noch ${formatNumber(remaining)} offen (höchstens ${formatNumber(MAX_TASKS)} je Durchlauf) – bitte erneut „Zur Aufgabenliste“ ausführen.` : '')
+          + (failed ? ` ${formatNumber(failed)} Fehler (zuletzt: ${lastError}).` : '') + ' Benachrichtigen kannst du die Maker über die CoE-App „DLP Impact Analysis“.'
+      });
+      setImpactSel({});
+    } finally {
+      taskRunning.current = false;
+      setTaskBusy(false);
     }
-    const skipped = list.length - todo.length;
-    setNotice({
-      type: failed ? MessageBarType.warning : MessageBarType.success,
-      text: `${formatNumber(todo.length - failed)} Einträge in die Aufgabenliste übernommen${skipped ? `, ${formatNumber(skipped)} standen schon drin` : ''}.`
-        + (failed ? ` ${formatNumber(failed)} Fehler (zuletzt: ${lastError}).` : '') + ' Benachrichtigen kannst du die Maker über die CoE-App „DLP Impact Analysis“.'
-    });
-    setImpactSel({});
   };
 
   // ---------- Speichern ----------
@@ -569,8 +595,10 @@ export const DlpEditor: React.FC<IDlpEditorProps> = props => {
             <h3 className={styles.dlpTitle}>Auswirkung</h3>
             <div className={styles.muted}>Apps und Flows laut CoE-Inventar, die mit diesen Regeln einen blockierten Connector nutzen oder Business- und Non-Business-Connectors mischen.</div>
             {impactLoading && <ProgressIndicator label="Inventar wird ausgewertet …" />}
-            {impactError && <MessageBar messageBarType={MessageBarType.error}>{impactError}</MessageBar>}
-            {impact && (
+            {impactError && (
+              <MessageBar messageBarType={MessageBarType.error} actions={impactLoading ? undefined : <DefaultButton text="Erneut versuchen" onClick={() => runImpact(true)} />}>{impactError}</MessageBar>
+            )}
+            {impact && impactCurrent && (
               <>
                 <div className={styles.secGrid}>
                   <Tile label="Betroffene Apps" hint={w.base ? `davon neu: ${formatNumber(newCount(impact.apps))}` : `von ${formatNumber(impact.analyzedApps)} geprüften`} icon="AppIconDefault"
@@ -593,15 +621,15 @@ export const DlpEditor: React.FC<IDlpEditorProps> = props => {
                     <DefaultButton
                       text={Object.keys(impactSel).length ? `Ausgewählte zur Aufgabenliste (${formatNumber(Object.keys(impactSel).length)})` : 'Alle zur Aufgabenliste'}
                       iconProps={{ iconName: 'TaskManager' }}
-                      disabled={!!taskProgress && taskProgress.done < taskProgress.total || !(impact.apps.length + impact.flows.length)}
+                      disabled={taskBusy || !(impact.apps.length + impact.flows.length)}
                       onClick={() => { toTaskList().catch(e => setNotice({ type: MessageBarType.error, text: errText(e) })); }}
                     />
                   )}
                   <DefaultButton text="CSV" iconProps={{ iconName: 'ExcelDocument' }} onClick={exportImpact} disabled={!(impact.apps.length + impact.flows.length)} />
                 </div>
-                {taskProgress && taskProgress.done < taskProgress.total && (
-                  <ProgressIndicator label={`Aufgabenliste: ${formatNumber(taskProgress.done)} von ${formatNumber(taskProgress.total)}`} percentComplete={taskProgress.total ? taskProgress.done / taskProgress.total : 1} />
-                )}
+                {taskBusy && (taskProgress
+                  ? <ProgressIndicator label={`Aufgabenliste: ${formatNumber(taskProgress.done)} von ${formatNumber(taskProgress.total)}`} percentComplete={taskProgress.total ? taskProgress.done / taskProgress.total : 1} />
+                  : <ProgressIndicator label="Aufgabenliste: vorhandene Einträge werden gelesen …" />)}
                 <SortTable<IDlpImpact>
                   columns={impactCols}
                   rows={visibleImpact}

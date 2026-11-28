@@ -178,7 +178,10 @@ export class PowerPlatformApiService {
     const out: T[] = (first && first.value) || [];
     let page: IPaged<T> | undefined = first;
     for (let n = 0; n < 50 && page; n++) {
-      const next = page['@odata.nextLink'] || page.nextLink;
+      // Folgelink in jeder Schreibweise („@odata.nextLink“, „@odata.nextlink“, „nextLink“)
+      const p: IPaged<T> = page;
+      const nextKey = Object.keys(p).filter(k => /^(@odata\.)?nextlink$/i.test(k))[0];
+      const next = nextKey ? String((p as { [k: string]: unknown })[nextKey] || '') : '';
       const token = page.continuationToken || page.continuationtoken;
       let url = '';
       if (next) {

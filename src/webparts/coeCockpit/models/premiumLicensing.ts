@@ -1,7 +1,7 @@
 import { MSGraphClientFactory, MSGraphClientV3 } from '@microsoft/sp-http';
 import { IRecord } from './ITableConfig';
-import { DataverseService, IAttributeMeta } from '../services/DataverseService';
-import { detectManagedAttribute, managedValue } from './devEnvironments';
+import { DataverseService } from '../services/DataverseService';
+import { chooseManagedAttribute, environmentAttributes, managedValue } from './devEnvironments';
 import { displayValue, rawValue } from '../utils/format';
 
 /**
@@ -20,13 +20,17 @@ export const PREMIUM_DEADLINE = new Date(2027, 1, 1);
 export const USAGE_DAYS = 30;
 const CHUNK = 15;
 const GRAPH_BATCH = 20;
+const BATCH_RETRIES = 3;
+const APP_LIMIT = 50000;
+const ROLE_LIMIT = 100000;
 
 /** Service-Pläne, die laut Microsoft für Apps in Managed Environments genügen (Graph: servicePlanName). */
 export const QUALIFYING_PLANS: { [plan: string]: 'premium' | 'trial' } = {
   POWERAPPS_PER_USER: 'premium', POWERAPPS_PER_USER_GCC: 'premium', POWERAPPS_P2: 'premium',
   FLOW_PER_USER: 'premium', FLOW_PER_USER_GCC: 'premium', FLOW_P2: 'premium', POWER_AUTOMATE_ATTENDED_RPA: 'premium',
   POWERAPPS_DYN_APPS: 'premium', POWERAPPS_DYN_P2: 'premium', FLOW_DYN_APPS: 'premium', FLOW_DYN_P2: 'premium',
-  POWERAPPS_P2_VIRAL: 'trial', FLOW_P2_VIRAL: 'trial'
+  // Testversionen (Power Apps Plan 2 Trial). Nicht „FLOW_P2_VIRAL“: das ist „Power Automate Free“ (SKU FLOW_FREE) – keine Premium-Lizenz.
+  POWERAPPS_P2_VIRAL: 'trial', FLOW_P2_VIRAL_REAL: 'trial'
 };
 /** Pro-App-Lizenzen (benutzerbezogen, deckt nur einzelne Apps). */
 const PER_APP_PLANS = ['POWERAPPS_PER_APP', 'POWERAPPS_PER_APP_NEW', 'POWERAPPS_PER_APP_IW'];
@@ -151,6 +155,34 @@ async function pool<T>(items: T[], size: number, fn: (item: T) => Promise<void>)
 
 interface IGraphErr { statusCode?: number; code?: string; message?: string }
 
+/** Wartezeit aus „Retry-After“ einer $batch-Einzelantwort, sonst 2, 4, 8 s; höchstens 30 s. */
+function retryAfterMs(headers: { [h: string]: string } | undefined, attempt: number): number {
+  const key = headers ? Object.keys(headers).filter(h => /^retry-after$/i.test(h))[0] : undefined;
+  const sec = key ? Number(headers![key]) : NaN;
+  return Math.min(!isNaN(sec) && sec >= 0 ? sec * 1000 : Math.pow(2, attempt + 1) * 1000, 30000);
+}
+
+/**
+ * Lädt je Gruppe von Environments; wird das Zeilenlimit erreicht, wird die Gruppe Environment für Environment
+ * neu geladen. Bleibt ein einzelnes Environment abgeschnitten, gibt es eine Warnung.
+ */
+async function loadComplete(part: string[], load: (ids: string[]) => Promise<{ records: IRecord[]; truncated: boolean }>,
+  what: string, warnings: string[]): Promise<IRecord[]> {
+  const res = await load(part);
+  if (!res.truncated) {
+    return res.records;
+  }
+  if (part.length === 1) {
+    warnings.push(`${what}: In einem Environment gibt es mehr Einträge als ausgewertet werden können – die Zahlen sind unvollständig.`);
+    return res.records;
+  }
+  const out: IRecord[] = [];
+  for (const id of part) {
+    out.push(...(await loadComplete([id], load, what, warnings)));
+  }
+  return out;
+}
+
 function graphStatus(e: unknown): number {
   const code = typeof e === 'object' && e !== null ? (e as IGraphErr).statusCode : undefined;
   return typeof code === 'number' ? code : 0;
@@ -189,14 +221,17 @@ export async function loadPremiumImpact(service: DataverseService, graphFactory:
 
   // 1. Managed Environments (gleiche Spalte wie „Betroffen ab 15.12.“)
   progress('Managed Environments werden ermittelt …');
-  const attrs = await service.getAttributes('admin_environment').catch(() => [] as IAttributeMeta[]);
-  const chosen = opts.managedField ? attrs.filter(a => a.selectName === opts.managedField || a.logicalName === opts.managedField)[0] : undefined;
-  const managedAttr = chosen || detectManagedAttribute(attrs);
+  const attrs = await environmentAttributes(service);
+  const managedAttr = chooseManagedAttribute(attrs, opts.managedField);
   if (!managedAttr) {
     throw new Error('Im CoE-Inventar gibt es keine Spalte für den Managed-Status (Webpart-Einstellungen → Betroffen ab 15.12. → Spalte mit dem Managed-Status).');
   }
   const typeField = attrs.some(a => a.logicalName === 'admin_environmentsku') ? 'admin_environmentsku' : 'admin_environmenttype';
-  const envRows = await service.query('admin_environments', ['admin_environmentid', 'admin_displayname', typeField, managedAttr.selectName], 'admin_environmentdeleted ne true', 10000);
+  const envRes = await service.queryAll('admin_environments', ['admin_environmentid', 'admin_displayname', typeField, managedAttr.selectName], 'admin_environmentdeleted ne true', 50000);
+  if (envRes.truncated) {
+    warnings.push('Mehr als 50.000 Environments im CoE – nur die ersten 50.000 wurden ausgewertet, die Zahlen sind unvollständig.');
+  }
+  const envRows = envRes.records;
   const managed = envRows.filter(r => managedValue(r, managedAttr.selectName) === true);
   const envById: { [id: string]: IRecord } = {};
   managed.forEach(r => { envById[lc(r.admin_environmentid)] = r; });
@@ -205,11 +240,13 @@ export async function loadPremiumImpact(service: DataverseService, graphFactory:
   // 2. Apps in diesen Environments
   progress('Apps werden geladen …');
   const appRows: IRecord[] = [];
+  const loadApps = (part: string[]): Promise<{ records: IRecord[]; truncated: boolean }> => {
+    const filter = `admin_appdeleted ne true and (${part.map(id => `_admin_appenvironment_value eq ${id}`).join(' or ')})`;
+    return service.queryAll('admin_apps', ['admin_appid', 'admin_displayname', '_admin_appenvironment_value', '_admin_appowner_value', 'admin_appsharedwithtenant'], filter, APP_LIMIT)
+      .catch(async () => service.queryAll('admin_apps', ['admin_appid', 'admin_displayname', '_admin_appenvironment_value', '_admin_appowner_value'], filter, APP_LIMIT));
+  };
   for (const part of chunks(envIds, CHUNK)) {
-    appRows.push(...await service.query('admin_apps', ['admin_appid', 'admin_displayname', '_admin_appenvironment_value', '_admin_appowner_value', 'admin_appsharedwithtenant'],
-      `admin_appdeleted ne true and (${part.map(id => `_admin_appenvironment_value eq ${id}`).join(' or ')})`, 50000)
-      .catch(async () => service.query('admin_apps', ['admin_appid', 'admin_displayname', '_admin_appenvironment_value', '_admin_appowner_value'],
-        `admin_appdeleted ne true and (${part.map(id => `_admin_appenvironment_value eq ${id}`).join(' or ')})`, 50000)));
+    appRows.push(...(await loadComplete(part, loadApps, 'Apps', warnings)));
   }
   const apps: { [id: string]: IPremiumApp } = {};
   appRows.forEach(r => {
@@ -227,10 +264,12 @@ export async function loadPremiumImpact(service: DataverseService, graphFactory:
   // 3. Berechtigungen (Besitzer, Mitbesitzer, Benutzer, Gruppen)
   progress('Berechtigungen werden geladen …');
   const roles: IRecord[] = [];
+  const loadRoles = (part: string[]): Promise<{ records: IRecord[]; truncated: boolean }> => service.queryAll('admin_powerplatformuserroles',
+    ['_admin_app_value', '_admin_powerplatformuser_value', 'admin_rolename'],
+    `statecode eq 0 and _admin_app_value ne null and (${part.map(id => `_admin_environment_value eq ${id}`).join(' or ')})`, ROLE_LIMIT);
   for (const part of chunks(envIds, CHUNK)) {
     try {
-      roles.push(...await service.query('admin_powerplatformuserroles', ['_admin_app_value', '_admin_powerplatformuser_value', 'admin_rolename'],
-        `statecode eq 0 and _admin_app_value ne null and (${part.map(id => `_admin_environment_value eq ${id}`).join(' or ')})`, 100000));
+      roles.push(...(await loadComplete(part, loadRoles, 'Berechtigungen', warnings)));
     } catch (e) {
       warnings.push(`Berechtigungen konnten nicht vollständig geladen werden: ${(e as Error).message}`);
       break;
@@ -238,10 +277,22 @@ export async function loadPremiumImpact(service: DataverseService, graphFactory:
   }
   const principalIds = roles.map(r => lc(r._admin_powerplatformuser_value)).filter((x, i, a) => !!x && a.indexOf(x) === i);
   const principals: { [id: string]: IRecord } = {};
+  // Nicht lesbare Berechtigte: ob Person, Gruppe oder „gesamter Tenant“, ist unbekannt – nicht als Person zählen
+  const lookupFailed: { [id: string]: boolean } = {};
+  let lookupError = '';
   for (const part of chunks(principalIds, 25)) {
     const rows = await service.query('admin_powerplatformusers', ['admin_powerplatformuserid', 'admin_displayname', 'admin_type', 'admin_userprincipalname', 'admin_useremail', 'admin_userisguest', 'admin_groupsize'],
-      part.map(id => `admin_powerplatformuserid eq ${id}`).join(' or '), 100).catch(() => [] as IRecord[]);
+      part.map(id => `admin_powerplatformuserid eq ${id}`).join(' or '), 100).catch((e: Error) => {
+        part.forEach(id => { lookupFailed[id] = true; });
+        lookupError = lookupError || e.message;
+        return [] as IRecord[];
+      });
     rows.forEach(p => { principals[lc(p.admin_powerplatformuserid)] = p; });
+  }
+  const failedPrincipals = Object.keys(lookupFailed).filter(id => !principals[id]).length;
+  if (failedPrincipals) {
+    warnings.push(`${failedPrincipals} Berechtigte konnten nicht aus dem CoE gelesen werden (Person, Gruppe oder gesamter Tenant unbekannt) – ` +
+      `sie sind nicht mitgezählt, die Zahlen sind deshalb unvollständig. Bitte „Aktualisieren“. (${lookupError})`);
   }
 
   const users: { [key: string]: IPremiumUser } = {};
@@ -263,6 +314,9 @@ export async function loadPremiumImpact(service: DataverseService, graphFactory:
     }
     const pid = lc(r._admin_powerplatformuser_value);
     const p = principals[pid];
+    if (!p && lookupFailed[pid]) {
+      return;
+    }
     const role = ROLE[lc(r.admin_rolename)] || String(r.admin_rolename || 'Benutzer');
     const type = lc(p ? p.admin_type : '');
     if (/group/.test(type)) {
@@ -359,41 +413,70 @@ export async function loadPremiumImpact(service: DataverseService, graphFactory:
     progress(`Lizenzen von ${list.length} Personen werden geprüft …`);
     const targets = list.filter(u => !!(u.id || u.upn));
     let done = 0;
+    let unchecked = 0;
     await pool(chunks(targets, GRAPH_BATCH), 3, async part => {
       if (licenseState !== 'ok') {
         return;
       }
-      try {
-        const res = await graph!.api('/$batch').version('v1.0').post({
-          requests: part.map((u, i) => ({ id: String(i), method: 'GET', url: `/users/${encodeURIComponent(u.id || u.upn)}/licenseDetails?$select=skuPartNumber,servicePlans` }))
-        }) as { responses?: { id: string; status: number; body?: { value?: { skuPartNumber?: string; servicePlans?: { servicePlanName?: string; provisioningStatus?: string }[] }[]; error?: { message?: string } } }[] };
-        (res.responses || []).forEach(r => {
-          const u = part[Number(r.id)];
-          if (!u) {
-            return;
-          }
-          if (r.status === 200) {
-            const c = classifyLicenses((r.body && r.body.value) || []);
-            u.license = c.status;
-            u.licenses = c.names;
-          } else if (r.status === 404) {
-            u.license = 'notfound';
-          } else if (r.status === 403 || r.status === 401) {
+      // Einzelantworten mit 429 bzw. 5xx (gedrosselt, Dienst kurz nicht verfügbar) bis zu dreimal erneut anfragen
+      let todo = part;
+      for (let attempt = 0; todo.length && attempt <= BATCH_RETRIES && licenseState === 'ok'; attempt++) {
+        const send = todo;
+        const retry: IPremiumUser[] = [];
+        let wait = 0;
+        try {
+          const res = await graph!.api('/$batch').version('v1.0').post({
+            requests: send.map((u, i) => ({ id: String(i), method: 'GET', url: `/users/${encodeURIComponent(u.id || u.upn)}/licenseDetails?$select=skuPartNumber,servicePlans` }))
+          }) as { responses?: { id: string; status: number; headers?: { [h: string]: string }; body?: { value?: { skuPartNumber?: string; servicePlans?: { servicePlanName?: string; provisioningStatus?: string }[] }[]; error?: { message?: string } } }[] };
+          const answered: { [id: string]: boolean } = {};
+          (res.responses || []).forEach(r => {
+            const u = send[Number(r.id)];
+            if (!u) {
+              return;
+            }
+            answered[r.id] = true;
+            if (r.status === 200) {
+              const c = classifyLicenses((r.body && r.body.value) || []);
+              u.license = c.status;
+              u.licenses = c.names;
+            } else if (r.status === 404) {
+              u.license = 'notfound';
+            } else if (r.status === 403 || r.status === 401) {
+              licenseState = 'forbidden';
+              licenseProblem = (r.body && r.body.error && r.body.error.message) || 'Zugriff verweigert';
+            } else {
+              retry.push(u);
+              wait = Math.max(wait, retryAfterMs(r.headers, attempt));
+            }
+          });
+          send.forEach((u, i) => { if (!answered[String(i)]) { retry.push(u); } });
+        } catch (e) {
+          if (graphStatus(e) === 403 || graphStatus(e) === 401) {
             licenseState = 'forbidden';
-            licenseProblem = (r.body && r.body.error && r.body.error.message) || 'Zugriff verweigert';
+          } else {
+            licenseState = 'error';
           }
-        });
-      } catch (e) {
-        if (graphStatus(e) === 403 || graphStatus(e) === 401) {
-          licenseState = 'forbidden';
-        } else {
-          licenseState = 'error';
+          licenseProblem = (e as IGraphErr).message || String(e);
+          return;
         }
-        licenseProblem = (e as IGraphErr).message || String(e);
+        todo = retry;
+        if (todo.length && attempt < BATCH_RETRIES) {
+          await new Promise(resolve => setTimeout(resolve, wait));
+        }
+      }
+      if (licenseState === 'ok') {
+        unchecked += todo.length;
       }
       done += part.length;
       progress(`Lizenzen werden geprüft … ${done} von ${targets.length}`);
     });
+    if (unchecked) {
+      warnings.push(`${unchecked} Personen nicht geprüft (Microsoft Graph hat nicht geantwortet bzw. gedrosselt) – „Ohne Premium“ ist deshalb zu niedrig. Bitte später „Aktualisieren“.`);
+    }
+    // licenseState wird in den Callbacks gesetzt (TypeScript sieht das nicht)
+    if ((licenseState as IPremiumData['licenseState']) === 'error') {
+      warnings.push(`Lizenzprüfung abgebrochen: ${licenseProblem || 'unbekannter Fehler'} – nicht geprüfte Personen fehlen in „Ohne Premium“. Bitte „Aktualisieren“.`);
+    }
   }
 
   // 7. Pay-as-you-go (Power Apps) je Environment – optional über die Power Platform API

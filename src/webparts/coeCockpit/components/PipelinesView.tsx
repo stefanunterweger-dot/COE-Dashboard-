@@ -8,7 +8,7 @@ import styles from './CoeCockpit.module.scss';
 import { Pill } from './Cells';
 import { IColumn, SortTable, Tile } from './CopilotCreditsView';
 import {
-  IHostData, IHostScan, IPipeline, IPipelineHost, IPlEnv, IPlRun, ICoeEnv, loadCoeEnvs, loadHost, mergeHosts, PPAC_DEPLOYMENT_URL, readHostScan,
+  IHostData, IHostScan, IPipeline, IPipelineHost, IPlEnv, IPlRun, ICoeEnv, hostCandidates, loadCoeEnvs, loadHost, mergeHosts, PPAC_DEPLOYMENT_URL, readHostScan,
   resetPipelineCache, RunState, scanHosts
 } from '../models/pipelineHosts';
 import { DataverseService } from '../services/DataverseService';
@@ -31,7 +31,11 @@ export interface IPipelinesViewProps {
 type Tab = 'pipelines' | 'envs';
 const ALL = '';
 const errText = (e: unknown): string => (e instanceof Error ? e.message : String(e));
-const csvEsc = (v: string): string => (/[;"\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v);
+/** CSV-Feld: Trennzeichen/Anführungszeichen maskieren; Formeln (=, +, -, @ am Anfang) mit ' entschärfen. */
+const csvEsc = (raw: string): string => {
+  const v = /^[=+\-@\t\r]/.test(raw) ? `'${raw}` : raw;
+  return /[;"\n\r]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v;
+};
 const RUN_TONE: { [s in RunState]: 'success' | 'danger' | 'info' | 'warning' | 'neutral' } = { ok: 'success', failed: 'danger', running: 'info', pending: 'warning', canceled: 'neutral', '': 'neutral' };
 
 interface IPipelineRow extends IPipeline { host: IPipelineHost; data: IHostData }
@@ -72,7 +76,7 @@ export const PipelinesView: React.FC<IPipelinesViewProps> = props => {
     }
     let s = rescan ? undefined : readHostScan();
     if (!s) {
-      setScanning({ done: 0, total: list.filter(e => /^https:\/\//i.test(e.url)).length });
+      setScanning({ done: 0, total: hostCandidates(list).length });
       s = await scanHosts(props.factory, list, (done, total) => { if (alive()) { setScanning({ done, total }); } }, alive);
       if (!alive()) {
         return;
@@ -305,7 +309,10 @@ export const PipelinesView: React.FC<IPipelinesViewProps> = props => {
             <div className={styles.muted}>
               <Icon iconName="Info" /> {formatNumber(scan.hosts.length)} Hosts in {formatNumber(scan.checked)} Dataverse-Environments aus dem CoE gefunden
               {scan.denied ? ` · ${formatNumber(scan.denied)} ohne Zugriff (nicht geprüft)` : ''}{scan.failed ? ` · ${formatNumber(scan.failed)} nicht erreichbar` : ''}.
-              {scan.denied ? <> <a className={styles.link} href={PIM_URL} target="_blank" rel="noopener noreferrer">Rolle in PIM aktivieren</a> und „Hosts neu suchen“.</> : ''}
+              {scan.denied ? <> Für diese Environments fehlt eine Sicherheitsrolle (z. B. „Systemadministrator“ – Power-Platform-Admins bekommen sie nicht mehr
+                automatisch: im <a className={styles.link} href={PPAC_DEPLOYMENT_URL} target="_blank" rel="noopener noreferrer">Power Platform Admin Center</a> beim
+                Environment unter „Mitgliedschaft“ selbst zuweisen, nach jeder <a className={styles.link} href={PIM_URL} target="_blank" rel="noopener noreferrer">PIM-Aktivierung</a> erneut),
+                danach „Hosts neu suchen“.</> : ''}
             </div>
           )}
           {problems.map(d => <div key={d.host.url} className={styles.muted}><Icon iconName="Warning" /> {d.host.name}: {d.problem}</div>)}

@@ -79,7 +79,8 @@ export const BulkNotifyPanel: React.FC<IBulkNotifyPanelProps> = props => {
     Object.keys(l).forEach(k => { knownAtOpen.current[k] = true; });
     setLogError('');
     const sel: { [id: string]: boolean } = {};
-    items.forEach(i => { sel[i.id] = i.draft.to.length > 0 && !l[i.id]; });
+    // Versandprotokoll nicht lesbar: nichts vorauswählen – bereits Verständigte wären nicht erkennbar
+    items.forEach(i => { sel[i.id] = !props.logProblem && i.draft.to.length > 0 && !l[i.id]; });
     setSelected(sel);
     setStatus({});
     setMode('select');
@@ -121,7 +122,16 @@ export const BulkNotifyPanel: React.FC<IBulkNotifyPanelProps> = props => {
     setRun({ total: list.length, done: 0 });
     setMode('sending');
     // Unmittelbar vor dem Versand neu lesen: Hat inzwischen ein anderer Admin verständigt?
-    const fresh = await props.refreshLog().catch(() => log);
+    // Ist das Protokoll nicht lesbar, wird nicht gesendet – sonst bekämen bereits Verständigte die Mail noch einmal.
+    let fresh: INotifyLogMap;
+    try {
+      fresh = await props.refreshLog();
+    } catch (e) {
+      setLogError(`Versand nicht gestartet: Das Versandprotokoll ist nicht lesbar, bereits verständigte Environments wären nicht erkennbar (${e instanceof Error ? e.message : String(e)}). Bitte später erneut versuchen.`);
+      setRun({ total: 0, done: 0 });
+      setMode('select');
+      return;
+    }
     for (let n = 0; n < list.length; n++) {
       if (stopRef.current) {
         break;

@@ -52,7 +52,7 @@ const JSON_HEADERS = {
 /** Spalten der Liste (interner Name = Anzeigename). */
 const FIELDS: string[] = [
   '<Field Type="Text" DisplayName="EnvironmentId" Name="EnvironmentId" StaticName="EnvironmentId" MaxLength="80" />',
-  '<Field Type="DateTime" DisplayName="SentAt" Name="SentAt" StaticName="SentAt" Format="DateTime" />',
+  '<Field Type="DateTime" DisplayName="SentAt" Name="SentAt" StaticName="SentAt" Format="DateTime" Indexed="TRUE" />',
   '<Field Type="Text" DisplayName="SentBy" Name="SentBy" StaticName="SentBy" MaxLength="255" />',
   '<Field Type="Text" DisplayName="SentByEmail" Name="SentByEmail" StaticName="SentByEmail" MaxLength="255" />',
   '<Field Type="Text" DisplayName="Method" Name="Method" StaticName="Method" MaxLength="80" />',
@@ -80,19 +80,28 @@ export class NotifyLogService {
     return `${this._webUrl.replace(/\/$/, '')}/_api/web/lists/GetByTitle('${NOTIFY_LIST_TITLE.replace(/'/g, "''")}')`;
   }
 
-  /** Alle Einträge lesen; exists = false, wenn die Liste (noch) nicht angelegt ist. */
+  /**
+   * Alle Einträge lesen; exists = false, wenn die Liste (noch) nicht angelegt ist.
+   * Ohne $orderby (Standardreihenfolge nach der ID ist immer indiziert) und seitenweise – so bricht das Lesen
+   * auch ab 5.000 Einträgen nicht am Schwellenwert für Listenansichten ab, und kein älterer Eintrag fehlt.
+   */
   public async load(): Promise<{ map: INotifyLogMap; exists: boolean }> {
-    const url = `${this._list}/items?$select=Title,EnvironmentId,SentAt,SentBy,SentByEmail,Method,Recipients,Subject&$orderby=SentAt desc&$top=5000`;
-    const res = await this._client.get(url, SPHttpClient.configurations.v1, { headers: JSON_HEADERS });
-    if (res.status === 404) {
-      return { map: {}, exists: false };
+    let url = `${this._list}/items?$select=Title,EnvironmentId,SentAt,SentBy,SentByEmail,Method,Recipients,Subject&$top=5000`;
+    const items: IListItem[] = [];
+    for (let page = 0; url && page < 200; page++) {
+      const res = await this._client.get(url, SPHttpClient.configurations.v1, { headers: JSON_HEADERS });
+      if (res.status === 404 && page === 0) {
+        return { map: {}, exists: false };
+      }
+      if (!res.ok) {
+        throw new NotifyLogError(await this._message(res), res.status);
+      }
+      const body = await res.json() as { value: IListItem[]; 'odata.nextLink'?: string };
+      items.push(...(body.value || []));
+      url = body['odata.nextLink'] || '';
     }
-    if (!res.ok) {
-      throw new NotifyLogError(await this._message(res), res.status);
-    }
-    const body = await res.json() as { value: IListItem[] };
     const map: INotifyLogMap = {};
-    (body.value || []).forEach(it => {
+    items.forEach(it => {
       const id = String(it.EnvironmentId || '').toLowerCase();
       if (!id) {
         return;

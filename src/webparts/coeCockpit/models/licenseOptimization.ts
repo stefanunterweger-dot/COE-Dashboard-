@@ -54,8 +54,11 @@ export interface IOptData {
 /** „Letzter Start“: so weit zurück wird im Audit-Log gesucht. */
 const LAST_START_DAYS = 730;
 
-export async function loadLicenseOptimization(service: DataverseService, graph: MSGraphClientFactory, days: number): Promise<IOptData> {
-  const lic = await loadUserLicenses(graph);
+const ROW_LIMIT = 200000;
+
+/** reloadKey: geändert (z. B. „Aktualisieren“ im Cockpit) = Lizenzdaten neu laden statt aus dem 10-Minuten-Cache. */
+export async function loadLicenseOptimization(service: DataverseService, graph: MSGraphClientFactory, days: number, reloadKey?: string): Promise<IOptData> {
+  const lic = await loadUserLicenses(graph, undefined, false, reloadKey);
   const problems: string[] = [];
   const skus = Object.keys(lic.skus).map(id => lic.skus[id]).filter(s => !!PREMIUM_SKUS[s.part])
     .map(s => ({ id: s.id, part: s.part, name: s.name, kind: PREMIUM_SKUS[s.part].kind }));
@@ -73,18 +76,27 @@ export async function loadLicenseOptimization(service: DataverseService, graph: 
       .catch(e => { problems.push(`App-Starts aus dem CoE-Audit-Log nicht lesbar: ${e instanceof Error ? e.message : String(e)}`); return undefined; }),
     service.getGroupedMax('admin_auditlog', 'admin_userupn', "admin_operation eq 'LaunchPowerApp'", 'admin_creationtime',
       { field: 'admin_creationtime', from: new Date(Date.now() - LAST_START_DAYS * 86400000), to: new Date(Date.now() + 86400000) })
-      .catch(() => ({} as { [upn: string]: string })),
-    service.query('admin_apps', ['admin_appid', 'admin_appplanclassification'], 'statecode eq 0', 200000)
+      .catch(e => { problems.push(`Letzter App-Start aus dem CoE-Audit-Log nicht lesbar: ${e instanceof Error ? e.message : String(e)}`); return {} as { [upn: string]: string }; }),
+    service.queryAll('admin_apps', ['admin_appid', 'admin_appplanclassification'], 'statecode eq 0', ROW_LIMIT)
       .catch(e => { problems.push(`Lizenzklasse der Apps nicht lesbar: ${e instanceof Error ? e.message : String(e)}`); return undefined; }),
-    service.query('admin_flows', ['_admin_derivedowner_value'], "statecode eq 0 and admin_flowdeleted ne true and admin_flowstate eq 'Started'", 200000)
+    service.queryAll('admin_flows', ['_admin_derivedowner_value'], "statecode eq 0 and admin_flowdeleted ne true and admin_flowstate eq 'Started'", ROW_LIMIT)
       .catch(e => { problems.push(`Flows aus dem CoE nicht lesbar: ${e instanceof Error ? e.message : String(e)}`); return undefined; })
   ]);
+  // Abgeschnitten = unvollständig: dann gilt nur „genutzt“ als Aussage, „ungenutzt“ wird zu „nicht prüfbar“
+  const appsComplete = !!apps && !apps.truncated;
+  const flowsComplete = !!flows && !flows.truncated;
+  if (apps && apps.truncated) {
+    problems.push(`Mehr als ${ROW_LIMIT.toLocaleString('de-AT')} Apps im CoE – Lizenzklasse nicht vollständig, „Ungenutzt“ bei Power-Apps-Lizenzen nicht prüfbar.`);
+  }
+  if (flows && flows.truncated) {
+    problems.push(`Mehr als ${ROW_LIMIT.toLocaleString('de-AT')} eingeschaltete Flows im CoE – „Ungenutzt“ bei Power-Automate-Lizenzen nicht prüfbar.`);
+  }
   if (pairs && pairs.length === 0) {
     problems.push(`Im CoE-Audit-Log gibt es in den letzten ${days} Tagen keine App-Starts – ist die Audit-Log-Synchronisierung des CoE eingerichtet? Ohne sie gelten alle Power-Apps-Lizenzen als ungenutzt.`);
   }
 
   const premiumApps = new Set<string>();
-  (apps || []).forEach(a => {
+  (apps ? apps.records : []).forEach(a => {
     const cls = String(a['admin_appplanclassification@OData.Community.Display.V1.FormattedValue'] || a.admin_appplanclassification || '');
     if (/premium/i.test(cls)) {
       premiumApps.add(String(a.admin_appid || '').toLowerCase());
@@ -102,7 +114,7 @@ export async function loadLicenseOptimization(service: DataverseService, graph: 
   const lastBy: { [upn: string]: string } = {};
   Object.keys(last || {}).forEach(k => { lastBy[k.toLowerCase()] = (last as { [k: string]: string })[k]; });
   const flowCount: { [owner: string]: number } = {};
-  (flows || []).forEach(f => {
+  (flows ? flows.records : []).forEach(f => {
     const o = String(f._admin_derivedowner_value || '').toLowerCase();
     if (o) {
       flowCount[o] = (flowCount[o] || 0) + 1;
@@ -115,7 +127,10 @@ export async function loadLicenseOptimization(service: DataverseService, graph: 
     const activeFlows = flowCount[user.id.toLowerCase()] || 0;
     const licenses: IOptLicense[] = skus.filter(s => user.skus.indexOf(s.id) >= 0).map(s => ({
       ...s,
-      used: s.kind === 'apps' ? (pairs ? !!use && use.premium > 0 : undefined) : (flows ? activeFlows > 0 : undefined)
+      // Ohne App-Starts oder ohne Lizenzklasse der Apps keine Aussage „ungenutzt“ (sonst gälte jede Lizenz als Einsparung)
+      used: s.kind === 'apps'
+        ? (pairs && apps ? (!!use && use.premium > 0 ? true : appsComplete ? false : undefined) : undefined)
+        : (flows ? (activeFlows > 0 ? true : flowsComplete ? false : undefined) : undefined)
     }));
     const known = licenses.filter(l => l.used !== undefined);
     const status: IOptRow['status'] = !known.length ? 'unknown'
@@ -130,5 +145,6 @@ export async function loadLicenseOptimization(service: DataverseService, graph: 
       status
     };
   });
-  return { rows, skus, days, problems, loadedAt: new Date() };
+  // Stand = Zeitpunkt der Lizenzdaten (können bis zu 10 Minuten zwischengespeichert sein)
+  return { rows, skus, days, problems, loadedAt: lic.loadedAt };
 }

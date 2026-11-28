@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
   Gibt den SharePoint-Webparts (SPFx) die delegierten Berechtigungen, die das CoE Cockpit zusätzlich braucht.
 
@@ -76,14 +76,14 @@ Connect-MgGraph -Scopes 'Application.ReadWrite.All', 'DelegatedPermissionGrant.R
 $spfx = @('SharePoint Online Web Client Extensibility', 'SharePoint Online Client Extensibility Web Application Principal') |
   ForEach-Object { Get-MgServicePrincipal -Filter "displayName eq '$_'" } | Where-Object { $_ }
 if (-not $spfx) { throw 'Der SharePoint-Dienstprinzipal für Webparts wurde nicht gefunden.' }
-$spfx | Format-Table DisplayName, AppId, Id
+$spfx | Format-Table DisplayName, AppId, Id | Out-String | Write-Host
 
 # Dienstprinzipal einer Microsoft-App holen (bei Bedarf im Tenant anlegen)
 function Get-ResourceSp([string]$appId, [string]$name) {
   $sp = Get-MgServicePrincipal -Filter "appId eq '$appId'"
   if (-not $sp) {
     $created = New-MgServicePrincipal -AppId $appId
-    Write-Host "Dienstprinzipal „$name“ im Tenant angelegt."
+    Write-Host "Dienstprinzipal '$name' im Tenant angelegt."
     # nach dem Anlegen kann es dauern, bis er gefunden wird – bis zu 1 Minute warten, sonst das angelegte Objekt verwenden
     for ($i = 0; $i -lt 6 -and -not $sp; $i++) {
       Start-Sleep -Seconds 10
@@ -98,7 +98,7 @@ function Grant-Scopes($resource, [string[]]$scopes) {
   # nur Berechtigungen, die die App auch anbietet
   $offered = @($resource.Oauth2PermissionScopes | ForEach-Object { $_.Value })
   $missing = @($scopes | Where-Object { $offered -notcontains $_ })
-  if ($missing) { Write-Warning "„$($resource.DisplayName)“ bietet diese Berechtigungen nicht an (übersprungen): $($missing -join ', ')" }
+  if ($missing) { Write-Warning "'$($resource.DisplayName)' bietet diese Berechtigungen nicht an (übersprungen): $($missing -join ', ')" }
   $scopes = @($scopes | Where-Object { $offered -contains $_ })
   if (-not $scopes) { return }
   foreach ($sp in $spfx) {

@@ -1,6 +1,6 @@
 import { IRecord, ITableConfig } from './ITableConfig';
 import { getDefaultTables } from './defaultTables';
-import { DataverseService, environmentType, IAttributeMeta, IRecordResult } from '../services/DataverseService';
+import { DataverseError, DataverseService, environmentType, IAttributeMeta, IRecordResult } from '../services/DataverseService';
 import { displayValue, isMailAddress, LIST_SEP, rawValue } from '../utils/format';
 
 /**
@@ -42,7 +42,9 @@ export const RECOMMENDATION = {
   inUse: 'In Nutzung – sichern oder auf Managed umstellen',
   inactive: 'Inaktiv (> 90 Tage) – prüfen',
   empty: 'Leer – kann auslaufen',
-  disabled: 'Deaktiviert'
+  disabled: 'Deaktiviert',
+  /** Aktivität bzw. Inhalt konnte nicht (vollständig) ermittelt werden – keine Aussage „Inaktiv“ oder „Leer“. */
+  unknown: 'Unbekannt – Aktivität nicht ermittelt'
 };
 const INACTIVE_DAYS = 90;
 
@@ -70,7 +72,7 @@ export function buildDevEnvTable(): ITableConfig {
       { field: DEV_FIELDS.admins, label: 'System-Administratoren', type: 'list' },
       {
         field: DEV_FIELDS.recommendation, label: 'Empfehlung', type: 'status',
-        statusMap: { [RECOMMENDATION.inUse]: 'danger', [RECOMMENDATION.inactive]: 'warning', [RECOMMENDATION.empty]: 'neutral', [RECOMMENDATION.disabled]: 'neutral' }
+        statusMap: { [RECOMMENDATION.inUse]: 'danger', [RECOMMENDATION.inactive]: 'warning', [RECOMMENDATION.empty]: 'neutral', [RECOMMENDATION.disabled]: 'neutral', [RECOMMENDATION.unknown]: 'warning' }
       },
       { field: DEV_FIELDS.notified, label: 'Maker verständigt', type: 'status', statusMap: { [NOTIFIED.yes]: 'success', [NOTIFIED.no]: 'warning' } },
       { field: DEV_FIELDS.notifiedOn, label: 'Verständigt am', type: 'datetime' },
@@ -118,6 +120,33 @@ export function detectStateAttribute(attrs: IAttributeMeta[]): IAttributeMeta | 
   return findAttribute(attrs, [/runtime ?state/i, /environment ?state/i, /zustand/i, /disabled|enabled/i], ['Boolean', 'Picklist', 'String']);
 }
 
+
+/**
+ * Spalten der Environment-Tabelle. Leer nur, wenn Dataverse die Tabelle nicht kennt (404) – Drosselung, Server-
+ * oder Netzwerkfehler werden weitergegeben, sonst gälte ein managed Environment fälschlich als „nicht managed“.
+ */
+export async function environmentAttributes(service: DataverseService): Promise<IAttributeMeta[]> {
+  try {
+    return await service.getAttributes(ENV_TABLE);
+  } catch (e) {
+    if (e instanceof DataverseError && e.status === 404) {
+      return [];
+    }
+    throw e;
+  }
+}
+
+/** Gewählte Spalte für den Managed-Status (sonst automatisch erkannt). Sind keine Metadaten da, gilt die Wahl direkt. */
+export function chooseManagedAttribute(attrs: IAttributeMeta[], managedField: string): IAttributeMeta | undefined {
+  const chosen = managedField ? attrs.filter(a => a.selectName === managedField || a.logicalName === managedField)[0] : undefined;
+  if (chosen) {
+    return chosen;
+  }
+  if (managedField && attrs.length === 0) {
+    return { selectName: managedField, logicalName: managedField.replace(/^_(.+)_value$/, '$1'), displayName: managedField, type: 'String', isPrimaryName: false };
+  }
+  return detectManagedAttribute(attrs);
+}
 
 /** Spalten, die für den Managed-Status in Frage kommen (Auswahl in den Webpart-Eigenschaften). */
 export function managedCandidates(attrs: IAttributeMeta[]): IAttributeMeta[] {
@@ -169,9 +198,14 @@ function stateLabel(r: IRecord, field: string | undefined): string {
 
 const BATCH = 25;
 
-/** Jüngstes Datum je Environment aus mehreren Spalten (App-Start, App-/Flow-Änderung). */
-async function lastActivityPerEnvironment(service: DataverseService, envIds: string[]): Promise<{ [envId: string]: string }> {
+/**
+ * Jüngstes Datum je Environment aus mehreren Spalten (App-Start, App-/Flow-Änderung, Bots, Desktop Flows).
+ * incomplete: Environments, bei denen mindestens eine Quelle nicht lesbar war (dann ist „kein Datum“ keine Aussage).
+ */
+async function lastActivityPerEnvironment(service: DataverseService, envIds: string[]): Promise<{ values: { [envId: string]: string }; incomplete: { [envId: string]: boolean }; errors: string[] }> {
   const out: { [envId: string]: string } = {};
+  const incomplete: { [envId: string]: boolean } = {};
+  const errors: string[] = [];
   const sources: [string, string, string, string][] = [
     ['admin_app', '_admin_appenvironment_value', 'admin_appdeleted', 'admin_applastlaunchedon'],
     ['admin_app', '_admin_appenvironment_value', 'admin_appdeleted', 'admin_appmodifiedon'],
@@ -184,14 +218,20 @@ async function lastActivityPerEnvironment(service: DataverseService, envIds: str
     const ids = envIds.slice(i, i + BATCH);
     const results = await Promise.all(sources.map(([table, envField, deletedField, dateField]) => service
       .getGroupedMax(table, envField, `(${deletedField} ne true) and (${ids.map(id => `${envField} eq ${id}`).join(' or ')})`, dateField)
-      .catch(() => ({} as { [k: string]: string }))));
+      .catch((e: Error) => {
+        ids.forEach(id => { incomplete[id.toLowerCase()] = true; });
+        if (errors.length < 2) {
+          errors.push(`${table}: ${e.message}`);
+        }
+        return {} as { [k: string]: string };
+      })));
     results.forEach(r => Object.keys(r).forEach(k => {
       if (!out[k] || r[k] > out[k]) {
         out[k] = r[k];
       }
     }));
   }
-  return out;
+  return { values: out, incomplete, errors };
 }
 
 /** Ressourcen-Tabellen mit Environment- und Besitzer-Spalte (wie die Admin View). */
@@ -222,17 +262,26 @@ interface IMakerResult {
   makers: { [envId: string]: { name: string; email: string; count: number }[] };
   /** Anzahl Bots und Desktop Flows je Environment */
   others: { [envId: string]: number };
+  /** Environments, bei denen Bots oder Desktop Flows nicht gezählt werden konnten (dann nie „Leer“) */
+  othersUnknown: { [envId: string]: boolean };
 }
 
 async function makersPerEnvironment(service: DataverseService, envIds: string[], creators: { [envId: string]: string }, warnings: string[]): Promise<IMakerResult> {
   const perEnv: { [envId: string]: { [makerId: string]: number } } = {};
   const others: { [envId: string]: number } = {};
+  const othersUnknown: { [envId: string]: boolean } = {};
   const failed: string[] = [];
   for (let i = 0; i < envIds.length; i += BATCH) {
     const ids = envIds.slice(i, i + BATCH);
     const results = await Promise.all(MAKER_SOURCES.map(src => service
       .getGroupedPairs(src.table, src.envField, src.ownerField, `(${src.baseFilter}) and (${ids.map(id => `${src.envField} eq ${id}`).join(' or ')})`)
-      .catch((e: Error) => { failed.push(`${src.table}: ${e.message}`); return [] as { a: string; b: string; n: number }[]; })));
+      .catch((e: Error) => {
+        failed.push(`${src.table}: ${e.message}`);
+        if (src.table === 'admin_pva' || src.table === 'admin_rpa') {
+          ids.forEach(id => { othersUnknown[id.toLowerCase()] = true; });
+        }
+        return [] as { a: string; b: string; n: number }[];
+      })));
     results.forEach((pairs, k) => pairs.forEach(p => {
       if (!p.a) {
         return;
@@ -288,7 +337,7 @@ async function makersPerEnvironment(service: DataverseService, envIds: string[],
   if (failed.length) {
     warnings.push(`Maker konnten nicht vollständig ermittelt werden – einzelne Environments zeigen deshalb zu wenige Maker (${failed.slice(0, 2).join('; ')}). Bitte „Aktualisieren“.`);
   }
-  return { makers: out, others };
+  return { makers: out, others, othersUnknown };
 }
 
 /** Rollenvorlage „System Administrator“ (in allen Dataverse-Umgebungen gleich). */
@@ -345,9 +394,8 @@ async function countPerEnvironment(service: DataverseService, table: string, env
  * managedField: in den Webpart-Eigenschaften gewählte Spalte (leer = automatisch erkennen).
  */
 export async function loadAffectedEnvironments(service: DataverseService, managedField: string, maxRecords: number): Promise<IRecordResult> {
-  const attrs = await service.getAttributes(ENV_TABLE).catch(() => [] as IAttributeMeta[]);
-  const chosen = managedField ? attrs.filter(a => a.selectName === managedField || a.logicalName === managedField)[0] : undefined;
-  const managedAttr = chosen || detectManagedAttribute(attrs);
+  const attrs = await environmentAttributes(service);
+  const managedAttr = chooseManagedAttribute(attrs, managedField);
   const stateAttr = detectStateAttribute(attrs);
   // Typ-Spalte: „Environment Sku“ (aktuell) bzw. „Environment Type“ (ältere CoE-Versionen)
   const typeFields = ['admin_environmentsku', 'admin_environmenttype'].filter(f => attrs.length === 0 || attrs.some(a => a.logicalName === f));
@@ -383,10 +431,15 @@ export async function loadAffectedEnvironments(service: DataverseService, manage
       return undefined;
     }),
     lastActivityPerEnvironment(service, ids).catch((e: Error) => {
-      warnings.push(`Letzte Aktivität konnte nicht ermittelt werden – die Empfehlung „Inaktiv“ ist deshalb nicht verlässlich: ${e.message}`);
-      return {} as { [envId: string]: string };
+      const all: { [envId: string]: boolean } = {};
+      ids.forEach(id => { all[id.toLowerCase()] = true; });
+      return { values: {} as { [envId: string]: string }, incomplete: all, errors: [e.message] };
     })
   ]);
+  const incompleteCount = ids.filter(id => activity.incomplete[id.toLowerCase()]).length;
+  if (incompleteCount) {
+    warnings.push(`Letzte Aktivität konnte für ${incompleteCount} Environment(s) nicht vollständig ermittelt werden – dort steht die Empfehlung „${RECOMMENDATION.unknown}“ statt „Inaktiv“ (${activity.errors.join('; ')}). Bitte „Aktualisieren“.`);
+  }
   const creators: { [envId: string]: string } = {};
   affected.forEach(r => {
     const env = String(r[res.meta.primaryId] || '').toLowerCase();
@@ -398,7 +451,9 @@ export async function loadAffectedEnvironments(service: DataverseService, manage
   const [makerResult, admins] = await Promise.all([
     makersPerEnvironment(service, ids, creators, warnings).catch((e: Error) => {
       warnings.push(`Maker konnten nicht ermittelt werden: ${e.message}`);
-      return { makers: {}, others: {} } as IMakerResult;
+      const unknown: { [envId: string]: boolean } = {};
+      ids.forEach(id => { unknown[id.toLowerCase()] = true; });
+      return { makers: {}, others: {}, othersUnknown: unknown } as IMakerResult;
     }),
     sysAdminsPerEnvironment(service, ids).catch((e: Error) => {
       warnings.push(`System-Administratoren konnten nicht ermittelt werden: ${e.message}`);
@@ -418,12 +473,17 @@ export async function loadAffectedEnvironments(service: DataverseService, manage
     const state = stateLabel(r, stateAttr ? stateAttr.selectName : undefined);
     const appCount = apps ? apps[id] || 0 : null;
     const flowCount = flows ? flows[id] || 0 : null;
-    const last = activity[id] || '';
+    const last = activity.values[id] || '';
+    const recent = !!last && last >= inactiveBefore;
     const recommendation = state === 'Deaktiviert'
       ? RECOMMENDATION.disabled
-      : appCount === 0 && flowCount === 0 && !makerResult.others[id]
-        ? RECOMMENDATION.empty
-        : !last || last < inactiveBefore ? RECOMMENDATION.inactive : RECOMMENDATION.inUse;
+      : recent
+        ? RECOMMENDATION.inUse
+        : appCount === 0 && flowCount === 0 && !makerResult.others[id]
+          // „Leer“ nur, wenn auch Bots und Desktop Flows gezählt werden konnten
+          ? (makerResult.othersUnknown[id] ? RECOMMENDATION.unknown : RECOMMENDATION.empty)
+          // „Inaktiv“ nur, wenn alle Aktivitätsquellen lesbar waren
+          : activity.incomplete[id] ? RECOMMENDATION.unknown : RECOMMENDATION.inactive;
     return {
       ...r,
       [DEV_FIELDS.recommendation]: recommendation,

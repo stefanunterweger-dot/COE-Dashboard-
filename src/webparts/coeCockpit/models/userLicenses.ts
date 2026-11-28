@@ -70,21 +70,26 @@ function graphError(e: unknown, what: string): LicenseLoadError {
   return new LicenseLoadError(`${what}: ${msg}`, 'failed', msg);
 }
 
-const cache: { at: number; promise: Promise<IUserLicenseData> } | { at: 0; promise: undefined } = { at: 0, promise: undefined };
-const store = cache as { at: number; promise: Promise<IUserLicenseData> | undefined };
+const store: { at: number; key: string | undefined; promise: Promise<IUserLicenseData> | undefined } = { at: 0, key: undefined, promise: undefined };
 
 export function resetUserLicenseCache(): void {
   store.at = 0;
+  store.key = undefined;
   store.promise = undefined;
 }
 
-/** Laden (10 Minuten zwischengespeichert). */
-export function loadUserLicenses(factory: MSGraphClientFactory, onProgress?: (users: number) => void, fresh: boolean = false): Promise<IUserLicenseData> {
-  if (!fresh && store.promise && Date.now() - store.at < 10 * 60000) {
+/**
+ * Laden (10 Minuten zwischengespeichert). reloadKey: Zähler von „Aktualisieren“ im Cockpit – ändert er sich,
+ * wird neu geladen (sonst kämen nach „Aktualisieren“ bis zu 10 Minuten alte Lizenzen).
+ */
+export function loadUserLicenses(factory: MSGraphClientFactory, onProgress?: (users: number) => void, fresh: boolean = false, reloadKey?: string): Promise<IUserLicenseData> {
+  const keyChanged = reloadKey !== undefined && store.key !== undefined && reloadKey !== store.key;
+  if (!fresh && !keyChanged && store.promise && Date.now() - store.at < 10 * 60000) {
     return store.promise;
   }
   const p = load(factory, onProgress);
   store.at = Date.now();
+  store.key = reloadKey !== undefined ? reloadKey : store.key;
   store.promise = p;
   p.catch(() => resetUserLicenseCache());
   return p;

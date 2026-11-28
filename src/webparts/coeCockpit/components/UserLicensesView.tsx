@@ -39,7 +39,7 @@ export const UserLicensesView: React.FC<IUserLicensesViewProps> = props => {
     setLoading(true);
     setError(undefined);
     setProgress(0);
-    loadUserLicenses(props.graphFactory, n => setProgress(n), fresh).then(
+    loadUserLicenses(props.graphFactory, n => setProgress(n), fresh, props.reloadKey).then(
       d => { setData(d); setLoading(false); },
       (e: unknown) => {
         setError(e instanceof LicenseLoadError ? e : new LicenseLoadError(e instanceof Error ? e.message : String(e), 'failed'));

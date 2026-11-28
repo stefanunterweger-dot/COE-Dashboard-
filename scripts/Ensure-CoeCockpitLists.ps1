@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
   Prüft die SharePoint-Listen des CoE Cockpits – Listen, Spalten, Ansichten und Berechtigungen – und legt Fehlendes an.
 
@@ -15,8 +15,10 @@
   Das Skript prüft je Liste:
     - ob die Liste vorhanden ist (sonst anlegen),
     - jede Spalte: vorhanden, Typ, Anzeigename, Länge/Format (sonst anlegen bzw. korrigieren; falscher Typ = Fehler),
+    - die Indizes, nach denen die Ansichten filtern/sortieren (sonst brechen sie ab 5.000 Einträgen ab),
     - jede Ansicht: vorhanden, Spalten, Filter/Sortierung/Gruppierung, Zeilenzahl, Standardansicht (sonst anlegen bzw. korrigieren),
-    - bei „CoE Cockpit Aktionen“ die Berechtigungen (eigene Berechtigungen, Gruppe, Websitebesitzer, optional Flow-Dienstkonto).
+    - bei „CoE Cockpit Aktionen“ den Versionsverlauf und die Berechtigungen (eigene Berechtigungen, Gruppe mit für alle
+      sichtbarer Mitgliedschaft, Websitebesitzer, optional Flow-Dienstkonto).
   Am Ende steht ein Bericht (OK / ANGELEGT / KORRIGIERT / FEHLT / WARNUNG / FEHLER). Mit -CheckOnly wird nur geprüft.
 
   Die Definition entspricht dem Webpart (src/webparts/coeCockpit/services/ActionService.ts und NotifyLogService.ts):
@@ -86,8 +88,11 @@ $Lists = @(
     Description    = 'Aktionsprotokoll des CoE Cockpits (Quarantäne, Löschen, Besitzer, Freigaben, Flows ein/aus, Environments, Solutions, DLP-Richtlinien). Das Cockpit führt die meisten Aktionen direkt aus; „Solution löschen“ übernimmt der Flow im CoE-Environment.'
     TitleField     = 'Eintrag'
     UniquePermissions = $true
+    Versioning     = $true
+    # Indizes: die Ansichten filtern/sortieren/gruppieren danach – ohne Index brechen sie ab 5.000 Einträgen ab
+    Indexes        = @('Created', 'Status', 'Action', 'Author')
     Fields = @(
-      '<Field Type="Text" DisplayName="Action" Name="Action" StaticName="Action" MaxLength="40" />'
+      '<Field Type="Text" DisplayName="Action" Name="Action" StaticName="Action" MaxLength="40" Indexed="TRUE" />'
       '<Field Type="Text" DisplayName="ResourceType" Name="ResourceType" StaticName="ResourceType" MaxLength="20" />'
       '<Field Type="Text" DisplayName="ResourceId" Name="ResourceId" StaticName="ResourceId" MaxLength="80" />'
       '<Field Type="Text" DisplayName="CoeRecordId" Name="CoeRecordId" StaticName="CoeRecordId" MaxLength="80" />'
@@ -97,7 +102,7 @@ $Lists = @(
       '<Field Type="Text" DisplayName="TargetName" Name="TargetName" StaticName="TargetName" MaxLength="255" />'
       '<Field Type="Boolean" DisplayName="TargetIsGroup" Name="TargetIsGroup" StaticName="TargetIsGroup"><Default>0</Default></Field>'
       '<Field Type="Note" DisplayName="Reason" Name="Reason" StaticName="Reason" NumLines="4" RichText="FALSE" />'
-      '<Field Type="Text" DisplayName="Status" Name="Status" StaticName="Status" MaxLength="40" />'
+      '<Field Type="Text" DisplayName="Status" Name="Status" StaticName="Status" MaxLength="40" Indexed="TRUE" />'
       '<Field Type="Note" DisplayName="Result" Name="Result" StaticName="Result" NumLines="4" RichText="FALSE" />'
       '<Field Type="DateTime" DisplayName="CompletedAt" Name="CompletedAt" StaticName="CompletedAt" Format="DateTime" />'
       '<Field Type="Text" DisplayName="RequestedBy" Name="RequestedBy" StaticName="RequestedBy" MaxLength="255" />'
@@ -128,9 +133,11 @@ $Lists = @(
     Description    = 'Protokoll der Benachrichtigungen aus dem CoE Cockpit (welches Environment wann von wem verständigt wurde).'
     TitleField     = 'Environment'
     UniquePermissions = $false
+    Versioning     = $false
+    Indexes        = @('SentAt', 'Title', 'Author')
     Fields = @(
       '<Field Type="Text" DisplayName="EnvironmentId" Name="EnvironmentId" StaticName="EnvironmentId" MaxLength="80" />'
-      '<Field Type="DateTime" DisplayName="SentAt" Name="SentAt" StaticName="SentAt" Format="DateTime" />'
+      '<Field Type="DateTime" DisplayName="SentAt" Name="SentAt" StaticName="SentAt" Format="DateTime" Indexed="TRUE" />'
       '<Field Type="Text" DisplayName="SentBy" Name="SentBy" StaticName="SentBy" MaxLength="255" />'
       '<Field Type="Text" DisplayName="SentByEmail" Name="SentByEmail" StaticName="SentByEmail" MaxLength="255" />'
       '<Field Type="Text" DisplayName="Method" Name="Method" StaticName="Method" MaxLength="80" />'
@@ -191,7 +198,17 @@ function Confirm-List($Def) {
   } else {
     Add-Result $title 'Liste' 'OK'
   }
-  return Get-PnPList -Identity $title -Includes HasUniqueRoleAssignments, ContentTypesEnabled
+  $list = Get-PnPList -Identity $title -Includes HasUniqueRoleAssignments, ContentTypesEnabled, EnableVersioning
+  if ($Def.Versioning) {
+    # Versionsverlauf: Änderungen an Protokolleinträgen bleiben nachvollziehbar
+    if ($list.EnableVersioning) { Add-Result $title 'Versionsverlauf' 'OK' }
+    elseif ($CheckOnly) { Add-Result $title 'Versionsverlauf' 'FEHLT' 'Änderungen an Einträgen wären nicht nachvollziehbar' }
+    else {
+      Set-PnPList -Identity $title -EnableVersioning $true | Out-Null
+      Add-Result $title 'Versionsverlauf' 'KORRIGIERT' 'eingeschaltet'
+    }
+  }
+  return $list
 }
 
 # ---------------------------------------------------------------------------------------------------------------
@@ -202,10 +219,10 @@ function Confirm-Fields($Def) {
   # Titelspalte: Anzeigename (intern bleibt „Title“)
   $titleField = Get-PnPField -List $title -Identity 'Title'
   if ($titleField.Title -ne $Def.TitleField) {
-    if ($CheckOnly) { Add-Result $title 'Spalte Title' 'WARNUNG' "Anzeigename „$($titleField.Title)“ statt „$($Def.TitleField)“" }
+    if ($CheckOnly) { Add-Result $title 'Spalte Title' 'WARNUNG' "Anzeigename '$($titleField.Title)' statt '$($Def.TitleField)'" }
     else {
       Set-PnPField -List $title -Identity 'Title' -Values @{ Title = $Def.TitleField } | Out-Null
-      Add-Result $title 'Spalte Title' 'KORRIGIERT' "Anzeigename „$($Def.TitleField)“"
+      Add-Result $title 'Spalte Title' 'KORRIGIERT' "Anzeigename '$($Def.TitleField)'"
     }
   } else { Add-Result $title 'Spalte Title' 'OK' }
 
@@ -221,7 +238,7 @@ function Confirm-Fields($Def) {
       continue
     }
     if ($field.TypeAsString -ne $type) {
-      Add-Result $title "Spalte $name" 'FEHLER' "Typ „$($field.TypeAsString)“ statt „$type“ – bitte von Hand prüfen (Daten!)"
+      Add-Result $title "Spalte $name" 'FEHLER' "Typ '$($field.TypeAsString)' statt '$type' – bitte von Hand prüfen (Daten!)"
       continue
     }
     # Attribute vergleichen (Anzeigename, Länge, Format, Rich Text, Zeilen)
@@ -243,6 +260,21 @@ function Confirm-Fields($Def) {
 }
 
 # ---------------------------------------------------------------------------------------------------------------
+# Indizes (Schwellenwert für Listenansichten: 5.000 Einträge)
+# ---------------------------------------------------------------------------------------------------------------
+function Confirm-Indexes($Def) {
+  $title = $Def.Title
+  foreach ($n in $Def.Indexes) {
+    $field = Get-OrNull { Get-PnPField -List $title -Identity $n }
+    if (-not $field) { Add-Result $title "Index $n" 'FEHLT' 'Spalte fehlt'; continue }
+    if ($field.Indexed) { Add-Result $title "Index $n" 'OK'; continue }
+    if ($CheckOnly) { Add-Result $title "Index $n" 'FEHLT' 'nötig ab 5.000 Einträgen'; continue }
+    Set-PnPField -List $title -Identity $n -Values @{ Indexed = $true } | Out-Null
+    Add-Result $title "Index $n" 'ANGELEGT'
+  }
+}
+
+# ---------------------------------------------------------------------------------------------------------------
 # Ansichten
 # ---------------------------------------------------------------------------------------------------------------
 function Confirm-Views($Def) {
@@ -251,11 +283,11 @@ function Confirm-Views($Def) {
     $isDefault = [bool]$v.Default
     $view = Get-OrNull { Get-PnPView -List $title -Identity $v.Title -Includes ViewFields, ViewQuery, RowLimit, DefaultView, Paged }
     if (-not $view) {
-      if ($CheckOnly) { Add-Result $title "Ansicht „$($v.Title)“" 'FEHLT'; continue }
+      if ($CheckOnly) { Add-Result $title "Ansicht '$($v.Title)'" 'FEHLT'; continue }
       $params = @{ List = $title; Title = $v.Title; Fields = $v.Fields; Query = $v.Query; RowLimit = $v.RowLimit; Paged = $true }
       if ($isDefault) { $params.SetAsDefault = $true }
       Add-PnPView @params | Out-Null
-      Add-Result $title "Ansicht „$($v.Title)“" 'ANGELEGT' ($(if ($isDefault) { 'Standardansicht' } else { '' }))
+      Add-Result $title "Ansicht '$($v.Title)'" 'ANGELEGT' ($(if ($isDefault) { 'Standardansicht' } else { '' }))
       continue
     }
     $diff = @()
@@ -264,12 +296,12 @@ function Confirm-Views($Def) {
     if ((Format-Caml $view.ViewQuery) -ne (Format-Caml $v.Query)) { $diff += 'Filter/Sortierung' }
     if ([int]$view.RowLimit -ne [int]$v.RowLimit) { $diff += "Zeilen $($view.RowLimit) → $($v.RowLimit)" }
     if ($isDefault -and -not $view.DefaultView) { $diff += 'nicht Standardansicht' }
-    if (-not $diff) { Add-Result $title "Ansicht „$($v.Title)“" 'OK'; continue }
-    if ($CheckOnly) { Add-Result $title "Ansicht „$($v.Title)“" 'WARNUNG' ($diff -join ', '); continue }
+    if (-not $diff) { Add-Result $title "Ansicht '$($v.Title)'" 'OK'; continue }
+    if ($CheckOnly) { Add-Result $title "Ansicht '$($v.Title)'" 'WARNUNG' ($diff -join ', '); continue }
     $values = @{ ViewQuery = $v.Query; RowLimit = [uint32]$v.RowLimit; Paged = $true }
     if ($isDefault) { $values.DefaultView = $true }
     Set-PnPView -List $title -Identity $view.Id -Fields $v.Fields -Values $values | Out-Null
-    Add-Result $title "Ansicht „$($v.Title)“" 'KORRIGIERT' ($diff -join ', ')
+    Add-Result $title "Ansicht '$($v.Title)'" 'KORRIGIERT' ($diff -join ', ')
   }
 }
 
@@ -285,12 +317,12 @@ function Confirm-Permissions($Def, $List) {
 
   $group = Get-OrNull { Get-PnPGroup -Identity $GroupName }
   if (-not $group) {
-    if ($CheckOnly) { Add-Result $title "Gruppe „$GroupName“" 'FEHLT' }
+    if ($CheckOnly) { Add-Result $title "Gruppe '$GroupName'" 'FEHLT' }
     else {
       $group = New-PnPGroup -Title $GroupName -Description 'Darf im CoE Cockpit Aktionen ausführen (zusätzlich aktive Rolle „Power Platform Administrator“ nötig).'
-      Add-Result $title "Gruppe „$GroupName“" 'ANGELEGT' 'Mitglieder hinzufügen!'
+      Add-Result $title "Gruppe '$GroupName'" 'ANGELEGT' 'Mitglieder hinzufügen!'
     }
-  } else { Add-Result $title "Gruppe „$GroupName“" 'OK' }
+  } else { Add-Result $title "Gruppe '$GroupName'" 'OK' }
 
   # Der Flow „Solution löschen“ liest die Gruppenmitglieder – das geht nur, wenn die Mitgliedschaft für alle sichtbar ist
   # (SharePoint-Standard bei neuen Gruppen: nur Mitglieder sehen die Mitglieder).
@@ -316,8 +348,8 @@ function Confirm-Permissions($Def, $List) {
 
   $owners = Get-PnPGroup -AssociatedOwnerGroup
   $want = @()
-  if ($group) { $want += [pscustomobject]@{ Label = "Gruppe „$GroupName“"; Group = $group.Title; User = $null; Role = $contribute; Id = $group.Id } }
-  if ($owners) { $want += [pscustomobject]@{ Label = "Websitebesitzer „$($owners.Title)“"; Group = $owners.Title; User = $null; Role = $full; Id = $owners.Id } }
+  if ($group) { $want += [pscustomobject]@{ Label = "Gruppe '$GroupName'"; Group = $group.Title; User = $null; Role = $contribute; Id = $group.Id } }
+  if ($owners) { $want += [pscustomobject]@{ Label = "Websitebesitzer '$($owners.Title)'"; Group = $owners.Title; User = $null; Role = $full; Id = $owners.Id } }
   if ($FlowServiceAccount) {
     if ($CheckOnly) {
       # nur nachsehen – New-PnPUser (EnsureUser) würde das Konto in die Website eintragen
@@ -356,7 +388,7 @@ function Confirm-Permissions($Def, $List) {
     if ($a.PrincipalId -eq $me.Id) {
       Add-Result $title "Ausführende Person: $($a.Member.Title)" 'OK' 'Vollzugriff durch das Aufheben der Vererbung – kann bleiben oder von Hand entfernt werden'
     } elseif ($allowed -notcontains $a.PrincipalId) {
-      Add-Result $title "Weitere Berechtigung: $($a.Member.Title)" 'WARNUNG' 'nicht vorgesehen – bitte prüfen'
+      Add-Result $title "Weitere Berechtigung: $($a.Member.Title)" 'WARNUNG' 'nicht vorgesehen – bitte prüfen (Flow-Dienstkonto? Dann -FlowServiceAccount angeben)'
     }
   }
 }
@@ -372,6 +404,7 @@ foreach ($def in $Lists) {
     $list = Confirm-List $def
     if (-not $list) { continue }
     Confirm-Fields $def
+    Confirm-Indexes $def
     Confirm-Views $def
     if ($def.UniquePermissions) { Confirm-Permissions $def $list }
   } catch {
@@ -385,7 +418,8 @@ $problems = @($Report | Where-Object { $_.Status -in 'FEHLER', 'FEHLT', 'WARNUNG
 if ($problems.Count) {
   Write-Host ''
   Write-Host 'Offene Punkte:' -ForegroundColor Yellow
-  $problems | Format-Table -AutoSize -Wrap
+  # als Text ausgeben – sonst geht die Tabelle durch das „exit“ unten verloren
+  $problems | Format-Table -AutoSize -Wrap | Out-String -Width 220 | Write-Host
 }
 if (@($Report | Where-Object { $_.Status -eq 'FEHLER' }).Count) { exit 2 }
 if ($CheckOnly -and $problems.Count) { exit 1 }

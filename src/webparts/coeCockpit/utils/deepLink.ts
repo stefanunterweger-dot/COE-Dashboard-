@@ -1,4 +1,4 @@
-import { IColumnFilter } from './filters';
+import { DATE_PRESETS, IColumnFilter } from './filters';
 
 /**
  * Teilbare Links: Reiter, Spaltenfilter, Suche und geöffneter Datensatz stehen im Adress-Anker (#coe=…).
@@ -28,11 +28,49 @@ export function readViewState(): IViewState | undefined {
     if (!part) {
       return undefined;
     }
-    const parsed = JSON.parse(decodeURIComponent(part.substring(PARAM.length + 1))) as IViewState;
-    return parsed && typeof parsed === 'object' ? parsed : undefined;
+    return sanitize(JSON.parse(decodeURIComponent(part.substring(PARAM.length + 1))));
   } catch {
     return undefined;
   }
+}
+
+/** Nur gültige Teile übernehmen – ein verstümmelter Link darf das Webpart nicht zum Absturz bringen. */
+function sanitize(v: unknown): IViewState | undefined {
+  if (!v || typeof v !== 'object' || Array.isArray(v)) {
+    return undefined;
+  }
+  const raw = v as { t?: unknown; f?: unknown; q?: unknown; r?: unknown };
+  const out: IViewState = {};
+  if (typeof raw.t === 'string') {
+    out.t = raw.t;
+  }
+  if (typeof raw.q === 'string') {
+    out.q = raw.q;
+  }
+  if (raw.f && typeof raw.f === 'object' && !Array.isArray(raw.f)) {
+    const f: { [field: string]: IColumnFilter } = {};
+    const src = raw.f as { [k: string]: unknown };
+    Object.keys(src).forEach(k => {
+      const c = src[k] as { values?: unknown; date?: unknown } | undefined;
+      if (!c || typeof c !== 'object') {
+        return;
+      }
+      if (Array.isArray(c.values) && c.values.every(x => typeof x === 'string')) {
+        f[k] = { values: c.values as string[] };
+      } else if (typeof c.date === 'string' && DATE_PRESETS.some(p => p.key === c.date)) {
+        f[k] = { date: c.date as IColumnFilter['date'] };
+      }
+    });
+    if (Object.keys(f).length) {
+      out.f = f;
+    }
+  }
+  const r = raw.r as { l?: unknown; id?: unknown } | undefined;
+  if (r && typeof r === 'object' && typeof r.l === 'string' && /^[a-z0-9_]+$/i.test(r.l)
+    && typeof r.id === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(r.id)) {
+    out.r = { l: r.l, id: r.id };
+  }
+  return out;
 }
 
 /** Schreibt den Zustand in die Adresse, ohne einen Verlaufseintrag anzulegen. */

@@ -125,7 +125,10 @@ export const PremiumView: React.FC<IPremiumViewProps> = props => {
         <span className={styles.ovCountdownTop}><Icon iconName="Clock" /> Sperre ohne Premium-Lizenz</span>
         <span className={styles.ovCountdownDays}>{days > 0 ? formatNumber(days) : '0'}</span>
         <span className={styles.ovCountdownUnit}>{days === 1 ? 'Tag' : 'Tage'} bis Februar 2027</span>
-        <span className={styles.ovCountdownFoot}>{data ? <><strong>{formatNumber(data.users.filter(isBlocked).length)}</strong>&nbsp;Personen ohne Premium</> : 'laut Microsoft „ab Februar 2027“'}</span>
+        <span className={styles.ovCountdownFoot}>{data
+          ? data.licenseState !== 'ok' ? 'Lizenzen nicht geprüft'
+            : <><strong>{data.warnings.some(w => /Personen nicht geprüft/.test(w)) ? 'mind. ' : ''}{formatNumber(data.users.filter(isBlocked).length)}</strong>&nbsp;Personen ohne Premium</>
+          : 'laut Microsoft „ab Februar 2027“'}</span>
       </div>
     </section>
   );
@@ -152,6 +155,16 @@ export const PremiumView: React.FC<IPremiumViewProps> = props => {
 
   const notices = (
     <>
+      {data.licenseState === 'error' && (
+        <div className={styles.accessNotice} role="alert">
+          <span className={styles.accessIcon}><Icon iconName="Warning" /></span>
+          <div className={styles.ccNoticeText}>
+            <strong>Lizenzprüfung abgebrochen</strong>
+            <span>„Ohne Premium“ ist deshalb nicht aussagekräftig – bitte später „Aktualisieren“.</span>
+            {data.licenseProblem && <span className={styles.ccDetail}>Technisch: {data.licenseProblem}</span>}
+          </div>
+        </div>
+      )}
       {(data.licenseState === 'forbidden' || data.licenseState === 'consent') && (
         <div className={styles.accessNotice} role="alert">
           <span className={styles.accessIcon}><Icon iconName="Lock" /></span>
@@ -201,6 +214,8 @@ export const PremiumView: React.FC<IPremiumViewProps> = props => {
     { key: 'launches', label: `Geöffnet (${USAGE_DAYS} T.)`, numeric: true, sort: u => u.launches, render: u => (data.usageAvailable ? formatNumber(u.launches) : '–') }
   ];
   const pipeOf = (e: IPremiumEnv): ReturnType<typeof pipelineInfo> => pipelineInfo(pipes, e.id);
+  /** Nicht alle Hosts geprüft: „keine Pipeline“ ist dann nicht sicher */
+  const pipesIncomplete = !!pipes && (pipes.notChecked > 0 || pipes.unreadable.length > 0);
   const pipelineTargets = data.envs.filter(e => { const i = pipeOf(e); return !!i && i.target.length > 0; });
   const isPipelineTarget = (e: IPremiumEnv): boolean => { const i = pipeOf(e); return !!i && i.target.length > 0; };
   const envCols: IColumn<IPremiumEnv>[] = ([
@@ -211,6 +226,7 @@ export const PremiumView: React.FC<IPremiumViewProps> = props => {
     {
       key: 'unlicensed', label: 'Ohne Premium', numeric: true, sort: e => e.unlicensed,
       render: e => (e.payGo ? <span className={styles.muted} title={`Pay-as-you-go über „${e.payGo}“`}>gedeckt (PAYG)</span>
+        : data.licenseState !== 'ok' ? <span className={styles.muted} title="Lizenzen nicht geprüft">–</span>
         : <span className={styles.ccConsumed}><b>{formatNumber(e.unlicensed)}</b>
           {e.users.length > 0 && <span className={styles.ccMeter} title={`${formatNumber(Math.round((e.unlicensed / e.users.length) * 100))} % ohne Premium`}><span className={`${styles.ccMeterFill} ${styles.ccMeterFull}`} style={{ width: `${(e.unlicensed / e.users.length) * 100}%` }} /></span>}
         </span>)
@@ -224,7 +240,9 @@ export const PremiumView: React.FC<IPremiumViewProps> = props => {
       }
       const i = pipeOf(e);
       if (!i) {
-        return <span className={styles.muted}>{pipeState === 'error' ? '–' : 'keine'}</span>;
+        return pipeState === 'error' ? <span className={styles.muted}>–</span>
+          : pipesIncomplete ? <span className={styles.muted} title="Nicht alle Pipelines-Hosts konnten geprüft werden – siehe Hinweis unter der Tabelle">keine gefunden (?)</span>
+            : <span className={styles.muted}>keine</span>;
       }
       return (
         <span className={styles.dlpChips}>
@@ -326,7 +344,12 @@ export const PremiumView: React.FC<IPremiumViewProps> = props => {
           <div className={styles.ccFoot}>
             {pipeState === 'error'
               ? <span><Icon iconName="Warning" /> Pipelines nicht lesbar: {pipeProblem}</span>
-              : <span>„Pipelines“: live aus allen Pipelines-Hosts{pipes ? ` (${formatNumber(pipes.hosts)} Hosts${pipes.unreadable.length ? `, nicht lesbar: ${pipes.unreadable.join(', ')}` : ''})` : ''}.
+              : <span>
+                {pipesIncomplete && pipes && <><Icon iconName="Warning" /> <b>Ergebnis unvollständig:</b>
+                  {pipes.notChecked > 0 ? ` ${formatNumber(pipes.notChecked)} Environments konnten bei der Host-Suche nicht geprüft werden (ohne Zugriff oder nicht erreichbar)` : ''}
+                  {pipes.unreadable.length ? `${pipes.notChecked > 0 ? ';' : ''} nicht lesbar: ${pipes.unreadable.join(', ')}` : ''}
+                  {' '}– „keine gefunden (?)“ heißt dann nicht sicher „keine Pipeline“. Details und „Hosts neu suchen“ in der Ansicht „Pipelines“.<br /></>}
+                „Pipelines“: live aus {pipesIncomplete ? 'den lesbaren' : 'allen'} Pipelines-Hosts{pipes ? ` (${formatNumber(pipes.hosts)} Hosts)` : ''}.
                 Ziel-Environments einer Pipeline müssen Managed sein – Managed lässt sich dort nicht zurücknehmen. Entwicklungs-Environments müssen nicht Managed sein.</span>}
             {onlyPipelineEnvs && <button type="button" className={styles.textButton} onClick={() => setOnlyPipelineEnvs(false)}>Alle Managed Environments zeigen</button>}
           </div>

@@ -1,4 +1,4 @@
-import { AadHttpClient, AadHttpClientFactory, HttpClientResponse } from '@microsoft/sp-http';
+import { AadHttpClient, AadHttpClientFactory, HttpClientResponse, IHttpClientOptions } from '@microsoft/sp-http';
 import { IRecord, IRelatedConfig, ITableConfig } from '../models/ITableConfig';
 import { combineFilters, displayValue, rawValue, templateFields } from '../utils/format';
 
@@ -37,6 +37,69 @@ export interface IDateWindow {
 }
 
 const TRUNCATED_AGGREGATE = 'Zu viele Datensätze für eine vollständige Auswertung (über 50.000 auch nach Aufteilen des Zeitraums) – Ergebnis wäre unvollständig.';
+const TRUNCATED_ROWS = 'Zu viele Datensätze für eine vollständige Auswertung (über 50.000) – Ergebnis wäre unvollständig.';
+
+/**
+ * Auf das Laden der Datensätze ausweichen nur, wenn Dataverse die Aggregation ablehnt (nicht unterstützt bzw.
+ * Aggregat-Grenze) – nicht bei Drosselung (429), Serverfehlern, fehlenden Rechten oder Netzwerkfehlern:
+ * dort würde das Laden von bis zu 50.000 Zeilen die Last nur erhöhen.
+ */
+function canFallBack(e: unknown): boolean {
+  if (isAggregateLimit(e)) {
+    return true;
+  }
+  if (!(e instanceof DataverseError) || missingProperty(e)) {
+    return false;
+  }
+  return e.status >= 400 && e.status < 500 && [401, 403, 404, 408, 429].indexOf(e.status) < 0;
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// Drosselung (Service Protection Limits): höchstens MAX_IN_FLIGHT gleichzeitige Anfragen je Dataverse-Host
+// (gilt für alle Instanzen des Dienstes) und Wiederholung bei 429 bzw. 502/503/504.
+// ---------------------------------------------------------------------------------------------------------------
+const MAX_IN_FLIGHT = 12;
+const MAX_RETRIES = 4;
+const RETRY_IDEMPOTENT = [502, 503, 504];
+interface IHostSlots { active: number; queue: (() => void)[] }
+const hostSlots: { [host: string]: IHostSlots } = {};
+
+function slotsFor(host: string): IHostSlots {
+  const key = host.toLowerCase();
+  return hostSlots[key] || (hostSlots[key] = { active: 0, queue: [] });
+}
+
+function acquireSlot(s: IHostSlots): Promise<void> {
+  if (s.active < MAX_IN_FLIGHT) {
+    s.active++;
+    return Promise.resolve();
+  }
+  // Der Platz wird beim Freigeben direkt übergeben (active bleibt gleich)
+  return new Promise<void>(resolve => s.queue.push(resolve));
+}
+
+function releaseSlot(s: IHostSlots): void {
+  const next = s.queue.shift();
+  if (next) {
+    next();
+  } else {
+    s.active--;
+  }
+}
+
+/** Wartezeit vor dem nächsten Versuch: Retry-After (Sekunden oder Datum), sonst 1, 2, 4, 8 s (+ Zufall), höchstens 30 s. */
+function retryDelay(res: HttpClientResponse, attempt: number): number {
+  const header = res.headers ? res.headers.get('Retry-After') : null;
+  let ms = NaN;
+  if (header) {
+    const sec = Number(header);
+    ms = !isNaN(sec) ? sec * 1000 : Date.parse(header) - Date.now();
+  }
+  if (isNaN(ms) || ms < 0) {
+    ms = Math.pow(2, attempt) * 1000 + Math.random() * 500;
+  }
+  return Math.min(ms, 30000);
+}
 
 export interface IEntityMeta {
   logicalName: string;
@@ -373,7 +436,7 @@ export class DataverseService {
     try {
       return window ? await this._splitWindow(filter, window, run, merge) : await run(filter);
     } catch (e) {
-      if (missingProperty(e)) {
+      if (!canFallBack(e)) {
         throw e;
       }
     }
@@ -381,8 +444,8 @@ export class DataverseService {
       key: '_pairs', title: logicalName, logicalName, icon: 'Table', filter: window ? windowFilter(filter, window) : filter, strictFilter: true,
       columns: [{ field: fieldA, label: fieldA, type: 'text' }, { field: fieldB, label: fieldB, type: 'text' }]
     }, AGGREGATE_LIMIT);
-    if (window && rec.truncated) {
-      throw new Error(TRUNCATED_AGGREGATE);
+    if (rec.truncated) {
+      throw new Error(window ? TRUNCATED_AGGREGATE : TRUNCATED_ROWS);
     }
     const counts: { [key: string]: { a: string; b: string; n: number } } = {};
     rec.records.forEach(r => {
@@ -421,7 +484,7 @@ export class DataverseService {
     try {
       return window ? await this._splitWindow(filter, window, run, merge) : await run(filter);
     } catch (e) {
-      if (missingProperty(e)) {
+      if (!canFallBack(e)) {
         throw e;
       }
     }
@@ -429,8 +492,8 @@ export class DataverseService {
       key: '_max', title: logicalName, logicalName, icon: 'Table', filter: window ? windowFilter(filter, window) : filter, strictFilter: true,
       columns: [{ field: groupField, label: groupField, type: 'text' }, { field: maxField, label: maxField, type: 'date' }]
     }, AGGREGATE_LIMIT);
-    if (window && rec.truncated) {
-      throw new Error(TRUNCATED_AGGREGATE);
+    if (rec.truncated) {
+      throw new Error(window ? TRUNCATED_AGGREGATE : TRUNCATED_ROWS);
     }
     const out: { [value: string]: string } = {};
     rec.records.forEach(r => keep(out, r[groupField], r[maxField]));
@@ -478,7 +541,7 @@ export class DataverseService {
       res.value.forEach(r => { out[keyOf(r)] = (out[keyOf(r)] || 0) + Number(r.n || 0); });
       return out;
     } catch (e) {
-      if (missingProperty(e) || aggregateOnly) {
+      if (aggregateOnly || !canFallBack(e)) {
         throw e; // aggregateOnly: bei großen Tabellen (z. B. Audit-Log) nicht auf Laden aller Datensätze ausweichen
       }
     }
@@ -487,6 +550,9 @@ export class DataverseService {
       columns: [{ field: groupField, label: groupField, type: 'text' }].concat(sumField ? [{ field: sumField, label: sumField, type: 'number' }] : []) as ITableConfig['columns']
     };
     const rec = await this.getRecords(table, AGGREGATE_LIMIT);
+    if (rec.truncated) {
+      throw new Error(TRUNCATED_ROWS); // keine Teilmenge als vollständige Zählung ausgeben
+    }
     rec.records.forEach(r => { out[keyOf(r)] = (out[keyOf(r)] || 0) + (sumField ? Number(r[sumField] || 0) : 1); });
     return out;
   }
@@ -547,11 +613,14 @@ export class DataverseService {
     return (await this._fetchAll(entitySet, select, filter, undefined, maxRecords)).records;
   }
 
+  /** Wie query(), meldet zusätzlich, ob bei maxRecords abgeschnitten wurde. */
+  public queryAll(entitySet: string, select: string[], filter: string | undefined, maxRecords: number): Promise<{ records: IRecord[]; truncated: boolean }> {
+    return this._fetchAll(entitySet, select, filter, undefined, maxRecords);
+  }
+
   /** Datensatz aktualisieren (PATCH, nur bestehende Datensätze). entitySet z. B. „admin_apps“. */
   public async update(entitySet: string, id: string, values: { [field: string]: unknown }): Promise<void> {
-    const client = await this._getClient();
-    const res: HttpClientResponse = await client.fetch(`${this.baseUrl}${API_PATH}${entitySet}(${id})`, AadHttpClient.configurations.v1, {
-      method: 'PATCH',
+    await this._send(`${this.baseUrl}${API_PATH}${entitySet}(${id})`, 'PATCH', {
       headers: {
         'Accept': 'application/json',
         'Content-Type': 'application/json',
@@ -560,17 +629,16 @@ export class DataverseService {
         'If-Match': '*'
       },
       body: JSON.stringify(values)
+    }, async res => {
+      if (!res.ok) {
+        throw await toError(res);
+      }
     });
-    if (!res.ok) {
-      throw await toError(res);
-    }
   }
 
   /** Datensatz anlegen (POST). Liefert die ID des neuen Datensatzes (aus „OData-EntityId“). */
   public async create(entitySet: string, values: { [field: string]: unknown }): Promise<string> {
-    const client = await this._getClient();
-    const res: HttpClientResponse = await client.fetch(`${this.baseUrl}${API_PATH}${entitySet}`, AadHttpClient.configurations.v1, {
-      method: 'POST',
+    return this._send(`${this.baseUrl}${API_PATH}${entitySet}`, 'POST', {
       headers: {
         'Accept': 'application/json',
         'Content-Type': 'application/json',
@@ -578,24 +646,24 @@ export class DataverseService {
         'OData-Version': '4.0'
       },
       body: JSON.stringify(values)
+    }, async res => {
+      if (!res.ok) {
+        throw await toError(res);
+      }
+      const ref = (res.headers && (res.headers.get('OData-EntityId') || res.headers.get('odata-entityid'))) || '';
+      return (/\(([0-9a-f-]{36})\)\s*$/i.exec(ref) || [])[1] || '';
     });
-    if (!res.ok) {
-      throw await toError(res);
-    }
-    const ref = (res.headers && (res.headers.get('OData-EntityId') || res.headers.get('odata-entityid'))) || '';
-    return (/\(([0-9a-f-]{36})\)\s*$/i.exec(ref) || [])[1] || '';
   }
 
   /** Datensatz löschen (DELETE). */
   public async remove(entitySet: string, id: string): Promise<void> {
-    const client = await this._getClient();
-    const res: HttpClientResponse = await client.fetch(`${this.baseUrl}${API_PATH}${entitySet}(${id})`, AadHttpClient.configurations.v1, {
-      method: 'DELETE',
+    await this._send(`${this.baseUrl}${API_PATH}${entitySet}(${id})`, 'DELETE', {
       headers: { 'Accept': 'application/json', 'OData-MaxVersion': '4.0', 'OData-Version': '4.0' }
+    }, async res => {
+      if (!res.ok && res.status !== 404) {
+        throw await toError(res);
+      }
     });
-    if (!res.ok && res.status !== 404) {
-      throw await toError(res);
-    }
   }
 
   /** Beliebige GET-Abfrage relativ zur Web API (z. B. mit $expand oder Metadaten); eine Seite. */
@@ -661,25 +729,54 @@ export class DataverseService {
   }
 
   private async _get<T>(pathOrUrl: string, maxPageSize?: number): Promise<T> {
-    const client = await this._getClient();
     const url = /^https:\/\//i.test(pathOrUrl) ? pathOrUrl : this.baseUrl + API_PATH + pathOrUrl;
     // Nur formatierte Werte anfordern – bei großen Tabellen deutlich kleinere Antworten als mit "*".
     const prefer = ['odata.include-annotations="OData.Community.Display.V1.FormattedValue"'];
     if (maxPageSize) {
       prefer.push(`odata.maxpagesize=${maxPageSize}`);
     }
-    const res: HttpClientResponse = await client.get(url, AadHttpClient.configurations.v1, {
+    return this._send(url, 'GET', {
       headers: {
         'Accept': 'application/json',
         'OData-MaxVersion': '4.0',
         'OData-Version': '4.0',
         'Prefer': prefer.join(',')
       }
+    }, async res => {
+      if (!res.ok) {
+        throw await toError(res);
+      }
+      return (await res.json()) as T;
     });
-    if (!res.ok) {
-      throw await toError(res);
+  }
+
+  /**
+   * Anfrage mit Begrenzung der gleichzeitigen Anfragen je Host und Wiederholung:
+   * 429 (Service Protection Limits – Dataverse lehnt vor der Ausführung ab) bei allen Methoden,
+   * 502/503/504 nur bei GET, PATCH und DELETE (ein POST könnte sonst doppelt anlegen).
+   * handle() wertet die endgültige Antwort aus (noch innerhalb des belegten Platzes).
+   */
+  private async _send<T>(url: string, method: 'GET' | 'PATCH' | 'POST' | 'DELETE', options: IHttpClientOptions,
+    handle: (res: HttpClientResponse) => Promise<T>): Promise<T> {
+    const client = await this._getClient();
+    const slots = slotsFor(this.baseUrl);
+    for (let attempt = 0; ; attempt++) {
+      await acquireSlot(slots);
+      let wait = 0;
+      try {
+        const res: HttpClientResponse = method === 'GET'
+          ? await client.get(url, AadHttpClient.configurations.v1, options)
+          : await client.fetch(url, AadHttpClient.configurations.v1, { ...options, method });
+        const retry = res.status === 429 || (method !== 'POST' && RETRY_IDEMPOTENT.indexOf(res.status) >= 0);
+        if (!retry || attempt >= MAX_RETRIES) {
+          return await handle(res);
+        }
+        wait = retryDelay(res, attempt);
+      } finally {
+        releaseSlot(slots);
+      }
+      await new Promise(resolve => setTimeout(resolve, wait));
     }
-    return (await res.json()) as T;
   }
 }
 

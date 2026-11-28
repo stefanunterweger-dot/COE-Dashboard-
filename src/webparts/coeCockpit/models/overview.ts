@@ -130,11 +130,14 @@ export async function topAppsByLaunches(service: DataverseService, apps: ITableC
   return { records: [], primaryId: 'admin_appid', valueField: 'admin_launchesinthepast30days', source: 'field', days: 30 };
 }
 
-/** Environments (kleine Tabelle) komplett – für Typ-Verteilung und Rangliste. */
+/** Environments komplett (bis 50.000 – mehr gibt es in keinem Tenant) – für Typ-Verteilung und Rangliste. */
 export async function environmentsOverview(service: DataverseService, table: ITableConfig): Promise<{
   records: IRecord[]; primaryId: string; byType: { label: string; value: number }[];
 }> {
-  const res = await service.getRecords(table, 5000);
+  const res = await service.getRecords(table, 50000);
+  if (res.truncated) {
+    throw new Error('Mehr als 50.000 Environments – Typverteilung wäre unvollständig.');
+  }
   const counts: { [t: string]: number } = {};
   res.records.forEach(r => {
     const t = environmentType(r) || '(unbekannt)';

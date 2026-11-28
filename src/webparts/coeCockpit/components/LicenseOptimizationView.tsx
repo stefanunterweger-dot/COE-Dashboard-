@@ -48,7 +48,7 @@ export const LicenseOptimizationView: React.FC<ILicenseOptimizationViewProps> = 
     let cancelled = false;
     setLoading(true);
     setError('');
-    loadLicenseOptimization(props.service, props.graphFactory, days).then(
+    loadLicenseOptimization(props.service, props.graphFactory, days, props.reloadKey).then(
       d => { if (!cancelled) { setData(d); setLoading(false); } },
       (e: unknown) => { if (!cancelled) { setError(e instanceof LicenseLoadError || e instanceof Error ? e.message : String(e)); setLoading(false); } }
     );

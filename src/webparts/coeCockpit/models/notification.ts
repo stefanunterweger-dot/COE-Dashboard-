@@ -103,6 +103,7 @@ function assessment(rec: string): { text: string; tone: 'danger' | 'warning' | '
     case RECOMMENDATION.inactive: return { text: 'Seit über 90 Tagen keine Aktivität', tone: 'warning' };
     case RECOMMENDATION.empty: return { text: 'Enthält keine Apps und Flows', tone: 'neutral' };
     case RECOMMENDATION.disabled: return { text: 'Bereits deaktiviert', tone: 'neutral' };
+    case RECOMMENDATION.unknown: return { text: 'Nutzung konnte nicht automatisch ermittelt werden – bitte prüfen, ob das Environment noch gebraucht wird', tone: 'warning' };
     default: return { text: rec || '–', tone: 'neutral' };
   }
 }

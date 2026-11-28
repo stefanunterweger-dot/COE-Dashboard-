@@ -1464,6 +1464,8 @@ const CoeCockpit: React.FC<ICoeCockpitProps> = props => {
       byRec(RECOMMENDATION.inactive, 'Inaktiv > 90 Tage', 'Clock'),
       byRec(RECOMMENDATION.empty, 'Leer', 'Inbox'),
       byRec(RECOMMENDATION.disabled, 'Deaktiviert', 'Blocked2'),
+      // nur wenn die Aktivität für einzelne Environments nicht ermittelt werden konnte
+      ...(rows.some(r => r[DEV_FIELDS.recommendation] === RECOMMENDATION.unknown) ? [byRec(RECOMMENDATION.unknown, 'Unbekannt', 'Unknown')] : []),
       {
         key: 'notnotified', label: 'Noch nicht verständigt', icon: 'Mail',
         value: rows.filter(r => !notifyLog[String(r.admin_environmentid || '').toLowerCase()]).length,
@@ -1726,9 +1728,11 @@ const CoeCockpit: React.FC<ICoeCockpitProps> = props => {
     const rec = actionRecord() || panel.record;
     const res = canAct && (isDev || panel.table.logicalName !== 'admin_environment') ? resourceOf(panel.table.logicalName, rec) : undefined;
     if (res && rec.admin_appdeleted !== true && rec.admin_flowdeleted !== true && rec.admin_solutiondeleted !== true) {
-      // „In Arbeit“ länger als 15 Minuten gilt als hängengeblieben (z. B. Protokoll nicht abgeschlossen) und sperrt nicht mehr
-      const pending = (actionItems || []).some(i => i.resourceId === res.id && (i.status === 'Angefordert'
-        || (i.status === 'In Arbeit' && !(Date.now() - Date.parse(i.created) > 15 * 60000))));
+      // „In Arbeit“ länger als 15 Minuten bzw. „Angefordert“ länger als 30 Minuten (Flow aus, noch nicht eingerichtet
+      // oder auf einer anderen Website) gilt als hängengeblieben und sperrt nicht mehr
+      const pending = (actionItems || []).some(i => i.resourceId === res.id
+        && ((i.status === 'Angefordert' && !(Date.now() - Date.parse(i.created) > 30 * 60000))
+          || (i.status === 'In Arbeit' && !(Date.now() - Date.parse(i.created) > 15 * 60000))));
       // Environment-Aktionen setzt Microsoft im Hintergrund um, das CoE zeigt sie erst nach dem nächsten Sync:
       // dieselbe Aktion deshalb 60 Minuten nach „Erledigt“ nicht noch einmal anbieten.
       const recentEnv = (code: string): IActionItem | undefined => res.type !== 'environment' ? undefined : (actionItems || []).filter(i =>

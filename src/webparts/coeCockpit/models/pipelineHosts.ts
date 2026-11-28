@@ -137,8 +137,8 @@ export function readHostScan(): IHostScan | undefined {
   try {
     const raw = window.localStorage.getItem(CACHE_KEY);
     const v = raw ? JSON.parse(raw) as IHostScan : undefined;
-    // mit verweigerten Environments nur 6 Stunden gültig, sonst 24 Stunden
-    const hours = v && v.denied ? 6 : CACHE_HOURS;
+    // mit nicht erreichbaren Environments nur 1 Stunde, mit verweigerten 6 Stunden gültig, sonst 24 Stunden
+    const hours = v && v.failed ? 1 : v && v.denied ? 6 : CACHE_HOURS;
     return v && Array.isArray(v.hosts) && Date.now() - v.at < hours * 3600000 ? v : undefined;
   } catch {
     return undefined;
@@ -153,13 +153,18 @@ function writeHostScan(v: IHostScan): void {
   }
 }
 
+/** Environments, die ein Pipelines-Host sein können: mit Dataverse-URL, ohne Dataverse for Teams (kein API-Zugriff). */
+export function hostCandidates(envs: ICoeEnv[]): ICoeEnv[] {
+  return envs.filter(e => /^https:\/\//i.test(e.url) && !/teams/i.test(e.type || ''));
+}
+
 /**
  * Fragt jedes Dataverse-Environment aus dem CoE, ob es Pipeline-Environments enthält (= Pipelines-Host).
  * Environments ohne die Pipelines-Tabellen antworten mit „nicht gefunden“, ohne Zugriff mit 401/403.
  */
 export async function scanHosts(factory: AadHttpClientFactory, envs: ICoeEnv[], onProgress?: (done: number, total: number) => void,
   alive: () => boolean = () => true): Promise<IHostScan> {
-  const list = envs.filter(e => /^https:\/\//i.test(e.url));
+  const list = hostCandidates(envs);
   const found: IPipelineHost[] = [];
   let done = 0;
   let denied = 0;
@@ -377,7 +382,7 @@ async function loadHostNow(factory: AadHttpClientFactory, host: IPipelineHost, c
     const status = e instanceof DataverseError ? e.status : 0;
     out.problemKind = status === 401 || status === 403 ? 'forbidden' : 'failed';
     out.problem = out.problemKind === 'forbidden'
-      ? 'Kein Zugriff auf dieses Host-Environment (Rolle „Power Platform Administrator“ aktiv? Sicherheitsgruppe des Environments?).'
+      ? 'Kein Zugriff auf dieses Host-Environment – dafür braucht es eine Sicherheitsrolle im Host (z. B. „Systemadministrator“: im Power Platform Admin Center beim Environment unter „Mitgliedschaft“ selbst zuweisen, nach jeder PIM-Aktivierung erneut, oder dauerhaft „Deployment Pipeline Administrator“).'
       : `Nicht lesbar: ${errText(e)}`;
   }
   return out;
@@ -400,6 +405,8 @@ export interface IPipelineIndex {
   byEnv: { [envId: string]: IEnvPipelineInfo };
   hosts: number;
   unreadable: string[];
+  /** Environments, die bei der Host-Suche nicht geprüft werden konnten (ohne Zugriff oder nicht erreichbar) */
+  notChecked: number;
   /** Hosts wurden gesucht (sonst nur der eingestellte Host) */
   scanned: boolean;
   loadedAt: Date;
@@ -445,7 +452,7 @@ export function loadPipelineIndex(factory: AadHttpClientFactory, service: Datave
         });
       });
     });
-    return { byEnv, hosts: hosts.length, unreadable, scanned: true, loadedAt: new Date() };
+    return { byEnv, hosts: hosts.length, unreadable, notChecked: (scan.denied || 0) + (scan.failed || 0), scanned: true, loadedAt: new Date() };
   })();
   indexCache = { key, at: Date.now(), p };
   p.catch(() => { indexCache = undefined; });

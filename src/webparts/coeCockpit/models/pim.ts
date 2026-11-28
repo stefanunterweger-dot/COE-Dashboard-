@@ -235,7 +235,9 @@ export async function loadMyRoles(factory: MSGraphClientFactory): Promise<IMyRol
         r.policy = policyFrom(pol.policy.rules || []);
       }
     } catch (e) {
-      policyProblem = pimError(e).message;
+      const err = pimError(e);
+      // Die Richtlinien lesen dürfen nur bestimmte Rollen (z. B. Globaler Leser) – das ist kein Zustimmungsproblem
+      policyProblem = err.kind === 'forbidden' ? 'keine Leserechte auf die PIM-Richtlinien – Microsoft prüft die Regeln beim Aktivieren' : err.message;
     }
   }));
   roles.sort((a, b) => (a.eligible === b.eligible ? a.name.localeCompare(b.name) : a.eligible ? -1 : 1));

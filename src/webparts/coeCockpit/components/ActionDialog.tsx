@@ -384,7 +384,9 @@ export const ActionDialog: React.FC<IActionDialogProps> = props => {
             )}
             {phase === 'done' && !final && !direct && (
               <MessageBar messageBarType={MessageBarType.warning} isMultiline={true}>
-                Der Flow hat den Auftrag noch nicht übernommen. Er bleibt in der Liste und wird ausgeführt, sobald der Flow läuft – den Stand siehst du im Aktionsprotokoll.
+                Der Flow hat den Auftrag noch nicht übernommen – ist er ausgeschaltet, noch nicht eingerichtet oder läuft das Cockpit auf einer
+                anderen Website als der im Flow hinterlegten (Umgebungsvariable „coeck_CockpitSiteUrl“)? Den Stand siehst du im Aktionsprotokoll.
+                Nach 30 Minuten ohne Übernahme gibt das Cockpit die Solution wieder frei; den Eintrag dann im Aktionsprotokoll auf „Abgelehnt“ setzen.
               </MessageBar>
             )}
           </div>

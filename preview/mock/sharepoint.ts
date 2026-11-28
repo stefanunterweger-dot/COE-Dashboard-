@@ -197,8 +197,23 @@ function handle(method: 'GET' | 'POST', url: string, body: string | undefined, h
     return it ? respond(200, it) : notFound('Das Element');
   }
   if (method === 'GET' && /\/items\?/.test(u)) {
-    const sortField = list === s.lists[ACTIONS] ? 'Created' : 'SentAt';
-    return respond(200, { value: list.items.slice().sort((a, b) => String(b[sortField]).localeCompare(String(a[sortField]))) });
+    // wie SharePoint: ab 5.000 Einträgen nur noch nach indizierten Spalten sortieren (ID immer) – sonst Schwellenwert-Fehler
+    const orderby = (/\$orderby=([^&]+)/.exec(u) || [])[1] || '';
+    if (orderby && !/^ID(%20|\s|\+)/.test(orderby) && list.items.length > 5000) {
+      return respond(500, { 'odata.error': { message: { value: 'The attempted operation is prohibited because it exceeds the list view threshold.' } } });
+    }
+    const desc = /desc/i.test(decodeURIComponent(orderby));
+    const top = Number((/\$top=(\d+)/.exec(u) || [])[1] || 100);
+    const after = Number((/p_ID=(\d+)/.exec(u) || [])[1] || 0);
+    const sorted = list.items.slice().sort((a, b) => desc ? Number(b.Id) - Number(a.Id) : Number(a.Id) - Number(b.Id))
+      .filter(x => desc || Number(x.Id) > after);
+    const pageItems = sorted.slice(0, top);
+    const body: Record<string, unknown> = { value: pageItems };
+    if (!desc && sorted.length > top) {
+      const base = u.replace(/&\$skiptoken=Paged(%3D|=)TRUE(%26|&)p_ID=\d+/, '');
+      body['odata.nextLink'] = `${base}&$skiptoken=Paged%3DTRUE%26p_ID=${pageItems[pageItems.length - 1].Id}`;
+    }
+    return respond(200, body);
   }
   if (method === 'GET') {
     return respond(200, { Id: 'f0000000-0000-4000-8000-000000000001', HasUniqueRoleAssignments: list.unique });

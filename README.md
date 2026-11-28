@@ -109,6 +109,12 @@ Ergebnis: `sharepoint/solution/coe-cockpit.sppkg`
 3. Webpart **CoE Cockpit** auf einer Seite einfügen und in den Eigenschaften die **URL der CoE-Umgebung** eintragen,
    z. B. `https://contoso-coe.crm4.dynamics.com`.
 
+**Nur eine Cockpit-Website:** Aktionsliste, Versandprotokoll und Admin-Gruppe liegen auf der Website, auf der das Webpart eingebunden ist,
+und der Flow überwacht genau diese Website (Umgebungsvariable der SharePoint-Website). Das Cockpit deshalb nur auf **dieser einen Website**
+einbinden – auf einer zweiten Website gäbe es ein eigenes Versandprotokoll (Schutz vor doppelten Mails greift nicht übergreifend) und
+„Solution löschen“ würde vom Flow nicht übernommen. **Teams-Registerkarten werden nicht unterstützt** (nicht „Zu Teams hinzufügen“ /
+„Mit Teams synchronisieren“ wählen).
+
 ## SharePoint-Listen prüfen (Skript)
 
 [`scripts/Ensure-CoeCockpitLists.ps1`](scripts/Ensure-CoeCockpitLists.ps1) prüft auf der Website des Cockpits die Listen
@@ -123,7 +129,12 @@ Ergebnis: `sharepoint/solution/coe-cockpit.sppkg`
 - **Berechtigungen** der Aktionsliste: eigene Berechtigungen, Gruppe (Standard „CoE Cockpit Admins“) = Mitwirken, Websitebesitzer = Vollzugriff,
   optional das Flow-Dienstkonto (`-FlowServiceAccount`) = Mitwirken; weitere Berechtigte werden nur gemeldet.
 - **Gruppe**: Mitgliedschaft für alle sichtbar (sonst kann der Flow „Solution löschen“ die Mitglieder nicht prüfen) – wird korrigiert.
-- Bericht mit OK / ANGELEGT / KORRIGIERT / FEHLT / WARNUNG / FEHLER; `-CheckOnly` prüft nur.
+- **Indizes** auf den Spalten, nach denen die Ansichten filtern, sortieren und gruppieren (Aktionen: Created, Status, Action, Author;
+  Benachrichtigungen: SentAt, Title, Author) – ohne Index brechen die Ansichten ab 5.000 Einträgen am Schwellenwert ab. Am besten anlegen,
+  solange die Listen noch klein sind.
+- **Versionsverlauf** der Aktionsliste eingeschaltet (Änderungen an Protokolleinträgen bleiben nachvollziehbar).
+- Bericht mit OK / ANGELEGT / KORRIGIERT / FEHLT / WARNUNG / FEHLER; `-CheckOnly` prüft nur (Exit-Code 1 bei offenen Punkten, 2 bei Fehlern).
+  `-FlowServiceAccount` bei jedem Lauf mit angeben – sonst meldet das Skript die Berechtigung des Dienstkontos als „nicht vorgesehen“.
 
 Anmeldung interaktiv mit **PnP.PowerShell** über die eigene App-Registrierung – die **Client-ID** wird beim Start abgefragt (oder `-ClientId`).
 Die App braucht die Plattform „Mobile and desktop applications“ mit Umleitungs-URI `http://localhost` und die delegierte SharePoint-Berechtigung
@@ -248,6 +259,11 @@ Admins V2, Office 365 Users) danach in der Lösung bzw. unter *Verbindungsrefere
 
 **Hinweise:**
 - Mitgliedschaft wird direkt in der SharePoint-Gruppe geprüft; Personen, die nur über eine darin enthaltene Entra-Gruppe Mitglied sind, werden abgelehnt.
+- Der Flow prüft **nur die Gruppenmitgliedschaft** und dass die Solution nicht verwaltet und keine System-Solution ist. Die zusätzlichen Sperren
+  des Webparts (aktive Rolle „Power Platform Administrator“, Solutions von Microsoft-Herausgebern) gelten nur im Cockpit – ein Gruppenmitglied
+  könnte einen Auftrag auch direkt in der Liste anlegen. Deshalb nur Admins in die Gruppe aufnehmen; der Versionsverlauf der Liste zeigt Änderungen.
+- Flow **vor der ersten Nutzung** von „Solution löschen“ importieren und einschalten. Ein Auftrag, den der Flow nicht innerhalb von 30 Minuten
+  übernimmt, sperrt die Solution im Cockpit nicht mehr; solche Einträge im Aktionsprotokoll auf „Abgelehnt“ setzen.
 - Die Flow-Definition konnte hier nicht gegen einen echten Tenant getestet werden – bitte zuerst mit einer Test-Solution prüfen.
 
 ## DLP-Auswirkungsanalyse
@@ -285,12 +301,15 @@ Die Entwürfe und die Aufgabenliste brauchen Schreibrechte auf diese CoE-Tabelle
 
 ## Pipelines-Hosts
 
-Übersicht über **alle** Power Platform Pipelines – nur lesen, mit den Rechten der angemeldeten Person (Rolle „Power Platform Administrator“
-bzw. Lesezugriff auf die Pipelines-Tabellen im Host).
+Übersicht über **alle** Power Platform Pipelines – nur lesen, mit den Rechten der angemeldeten Person. Nötig ist eine **Sicherheitsrolle im
+Host-Environment** (z. B. „Systemadministrator“ oder „Deployment Pipeline Administrator“): Power-Platform-Admins bekommen den Systemadministrator
+nicht mehr automatisch, sondern weisen ihn sich im Power Platform Admin Center beim Environment unter „Mitgliedschaft“ selbst zu (nach jeder
+PIM-Aktivierung erneut). Ohne Rolle zählt der Host als „ohne Zugriff“, und „Betroffen ab Februar 2027“ weist auf das unvollständige Ergebnis hin.
 
 - **Hosts finden:** Das Cockpit fragt jedes Environment mit Dataverse aus dem CoE nach der Tabelle „Deployment Environment“
-  (`deploymentenvironments`, eine Zeile). Wo Einträge stehen, ist ein Pipelines-Host. Das Ergebnis bleibt 24 Stunden im Browser
-  (mit Environments ohne Zugriff 6 Stunden; nicht gemerkt, wenn die Mehrheit den Zugriff verweigert – dann ist meist die Rolle nicht aktiv);
+  (`deploymentenvironments`, eine Zeile; Dataverse-for-Teams-Environments ohne API-Zugriff werden übersprungen). Wo Einträge stehen, ist ein
+  Pipelines-Host. Das Ergebnis bleibt 24 Stunden im Browser (mit Environments ohne Zugriff 6 Stunden, mit nicht erreichbaren 1 Stunde; nicht
+  gemerkt, wenn die Mehrheit den Zugriff verweigert);
   „Hosts neu suchen“ startet sie neu. Der Host aus den Webpart-Einstellungen ist immer dabei.
 - **Daten je Host** (Microsoft Learn „Pipeline table reference“): Pipelines (`deploymentpipeline`), Phasen mit Ziel und Vorgänger
   (`deploymentstage`), Environments mit Rolle, Environment-ID, Prüfstatus und Fehlermeldung (`deploymentenvironment`), die letzten

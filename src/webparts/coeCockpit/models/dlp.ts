@@ -62,6 +62,10 @@ export interface IDlpListItem {
   defaultGroup?: DlpGroup;
   /** Connectors je Gruppe (falls bekannt) */
   groups?: { [connectorId: string]: DlpGroup };
+  /** Entwurf: Name/Typ je Connector-ID aus dem gespeicherten JSON (ID-Schreibweise und Typ bleiben beim erneuten Speichern erhalten) */
+  refs?: { [connectorId: string]: IDlpRef };
+  /** CoE-Richtlinie: Gruppen bzw. Environments nicht lesbar – Zahlen unbekannt, nicht analysierbar */
+  loadError?: string;
   createdBy: string;
   created: string;
   modifiedBy: string;
@@ -281,7 +285,7 @@ export function itemFromLive(p: IDlpPolicy): IDlpListItem {
 }
 
 export function workingFrom(item: IDlpListItem, mode: IDlpWorking['mode']): IDlpWorking {
-  const g = item.policy ? groupsOf(item.policy) : { map: { ...(item.groups || {}) }, refs: {} as { [id: string]: IDlpRef } };
+  const g = item.policy ? groupsOf(item.policy) : { map: { ...(item.groups || {}) }, refs: { ...(item.refs || {}) } as { [id: string]: IDlpRef } };
   const defaultGroup = item.defaultGroup || 'General';
   const copy = mode === 'copy';
   return {
@@ -304,8 +308,26 @@ export function emptyWorking(): IDlpWorking {
   return { mode: 'new', draftName: 'Neue Richtlinie', displayName: 'Neue Richtlinie', defaultGroup: 'General', groups: {}, refs: {}, scope: 'OnlyEnvironments', envs: [] };
 }
 
-export function groupOf(w: { defaultGroup: DlpGroup; groups: { [id: string]: DlpGroup } }, id: string): DlpGroup {
-  return w.groups[id.toLowerCase()] || w.defaultGroup;
+/** Nicht blockierbare Connectors (Schlüssel: Connector-ID in Kleinbuchstaben, z. B. „/providers/microsoft.powerapps/apis/shared_sharepointonline“). */
+export type DlpUnblockable = { [connectorId: string]: true };
+
+export function unblockableMap(names: string[]): DlpUnblockable {
+  const m: DlpUnblockable = {};
+  names.forEach(n => { m[connectorId(n).toLowerCase()] = true; });
+  return m;
+}
+
+/**
+ * Gruppe eines Connectors: ausdrücklich zugeordnet oder Standardgruppe. Ist die Standardgruppe „Blockiert“, gelten nicht
+ * blockierbare Connectors ohne Zuordnung als Non-Business (so behandelt Microsoft sie).
+ */
+export function groupOf(w: { defaultGroup: DlpGroup; groups: { [id: string]: DlpGroup } }, id: string, unblockable?: DlpUnblockable): DlpGroup {
+  const key = id.toLowerCase();
+  const explicit = w.groups[key];
+  if (explicit) {
+    return explicit;
+  }
+  return w.defaultGroup === 'Blocked' && unblockable && unblockable[key] ? 'General' : w.defaultGroup;
 }
 
 /** Vollständige Definition zum Speichern (bei „ändern“ auf Basis der Live-Richtlinie, alle anderen Eigenschaften bleiben). */
@@ -415,32 +437,44 @@ export async function loadCoePolicies(service: DataverseService, envs: IDlpEnv[]
   const rows = await service.query('admin_dlppolicies', ['admin_dlppolicyid', 'admin_name', 'admin_scope', 'admin_policyid', 'createdon', 'modifiedon'], 'statecode eq 0', 2000);
   const envByCoe: { [id: string]: string } = {};
   envs.forEach(e => { envByCoe[e.coeId.toLowerCase()] = e.name; });
-  const out = await Promise.all(rows.map(async (r): Promise<IDlpListItem> => {
+  const toItem = async (r: IRecord): Promise<IDlpListItem> => {
     const id = String(r.admin_dlppolicyid || '');
     const scopeLabel = fmt(r, 'admin_scope');
     const scope: DlpScope = /exclud|except|außer/i.test(scopeLabel) ? 'ExceptEnvironments' : /includ|only|nur/i.test(scopeLabel) ? 'OnlyEnvironments' : 'AllEnvironments';
-    const related = async (nav: string, idField: string, extra: string[]): Promise<IRecord[]> => {
-      try {
-        return await service.query(`admin_dlppolicies(${id})/${nav}`, [idField].concat(extra), undefined, 5000);
-      } catch {
-        return [];
-      }
+    const item: IDlpListItem = {
+      key: `coe:${id}`, source: 'coe', id: String(r.admin_policyid || id), displayName: String(r.admin_name || ''), scope, envs: [],
+      defaultGroup: 'General', createdBy: '', created: String(r.createdon || ''), modifiedBy: '', modified: String(r.modifiedon || '')
     };
-    const [envRows, blocked, business] = await Promise.all([
-      scope === 'AllEnvironments' ? Promise.resolve([] as IRecord[]) : related('admin_policy_environments', 'admin_environmentid', ['admin_environmentname']),
-      related('admin_blocked_policy_connectors', 'admin_connectorid', ['admin_name']),
-      related('admin_confidential_policy_connectors', 'admin_connectorid', ['admin_name'])
-    ]);
-    const groups: { [cid: string]: DlpGroup } = {};
-    business.forEach(c => { if (c.admin_name) { groups[connectorId(String(c.admin_name)).toLowerCase()] = 'Confidential'; } });
-    blocked.forEach(c => { if (c.admin_name) { groups[connectorId(String(c.admin_name)).toLowerCase()] = 'Blocked'; } });
-    // Die Standardgruppe erfasst das CoE nicht – alle übrigen Connectors gelten hier als Non-Business
-    return {
-      key: `coe:${id}`, source: 'coe', id: String(r.admin_policyid || id), displayName: String(r.admin_name || ''), scope,
-      envs: envRows.map(e => String(e.admin_environmentname || envByCoe[String(e.admin_environmentid || '').toLowerCase()] || '')).filter(n => !!n),
-      defaultGroup: 'General', groups, createdBy: '', created: String(r.createdon || ''), modifiedBy: '', modified: String(r.modifiedon || '')
-    };
-  }));
+    const related = (nav: string, idField: string, extra: string[]): Promise<IRecord[]> =>
+      service.query(`admin_dlppolicies(${id})/${nav}`, [idField].concat(extra), undefined, 5000);
+    try {
+      const [envRows, blocked, business] = await Promise.all([
+        scope === 'AllEnvironments' ? Promise.resolve([] as IRecord[]) : related('admin_policy_environments', 'admin_environmentid', ['admin_environmentname']),
+        related('admin_blocked_policy_connectors', 'admin_connectorid', ['admin_name']),
+        related('admin_confidential_policy_connectors', 'admin_connectorid', ['admin_name'])
+      ]);
+      const groups: { [cid: string]: DlpGroup } = {};
+      business.forEach(c => { if (c.admin_name) { groups[connectorId(String(c.admin_name)).toLowerCase()] = 'Confidential'; } });
+      blocked.forEach(c => { if (c.admin_name) { groups[connectorId(String(c.admin_name)).toLowerCase()] = 'Blocked'; } });
+      // Die Standardgruppe erfasst das CoE nicht – alle übrigen Connectors gelten hier als Non-Business
+      item.groups = groups;
+      item.envs = envRows.map(e => String(e.admin_environmentname || envByCoe[String(e.admin_environmentid || '').toLowerCase()] || '')).filter(n => !!n);
+    } catch (e) {
+      // nicht still als „keine Connectors“ werten – sonst meldet die Auswirkung fälschlich „nicht betroffen“
+      item.loadError = `Connector-Gruppen bzw. Environments dieser Richtlinie aus dem CoE nicht lesbar: ${errText(e)}`;
+    }
+    return item;
+  };
+  // begrenzt parallel (je Richtlinie bis zu drei Abfragen) – sonst greift das Limit für gleichzeitige Dataverse-Anfragen
+  const out: IDlpListItem[] = new Array(rows.length);
+  let next = 0;
+  const worker = async (): Promise<void> => {
+    while (next < rows.length) {
+      const i = next++;
+      out[i] = await toItem(rows[i]);
+    }
+  };
+  await Promise.all([worker(), worker(), worker(), worker()]);
   return out.sort((a, b) => a.displayName.localeCompare(b.displayName));
 }
 
@@ -449,11 +483,15 @@ export async function loadDrafts(service: DataverseService): Promise<IDlpListIte
     'admin_environments', 'admin_connectorgroups', '_createdby_value', 'createdon', '_modifiedby_value', 'modifiedon'], 'statecode eq 0', 2000);
   return rows.map(r => {
     let groups: { [id: string]: DlpGroup } = {};
+    let refs: { [id: string]: IDlpRef } = {};
     let envs: string[] = [];
     try {
-      groups = groupsOf({ connectorGroups: JSON.parse(String(r.admin_connectorgroups || '[]')) as { classification: DlpGroup; connectors: IDlpRef[] }[] }).map;
+      const g = groupsOf({ connectorGroups: JSON.parse(String(r.admin_connectorgroups || '[]')) as { classification: DlpGroup; connectors: IDlpRef[] }[] });
+      groups = g.map;
+      refs = g.refs;
     } catch {
       groups = {};
+      refs = {};
     }
     try {
       envs = envNames(JSON.parse(String(r.admin_environments || '[]')) as IDlpRef[]);
@@ -465,7 +503,7 @@ export async function loadDrafts(service: DataverseService): Promise<IDlpListIte
       key: `draft:${String(r.admin_datapolicydraftsid)}`, source: 'draft' as const, id: String(r.admin_datapolicydraftsid), draftName: String(r.admin_name || ''),
       displayName: String(r.admin_displayname || r.admin_name || ''), scope: SCOPE_LABEL[scope] ? scope : 'OnlyEnvironments', envs,
       defaultGroup: (DLP_GROUPS.indexOf(r.admin_defaultconnectorclassification as DlpGroup) >= 0 ? r.admin_defaultconnectorclassification : 'General') as DlpGroup,
-      groups, createdBy: fmt(r, '_createdby_value'), created: String(r.createdon || ''), modifiedBy: fmt(r, '_modifiedby_value'), modified: String(r.modifiedon || '')
+      groups, refs, createdBy: fmt(r, '_createdby_value'), created: String(r.createdon || ''), modifiedBy: fmt(r, '_modifiedby_value'), modified: String(r.modifiedon || '')
     };
   }).sort((a, b) => (b.modified || '').localeCompare(a.modified || ''));
 }
@@ -576,7 +614,7 @@ export function loadInventory(service: DataverseService, maxRecords: number, fre
 
 interface IRuleSet { defaultGroup: DlpGroup; groups: { [id: string]: DlpGroup }; scope: DlpScope; envs: string[] }
 
-function violation(rules: IRuleSet, res: IDlpResource): { business: string[]; nonBusiness: string[]; blocked: string[] } | undefined {
+function violation(rules: IRuleSet, res: IDlpResource, unblockable?: DlpUnblockable): { business: string[]; nonBusiness: string[]; blocked: string[] } | undefined {
   if (!appliesTo(rules.scope, rules.envs, res.env)) {
     return undefined;
   }
@@ -584,7 +622,7 @@ function violation(rules: IRuleSet, res: IDlpResource): { business: string[]; no
   const nonBusiness: string[] = [];
   const blocked: string[] = [];
   res.connectors.forEach(n => {
-    const g = groupOf(rules, connectorId(n));
+    const g = groupOf(rules, connectorId(n), unblockable);
     (g === 'Blocked' ? blocked : g === 'Confidential' ? business : nonBusiness).push(n);
   });
   return blocked.length || (business.length && nonBusiness.length) ? { business, nonBusiness, blocked } : undefined;
@@ -594,7 +632,8 @@ function violation(rules: IRuleSet, res: IDlpResource): { business: string[]; no
  * Auswirkung wie in der CoE-App: betroffen ist, was einen blockierten Connector nutzt oder Business- und Non-Business-Connectors mischt –
  * in den Environments, für die die Richtlinie gilt. „bereits betroffen“ = auch mit der bisherigen Richtlinie.
  */
-export function computeImpact(w: IDlpWorking, inv: { apps: IDlpResource[]; flows: IDlpResource[]; truncated: boolean }, allEnvs: IDlpEnv[]): IDlpImpactResult {
+export function computeImpact(w: IDlpWorking, inv: { apps: IDlpResource[]; flows: IDlpResource[]; truncated: boolean }, allEnvs: IDlpEnv[],
+  unblockable?: DlpUnblockable): IDlpImpactResult {
   const rules: IRuleSet = { defaultGroup: w.defaultGroup, groups: w.groups, scope: w.scope, envs: w.envs };
   const run = (list: IDlpResource[]): { hits: IDlpImpact[]; analyzed: number } => {
     let analyzed = 0;
@@ -604,9 +643,9 @@ export function computeImpact(w: IDlpWorking, inv: { apps: IDlpResource[]; flows
         return;
       }
       analyzed++;
-      const v = violation(rules, r);
+      const v = violation(rules, r, unblockable);
       if (v) {
-        hits.push({ resource: r, ...v, already: !!w.base && !!violation(w.base, r) });
+        hits.push({ resource: r, ...v, already: !!w.base && !!violation(w.base, r, unblockable) });
       }
     });
     return { hits, analyzed };
@@ -620,12 +659,12 @@ export function computeImpact(w: IDlpWorking, inv: { apps: IDlpResource[]; flows
 }
 
 /** Unterschiede zum Ausgangszustand (für „Überprüfen“). */
-export function diffConnectors(w: IDlpWorking, connectors: IDlpConnector[]): { connector: IDlpConnector; from: DlpGroup; to: DlpGroup }[] {
+export function diffConnectors(w: IDlpWorking, connectors: IDlpConnector[], unblockable?: DlpUnblockable): { connector: IDlpConnector; from: DlpGroup; to: DlpGroup }[] {
   if (!w.base) {
     return [];
   }
   const base = w.base;
-  return connectors.map(c => ({ connector: c, from: groupOf(base, c.id), to: groupOf(w, c.id) })).filter(x => x.from !== x.to);
+  return connectors.map(c => ({ connector: c, from: groupOf(base, c.id, unblockable), to: groupOf(w, c.id, unblockable) })).filter(x => x.from !== x.to);
 }
 
 export function isDirty(w: IDlpWorking, connectors: IDlpConnector[]): boolean {

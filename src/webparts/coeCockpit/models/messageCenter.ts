@@ -12,7 +12,8 @@ export const PP_SERVICES = [
   'Microsoft Copilot Studio', 'Copilot Studio', 'Microsoft Dataverse', 'Dataverse', 'Dynamics 365 Apps', 'Power Pages', 'Microsoft Power Pages',
   'Power BI', 'Microsoft Power BI'
 ];
-const PP_TITLE = /power apps|power automate|power platform|copilot studio|dataverse|power pages|power bi|managed environment|dlp/i;
+// „DLP“ allein nicht: sonst kämen die (häufigen) Meldungen zu Microsoft Purview DLP mit
+const PP_TITLE = /power apps|power automate|power platform|copilot studio|dataverse|power pages|power bi|managed environment|\bdlp\b.*(connector|konnektor)/i;
 
 export interface IMcMessage {
   id: string;

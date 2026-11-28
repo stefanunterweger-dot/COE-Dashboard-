@@ -12,8 +12,8 @@ import { Pill } from './Cells';
 import { IColumn, SortTable } from './CopilotCreditsView';
 import { DlpEditor } from './DlpEditor';
 import {
-  appliesTo, DlpApi, DlpGroup, emptyWorking, GROUP_LABEL, IDlpBase, IDlpListItem, IDlpTask, IDlpWorking, itemFromLive, loadCoePolicies, loadDlpBase,
-  loadDrafts, loadTasks, PPAC_DLP_URL, ppacPolicyUrl, resetDlpCache, scopeText, workingFrom
+  appliesTo, DlpApi, DlpGroup, emptyWorking, groupOf, GROUP_LABEL, IDlpBase, IDlpListItem, IDlpTask, IDlpWorking, itemFromLive, loadCoePolicies, loadDlpBase,
+  loadDrafts, loadTasks, PPAC_DLP_URL, ppacPolicyUrl, resetDlpCache, scopeText, unblockableMap, workingFrom
 } from '../models/dlp';
 import { IActionRequest } from '../models/actions';
 import { ActionService } from '../services/ActionService';
@@ -43,7 +43,11 @@ export interface IDlpViewProps {
 type Tab = 'live' | 'draft' | 'tasks';
 const errText = (e: unknown): string => (e instanceof Error ? e.message : String(e));
 const LOGWARN = ' Hinweis: Der Eintrag im Aktionsprotokoll konnte nicht abgeschlossen werden (steht noch auf „In Arbeit“) – bitte in der Liste „CoE Cockpit Aktionen“ nachtragen.';
-const csvEsc = (v: string): string => (/[;"\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v);
+/** CSV-Feld: Trennzeichen/Anführungszeichen maskieren; Formeln (=, +, -, @ am Anfang – Namen kommen von Makern) mit ' entschärfen. */
+const csvEsc = (raw: string): string => {
+  const v = /^[=+\-@\t\r]/.test(raw) ? `'${raw}` : raw;
+  return /[;"\n\r]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v;
+};
 const dateCell = (v: string): React.ReactNode => (v ? formatDate(new Date(v)) : <span className={styles.muted}>–</span>);
 
 export const DlpView: React.FC<IDlpViewProps> = props => {
@@ -156,16 +160,19 @@ export const DlpView: React.FC<IDlpViewProps> = props => {
     return (n: string): string => m[n.toLowerCase().replace(/^default-/, '')] || n;
   }, [base]);
 
+  const unblockableIds = React.useMemo(() => unblockableMap(unblockable), [unblockable]);
   const counts = (it: IDlpListItem): { [g in DlpGroup]: number } | undefined => {
     if (!it.groups || !base) {
       return undefined;
     }
     const c = { Confidential: 0, General: 0, Blocked: 0 };
     const seen: { [id: string]: true } = {};
+    const rules = { defaultGroup: it.defaultGroup || 'General' as DlpGroup, groups: it.groups };
     base.connectors.forEach(con => {
       const id = con.id.toLowerCase();
       seen[id] = true;
-      c[it.groups![id] || it.defaultGroup || 'General']++;
+      // nicht blockierbare Connectors zählen bei Standardgruppe „Blockiert“ als Non-Business (wie bei Microsoft)
+      c[groupOf(rules, id, unblockableIds)]++;
     });
     Object.keys(it.groups).forEach(id => { if (!seen[id]) { c[it.groups![id]]++; } });
     return c;
@@ -180,6 +187,10 @@ export const DlpView: React.FC<IDlpViewProps> = props => {
 
   const open = async (it: IDlpListItem, mode: IDlpWorking['mode']): Promise<void> => {
     setNotice(undefined);
+    if (it.loadError) {
+      setNotice({ type: MessageBarType.error, text: `„${it.displayName}“ lässt sich nicht analysieren: ${it.loadError} Bitte „Aktualisieren“ oder die Rolle „Power Platform Administrator“ aktivieren (Live-Ansicht).` });
+      return;
+    }
     if (it.source !== 'live') {
       setEditing(workingFrom(it, mode));
       return;
@@ -197,6 +208,9 @@ export const DlpView: React.FC<IDlpViewProps> = props => {
 
   // ---------- Tabellen ----------
   const groupCell = (it: IDlpListItem): React.ReactNode => {
+    if (it.loadError) {
+      return <span className={styles.muted} title={it.loadError}><Icon iconName="Warning" /> nicht lesbar</span>;
+    }
     const c = counts(it);
     if (!c) {
       return <span className={styles.muted}>…</span>;
@@ -320,6 +334,13 @@ export const DlpView: React.FC<IDlpViewProps> = props => {
           <div className={styles.muted}>
             <Icon iconName="Info" /> Richtlinien live nicht lesbar – {source === 'coe' ? 'angezeigt wird der Stand aus dem CoE (letzter Sync, ohne Standardgruppe; ändern im Tenant nicht möglich). ' : ''}{liveError.text}
             {liveError.kind === 'forbidden' && <> <a className={styles.link} href={PIM_URL} target="_blank" rel="noopener noreferrer">Rolle in PIM aktivieren</a></>}
+          </div>
+        </div>
+      )}
+      {tab === 'live' && (items || []).some(i => !!i.loadError) && (
+        <div className={styles.ccWarnings}>
+          <div className={styles.muted}>
+            <Icon iconName="Warning" /> {formatNumber((items || []).filter(i => !!i.loadError).length)} Richtlinie(n) aus dem CoE nicht vollständig lesbar – Connector-Gruppen bzw. Environments unbekannt, Auswirkung dafür nicht berechenbar. Bitte „Aktualisieren“.
           </div>
         </div>
       )}

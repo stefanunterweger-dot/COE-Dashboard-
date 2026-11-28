@@ -155,10 +155,11 @@ export const MyRolesPanel: React.FC<IMyRolesPanelProps> = props => {
             <Dropdown label="Dauer" selectedKey={minutes} options={durationOptions(r)} onChange={(_e, o) => o && setMinutes(Number(o.key))} styles={{ root: { maxWidth: 220 } }} />
             <TextField label="Begründung" required={needReason} multiline={true} rows={2} value={reason} onChange={(_e, v) => setReason(v || '')}
               placeholder="z. B. Freigabe von Apps im CoE Cockpit" />
-            {p && p.ticket && (
+            {(!p || p.ticket) && (
+              // Regeln nicht lesbar: Ticketfelder optional anbieten (verlangt die Richtlinie ein Ticket, meldet Microsoft das beim Aktivieren)
               <div className={styles.setGrid2}>
-                <TextField label="Ticketnummer" required={true} value={ticketNo} onChange={(_e, v) => setTicketNo(v || '')} />
-                <TextField label="Ticketsystem" required={true} value={ticketSys} onChange={(_e, v) => setTicketSys(v || '')} />
+                <TextField label={p ? 'Ticketnummer' : 'Ticketnummer (falls verlangt)'} required={!!p} value={ticketNo} onChange={(_e, v) => setTicketNo(v || '')} />
+                <TextField label={p ? 'Ticketsystem' : 'Ticketsystem (falls verlangt)'} required={!!p} value={ticketSys} onChange={(_e, v) => setTicketSys(v || '')} />
               </div>
             )}
             {p && p.approval && <div className={styles.muted}><Icon iconName="Info" /> Diese Rolle braucht eine Genehmigung – sie wird erst danach aktiv.</div>}

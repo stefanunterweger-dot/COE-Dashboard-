@@ -17,7 +17,7 @@ const ROLE_CONTRIBUTE = 1073741827;
 const ROLE_FULL_CONTROL = 1073741829;
 
 const FIELDS: string[] = [
-  '<Field Type="Text" DisplayName="Action" Name="Action" StaticName="Action" MaxLength="40" />',
+  '<Field Type="Text" DisplayName="Action" Name="Action" StaticName="Action" MaxLength="40" Indexed="TRUE" />',
   '<Field Type="Text" DisplayName="ResourceType" Name="ResourceType" StaticName="ResourceType" MaxLength="20" />',
   '<Field Type="Text" DisplayName="ResourceId" Name="ResourceId" StaticName="ResourceId" MaxLength="80" />',
   '<Field Type="Text" DisplayName="CoeRecordId" Name="CoeRecordId" StaticName="CoeRecordId" MaxLength="80" />',
@@ -27,7 +27,7 @@ const FIELDS: string[] = [
   '<Field Type="Text" DisplayName="TargetName" Name="TargetName" StaticName="TargetName" MaxLength="255" />',
   '<Field Type="Boolean" DisplayName="TargetIsGroup" Name="TargetIsGroup" StaticName="TargetIsGroup"><Default>0</Default></Field>',
   '<Field Type="Note" DisplayName="Reason" Name="Reason" StaticName="Reason" NumLines="4" RichText="FALSE" />',
-  '<Field Type="Text" DisplayName="Status" Name="Status" StaticName="Status" MaxLength="40" />',
+  '<Field Type="Text" DisplayName="Status" Name="Status" StaticName="Status" MaxLength="40" Indexed="TRUE" />',
   '<Field Type="Note" DisplayName="Result" Name="Result" StaticName="Result" NumLines="4" RichText="FALSE" />',
   '<Field Type="DateTime" DisplayName="CompletedAt" Name="CompletedAt" StaticName="CompletedAt" Format="DateTime" />',
   '<Field Type="Text" DisplayName="RequestedBy" Name="RequestedBy" StaticName="RequestedBy" MaxLength="255" />'
@@ -201,6 +201,11 @@ export class ActionService {
         // 8 = interner Name wie angegeben, 16 = in die Standardansicht
         await this._post(`${this._list}/fields/CreateFieldAsXml`, { parameters: { SchemaXml: xml, Options: 24 } });
       }
+      // Versionsverlauf: Änderungen an Protokolleinträgen bleiben nachvollziehbar (Fehler hier stoppt die Einrichtung nicht)
+      await this._client.post(this._list, SPHttpClient.configurations.v1, {
+        headers: { ...JSON_HEADERS, 'IF-MATCH': '*', 'X-HTTP-Method': 'MERGE' },
+        body: JSON.stringify({ EnableVersioning: true })
+      }).catch(() => undefined);
     }
     // Berechtigungen: Vererbung aufheben, nur Gruppe (Bearbeiten) und Websitebesitzer (Vollzugriff)
     await this._post(`${this._list}/breakroleinheritance(copyRoleAssignments=false,clearSubscopes=true)`);
@@ -261,9 +266,12 @@ export class ActionService {
     return it ? toItem(it) : undefined;
   }
 
-  /** Die letzten Aufträge (neueste zuerst). */
+  /**
+   * Die letzten Aufträge (neueste zuerst). Sortiert nach der ID (immer indiziert) – eine Sortierung nach
+   * „Created“ bricht ab 5.000 Einträgen am Schwellenwert für Listenansichten ab.
+   */
   public async list(top: number = 500): Promise<IActionItem[] | undefined> {
-    const res = await this._get<{ value: IListItem[] }>(`${this._list}/items?$select=${SELECT}&$orderby=Created desc&$top=${top}`);
+    const res = await this._get<{ value: IListItem[] }>(`${this._list}/items?$select=${SELECT}&$orderby=ID desc&$top=${top}`);
     return res ? (res.value || []).map(toItem) : undefined;
   }
 
