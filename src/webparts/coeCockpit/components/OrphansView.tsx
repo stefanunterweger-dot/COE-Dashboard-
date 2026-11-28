@@ -75,7 +75,7 @@ export const OrphansView: React.FC<IOrphansViewProps> = props => {
     && (quick !== 'solution' || i.inSolution === true)
     && (quick !== 'active' || (i.type === 'flow' && /aktiv/i.test(i.state)))
     && (!q || `${i.name} ${i.environment} ${i.ownerName}`.toLowerCase().indexOf(q) >= 0));
-  const selectable = (i: IOrphan): boolean => props.canAct && !(done[i.key] && done[i.key].ok);
+  const selectable = (i: IOrphan): boolean => props.canAct && !i.blocked && !(done[i.key] && done[i.key].ok);
   const selectedItems = items.filter(i => selected[i.key] && selectable(i));
   const allVisibleSelected = visible.filter(selectable).length > 0 && visible.filter(selectable).every(i => selected[i.key]);
 
@@ -113,7 +113,7 @@ export const OrphansView: React.FC<IOrphansViewProps> = props => {
   const cols: IColumn<IOrphan>[] = ([] as IColumn<IOrphan>[]).concat(props.canAct ? [{
     key: 'sel', label: '', sort: (i: IOrphan) => (selected[i.key] ? 0 : 1),
     render: (i: IOrphan) => (
-      <input type="checkbox" aria-label={`${i.name} auswählen`} disabled={!selectable(i)} checked={!!selected[i.key]}
+      <input type="checkbox" aria-label={`${i.name} auswählen`} disabled={!selectable(i)} checked={!!selected[i.key]} title={i.blocked}
         onClick={e => e.stopPropagation()}
         onChange={() => setSelected(prev => { const n = { ...prev }; if (n[i.key]) { delete n[i.key]; } else { n[i.key] = true; } return n; })} />
     )

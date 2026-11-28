@@ -24,12 +24,16 @@ export interface IOrphan {
   inSolution: boolean | undefined;
   /** Flow: Status (Aktiv, Angehalten, Gesperrt) */
   state: string;
+  /** Grund, warum sich der Eintrag nicht neu zuweisen lässt (z. B. modellgesteuerte App) */
+  blocked?: string;
 }
+
+/** Modellgesteuerte Apps: im CoE ohne Power-Apps-App-ID – Besitzerwechsel über die Admin-API geht nicht. */
+const MODEL_DRIVEN = '597910001';
 
 const APP_TABLE: ITableConfig = {
   key: '_orphan_apps', title: 'Verwaiste Apps', logicalName: 'admin_app', icon: 'AppIconDefault', strictFilter: true,
-  // ohne modellgesteuerte Apps (597910001): deren CoE-ID ist keine Power-Apps-App-ID, Besitzerwechsel über die Admin-API geht nicht
-  filter: "statecode eq 0 and admin_appdeleted ne true and cr5d5_appisorphaned eq 'Yes' and (admin_powerappstype eq null or admin_powerappstype ne 597910001)",
+  filter: "statecode eq 0 and admin_appdeleted ne true and cr5d5_appisorphaned eq 'Yes'",
   columns: [
     { field: 'admin_displayname', label: 'App', type: 'title' },
     { field: '_admin_appowner_value', label: 'Besitzer', type: 'person' },
@@ -38,7 +42,8 @@ const APP_TABLE: ITableConfig = {
     { field: 'admin_applastlaunchedon', label: 'Zuletzt gestartet', type: 'date' },
     { field: 'admin_appmodifiedon', label: 'Geändert', type: 'date' },
     { field: 'admin_issolutionapp', label: 'In Solution', type: 'boolean' },
-    { field: 'admin_appsharedusers', label: 'Freigegeben (User)', type: 'number' }
+    { field: 'admin_appsharedusers', label: 'Freigegeben (User)', type: 'number' },
+    { field: 'admin_powerappstype', label: 'App-Typ', type: 'choice' }
   ]
 };
 
@@ -71,7 +76,9 @@ export async function loadOrphans(service: DataverseService, maxRecords: number)
       key: `app:${rawValue(r, apps.meta.primaryId)}`, type: 'app', logicalName: 'admin_app', record: r,
       name: displayValue(r, 'admin_displayname'), environment: displayValue(r, '_admin_appenvironment_value'),
       ownerId: owner.toLowerCase(), ownerName: displayValue(r, '_admin_appowner_value') || (owner ? `Objekt-ID ${owner}` : 'Unbekannt'),
-      last: rawValue(r, 'admin_applastlaunchedon'), inSolution: bool(r.admin_issolutionapp), state: ''
+      last: rawValue(r, 'admin_applastlaunchedon'), inSolution: bool(r.admin_issolutionapp), state: '',
+      blocked: rawValue(r, 'admin_powerappstype') === MODEL_DRIVEN
+        ? 'Modellgesteuerte App – Zugriff über Sicherheitsrollen im Environment, nicht über einen Besitzer.' : undefined
     });
   });
   flows.records.forEach(r => {
