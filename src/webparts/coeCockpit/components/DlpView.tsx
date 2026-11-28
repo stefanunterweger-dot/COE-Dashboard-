@@ -182,7 +182,8 @@ export const DlpView: React.FC<IDlpViewProps> = props => {
   const q = search.trim().toLowerCase();
   const visible = list.filter(i => (!q || i.displayName.toLowerCase().indexOf(q) >= 0 || (i.draftName || '').toLowerCase().indexOf(q) >= 0
     || i.createdBy.toLowerCase().indexOf(q) >= 0 || i.modifiedBy.toLowerCase().indexOf(q) >= 0)
-    && (!envFilter || appliesTo(i.scope, i.envs, envFilter)));
+    // nicht lesbare Richtlinien (Environments unbekannt) beim Environment-Filter immer zeigen – mit Hinweis
+    && (!envFilter || !!i.loadError || appliesTo(i.scope, i.envs, envFilter)));
   const current = list.filter(i => i.key === selected)[0];
 
   const open = async (it: IDlpListItem, mode: IDlpWorking['mode']): Promise<void> => {
@@ -235,7 +236,8 @@ export const DlpView: React.FC<IDlpViewProps> = props => {
         </span>
       )
     },
-    { key: 'scope', label: 'Gilt für', sort: i => scopeText(i, envLabel).toLowerCase(), render: i => <span title={i.envs.map(envLabel).join(', ')}>{scopeText(i, envLabel)}</span> },
+    { key: 'scope', label: 'Gilt für', sort: i => (i.loadError ? '' : scopeText(i, envLabel).toLowerCase()),
+      render: i => (i.loadError ? <span className={styles.muted} title={i.loadError}>unbekannt</span> : <span title={i.envs.map(envLabel).join(', ')}>{scopeText(i, envLabel)}</span>) },
     { key: 'default', label: 'Standardgruppe', sort: i => i.defaultGroup || '', render: i => (i.defaultGroup && i.source !== 'coe' ? GROUP_LABEL[i.defaultGroup] : <span className={styles.muted}>–</span>) },
     { key: 'groups', label: 'Business · Non-Business · Blockiert', sort: i => { const c = counts(i); return c ? c.Blocked : -1; }, render: groupCell },
     { key: 'createdBy', label: 'Erstellt von', sort: i => i.createdBy.toLowerCase(), render: i => i.createdBy || <span className={styles.muted}>–</span> },

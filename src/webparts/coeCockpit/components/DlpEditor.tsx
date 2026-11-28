@@ -135,7 +135,8 @@ export const DlpEditor: React.FC<IDlpEditorProps> = props => {
   const diff = diffConnectors(w, connectors, unblockable);
   const nameOk = w.displayName.trim().length > 0;
   const envOk = !needEnvs || w.scope === 'ExceptEnvironments' || w.envs.length > 0;
-  const stateKey = JSON.stringify([w.defaultGroup, w.groups, w.scope, w.envs]);
+  // auch die Liste der nicht blockierbaren Connectors (kommt evtl. später an) – sonst bliebe eine falsche Auswirkung „aktuell“
+  const stateKey = JSON.stringify([w.defaultGroup, w.groups, w.scope, w.envs, props.unblockable]);
 
   const go = (s: number): void => {
     let target = s;
@@ -332,7 +333,7 @@ export const DlpEditor: React.FC<IDlpEditorProps> = props => {
       setNotice(undefined);
       const existing: { [k: string]: true } = {};
       try {
-        (await loadTasks(props.service)).filter(t => t.policyName === w.displayName.trim().slice(0, 100)).forEach(t => { existing[t.resourceCoeId] = true; });
+        (await loadTasks(props.service, w.displayName.trim().slice(0, 100))).forEach(t => { existing[t.resourceCoeId] = true; });
       } catch (e) {
         setNotice({ type: MessageBarType.error, text: `Die CoE-Tabelle „DLP Impact Analysis“ ist nicht lesbar: ${errText(e)}` });
         return;

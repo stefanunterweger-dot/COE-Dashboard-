@@ -176,11 +176,15 @@ export const envRef = (name: string): IDlpRef => ({
 });
 const norm = (env: string): string => String(env || '').toLowerCase().replace(/^default-/, '');
 
-/** Connectors, die sich laut Microsoft nicht blockieren lassen (falls die Schnittstelle die Liste nicht liefert). */
+/**
+ * Connectors, die sich laut Microsoft nicht blockieren lassen (falls die Schnittstelle die Liste nicht liefert) –
+ * Microsoft Learn „Connector classification“: Microsoft Enterprise Plan Standard-Connectors und Core-Power-Platform-Connectors.
+ */
 const UNBLOCKABLE_FALLBACK = ['shared_approvals', 'shared_flowpush', 'shared_commondataserviceforapps', 'shared_commondataservice', 'shared_kaizala',
-  'shared_office365groups', 'shared_office365', 'shared_office365users', 'shared_onedriveforbusiness', 'shared_onenote', 'shared_planner',
-  'shared_powerappsnotification', 'shared_powerbi', 'shared_sharepointonline', 'shared_shifts', 'shared_teams', 'shared_todo',
-  'shared_excelonlinebusiness', 'shared_yammer', 'shared_microsoftforms'];
+  'shared_office365groups', 'shared_office365groupsmail', 'shared_office365', 'shared_office365users', 'shared_onedriveforbusiness', 'shared_onenote',
+  'shared_planner', 'shared_powerappsnotification', 'shared_powerappsnotificationv2', 'shared_powerbi', 'shared_sharepointonline', 'shared_shifts',
+  'shared_teams', 'shared_todo', 'shared_excelonlinebusiness', 'shared_yammer', 'shared_skypeforbiz', 'shared_cloudappsecurity',
+  'shared_microsoftformspro', 'shared_powervirtualagents'];
 
 const errText = (e: unknown): string => (e instanceof Error ? e.message : String(e));
 
@@ -485,6 +489,8 @@ export async function loadDrafts(service: DataverseService): Promise<IDlpListIte
     let groups: { [id: string]: DlpGroup } = {};
     let refs: { [id: string]: IDlpRef } = {};
     let envs: string[] = [];
+    // unlesbarer Inhalt: Entwurf sperren, sonst würde „Entwurf aktualisieren“ ihn mit leeren Gruppen überschreiben
+    let loadError: string | undefined;
     try {
       const g = groupsOf({ connectorGroups: JSON.parse(String(r.admin_connectorgroups || '[]')) as { classification: DlpGroup; connectors: IDlpRef[] }[] });
       groups = g.map;
@@ -492,18 +498,20 @@ export async function loadDrafts(service: DataverseService): Promise<IDlpListIte
     } catch {
       groups = {};
       refs = {};
+      loadError = 'Connector-Gruppen des Entwurfs sind nicht lesbar (ungültiges JSON).';
     }
     try {
       envs = envNames(JSON.parse(String(r.admin_environments || '[]')) as IDlpRef[]);
     } catch {
       envs = [];
+      loadError = loadError || 'Environments des Entwurfs sind nicht lesbar (ungültiges JSON).';
     }
     const scope = (String(r.admin_scope || 'OnlyEnvironments') as DlpScope);
     return {
       key: `draft:${String(r.admin_datapolicydraftsid)}`, source: 'draft' as const, id: String(r.admin_datapolicydraftsid), draftName: String(r.admin_name || ''),
       displayName: String(r.admin_displayname || r.admin_name || ''), scope: SCOPE_LABEL[scope] ? scope : 'OnlyEnvironments', envs,
       defaultGroup: (DLP_GROUPS.indexOf(r.admin_defaultconnectorclassification as DlpGroup) >= 0 ? r.admin_defaultconnectorclassification : 'General') as DlpGroup,
-      groups, refs, createdBy: fmt(r, '_createdby_value'), created: String(r.createdon || ''), modifiedBy: fmt(r, '_modifiedby_value'), modified: String(r.modifiedon || '')
+      groups, refs, loadError, createdBy: fmt(r, '_createdby_value'), created: String(r.createdon || ''), modifiedBy: fmt(r, '_modifiedby_value'), modified: String(r.modifiedon || '')
     };
   }).sort((a, b) => (b.modified || '').localeCompare(a.modified || ''));
 }
@@ -527,10 +535,24 @@ export async function saveDraft(service: DataverseService, w: IDlpWorking, conne
   return service.create('admin_datapolicydraftses', values);
 }
 
-export async function loadTasks(service: DataverseService): Promise<IDlpTask[]> {
-  const rows = await service.query('admin_dlpimpactanalysises', ['admin_dlpimpactanalysisid', 'admin_name', 'admin_dlppolicyname', 'admin_datapolicyid', '_admin_impactedapp_value',
+/**
+ * Offene Einträge der Aufgabenliste. Mit policyName nur die einer Richtlinie – dann vollständig (bis 50.000, sonst Fehler),
+ * damit der Abgleich vor dem Eintragen keine Doppelten erzeugt.
+ */
+export async function loadTasks(service: DataverseService, policyName?: string): Promise<IDlpTask[]> {
+  const select = ['admin_dlpimpactanalysisid', 'admin_name', 'admin_dlppolicyname', 'admin_datapolicyid', '_admin_impactedapp_value',
     '_admin_impactedflow_value', '_admin_impactedenvironment_value', '_admin_impactowner_value', 'admin_conflictingconnectorbusiness', 'admin_conflictingconnectornonbusiness',
-    'admin_conflictingconnectorblocked', 'admin_decision', 'admin_decisionstatus', 'admin_actionrequiredon', 'createdon'], 'statecode eq 0', 5000);
+    'admin_conflictingconnectorblocked', 'admin_decision', 'admin_decisionstatus', 'admin_actionrequiredon', 'createdon'];
+  let rows: IRecord[];
+  if (policyName !== undefined) {
+    const res = await service.queryAll('admin_dlpimpactanalysises', select, `statecode eq 0 and admin_dlppolicyname eq '${policyName.replace(/'/g, "''")}'`, 50000);
+    if (res.truncated) {
+      throw new Error('mehr als 50.000 offene Einträge für diese Richtlinie – Abgleich nicht vollständig möglich');
+    }
+    rows = res.records;
+  } else {
+    rows = await service.query('admin_dlpimpactanalysises', select, 'statecode eq 0', 5000);
+  }
   return rows.map(r => ({
     id: String(r.admin_dlpimpactanalysisid || ''),
     resourceCoeId: String(r._admin_impactedapp_value || r._admin_impactedflow_value || '').toLowerCase(),
