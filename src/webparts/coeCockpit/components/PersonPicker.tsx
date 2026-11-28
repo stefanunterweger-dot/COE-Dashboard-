@@ -3,7 +3,7 @@ import { TextField } from '@fluentui/react/lib/TextField';
 import { Icon } from '@fluentui/react/lib/Icon';
 import styles from './CoeCockpit.module.scss';
 import { DataverseService } from '../services/DataverseService';
-import { displayValue, isMailAddress } from '../utils/format';
+import { displayValue, isMailAddress, odataLikeLiteral } from '../utils/format';
 
 /**
  * Person auswählen: Vorschläge aus dem CoE (Power Platform User), sonst E-Mail-Adresse
@@ -29,7 +29,7 @@ export const PersonPicker: React.FC<IPersonPickerProps> = props => {
       setSuggestions([]);
       return;
     }
-    const lit = q.replace(/'/g, "''");
+    const lit = odataLikeLiteral(q);
     const timer = window.setTimeout(() => {
       props.dataverse!.getRecords({
         key: '_people', title: 'Power Platform User', logicalName: 'admin_powerplatformuser', icon: 'People', strictFilter: true,

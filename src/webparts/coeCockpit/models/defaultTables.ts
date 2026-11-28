@@ -488,8 +488,9 @@ export function getDefaultTables(): ITableConfig[] {
           ]
         },
         {
+          // Zuordnung über die Entra-Objekt-ID (= Maker-ID) – nicht über den Anzeigenamen (gleiche Namen, Namensänderungen)
           key: 'secroles', title: 'Sicherheitsrollen', logicalName: 'admin_environmentsecurityrolepermission',
-          matchField: 'admin_name', parentField: 'admin_displayname',
+          matchField: 'admin_userid',
           columns: [
             { field: '_admin_environment_value', label: 'Environment', type: 'title' },
             { field: 'admin_securityrolename', label: 'Rolle', type: 'choice' },

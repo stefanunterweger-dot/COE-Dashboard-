@@ -292,6 +292,20 @@ function Confirm-Permissions($Def, $List) {
     }
   } else { Add-Result $title "Gruppe „$GroupName“" 'OK' }
 
+  # Der Flow „Solution löschen“ liest die Gruppenmitglieder – das geht nur, wenn die Mitgliedschaft für alle sichtbar ist
+  # (SharePoint-Standard bei neuen Gruppen: nur Mitglieder sehen die Mitglieder).
+  if ($group) {
+    $onlyMembers = $true
+    try { $onlyMembers = [bool](Get-PnPProperty -ClientObject $group -Property OnlyAllowMembersViewMembership) }
+    catch { $onlyMembers = [bool]$group.OnlyAllowMembersViewMembership }
+    if (-not $onlyMembers) { Add-Result $title 'Mitgliedschaft der Gruppe für alle sichtbar' 'OK' }
+    elseif ($CheckOnly) { Add-Result $title 'Mitgliedschaft der Gruppe für alle sichtbar' 'FEHLT' 'der Flow kann die Mitglieder sonst nicht prüfen' }
+    else {
+      Set-PnPGroup -Identity $group.Title -OnlyAllowMembersViewMembership $false | Out-Null
+      Add-Result $title 'Mitgliedschaft der Gruppe für alle sichtbar' 'KORRIGIERT' 'damit der Flow die Mitglieder prüfen kann'
+    }
+  }
+
   if (-not $List.HasUniqueRoleAssignments) {
     if ($CheckOnly) { Add-Result $title 'Eigene Berechtigungen' 'FEHLT' 'Liste erbt die Berechtigungen der Website' }
     else {

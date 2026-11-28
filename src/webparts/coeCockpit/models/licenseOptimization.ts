@@ -51,6 +51,9 @@ export interface IOptData {
   loadedAt: Date;
 }
 
+/** „Letzter Start“: so weit zurück wird im Audit-Log gesucht. */
+const LAST_START_DAYS = 730;
+
 export async function loadLicenseOptimization(service: DataverseService, graph: MSGraphClientFactory, days: number): Promise<IOptData> {
   const lic = await loadUserLicenses(graph);
   const problems: string[] = [];
@@ -64,9 +67,12 @@ export async function loadLicenseOptimization(service: DataverseService, graph: 
 
   const since = daysAgoIso(days);
   const [pairs, last, apps, flows] = await Promise.all([
-    service.getGroupedPairs('admin_auditlog', 'admin_userupn', '_admin_applookup_value', `admin_operation eq 'LaunchPowerApp' and admin_creationtime ge ${since}`)
+    // Zeitraum statt „ge since“: bei mehr als 50.000 Einträgen teilt das Cockpit ihn auf (sonst wäre das Ergebnis unvollständig)
+    service.getGroupedPairs('admin_auditlog', 'admin_userupn', '_admin_applookup_value', "admin_operation eq 'LaunchPowerApp'",
+      { field: 'admin_creationtime', from: new Date(since), to: new Date(Date.now() + 86400000) })
       .catch(e => { problems.push(`App-Starts aus dem CoE-Audit-Log nicht lesbar: ${e instanceof Error ? e.message : String(e)}`); return undefined; }),
-    service.getGroupedMax('admin_auditlog', 'admin_userupn', "admin_operation eq 'LaunchPowerApp'", 'admin_creationtime')
+    service.getGroupedMax('admin_auditlog', 'admin_userupn', "admin_operation eq 'LaunchPowerApp'", 'admin_creationtime',
+      { field: 'admin_creationtime', from: new Date(Date.now() - LAST_START_DAYS * 86400000), to: new Date(Date.now() + 86400000) })
       .catch(() => ({} as { [upn: string]: string })),
     service.query('admin_apps', ['admin_appid', 'admin_appplanclassification'], 'statecode eq 0', 200000)
       .catch(e => { problems.push(`Lizenzklasse der Apps nicht lesbar: ${e instanceof Error ? e.message : String(e)}`); return undefined; }),

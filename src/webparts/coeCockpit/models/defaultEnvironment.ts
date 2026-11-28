@@ -103,7 +103,7 @@ export function buildDefaultEnvironmentTables(
     unavailable: dataverseUrl
       ? undefined
       : 'Für das Default Environment ist keine Dataverse-URL bekannt. Solutions gibt es nur in Umgebungen mit Dataverse-Datenbank. ' +
-        'Falls vorhanden, trage die URL in den Webpart-Eigenschaften unter „Default Environment“ ein.'
+        'Falls vorhanden, trage die URL im Eigenschaftenbereich des Webparts (Bearbeiten → Zahnrad bzw. „Webpart bearbeiten“) unter „Default Environment“ ein.'
   };
 
   return [appsTable, flowsTable, solutionsTable];

@@ -1,6 +1,6 @@
 import { IRecord } from './ITableConfig';
 import { DEV_ENV_DEADLINES, DEV_FIELDS, RECOMMENDATION } from './devEnvironments';
-import { displayValue, isMailAddress } from '../utils/format';
+import { displayValue, isMailAddress, splitList } from '../utils/format';
 import { fillText, IMailTemplate, IMailTemplateOverrides, resolveTemplate } from './mailTemplates';
 import { escHtml, mailKit } from './mailHtml';
 
@@ -66,13 +66,23 @@ export function parseAddresses(text: string): string[] {
   return (text || '').split(/[;,\s]+/).map(x => x.trim()).filter(isMailAddress);
 }
 
-/** Frist: heute + Tage, aber spätestens 3 Tage vor dem nächsten Stichtag (Sperre bzw. Löschung). */
+/**
+ * Frist: heute + Tage, aber spätestens 3 Tage vor dem nächsten Stichtag (Sperre bzw. Löschung). Sind es nur noch
+ * weniger als 3 Tage bis zum Stichtag, gilt der Tag davor (bzw. heute) – nie ein Datum nach dem Stichtag.
+ */
 export function replyDeadline(days: number, today: Date = new Date()): Date {
   const start = new Date(today.getFullYear(), today.getMonth(), today.getDate());
   const wanted = new Date(start.getTime() + Math.max(1, days) * DAY);
   const next = start < DEV_ENV_DEADLINES.block ? DEV_ENV_DEADLINES.block : DEV_ENV_DEADLINES.delete;
   const latest = new Date(next.getTime() - 3 * DAY);
-  return latest > start && wanted > latest ? latest : wanted;
+  if (next <= start || wanted <= latest) {
+    return wanted;
+  }
+  if (latest > start) {
+    return latest;
+  }
+  const dayBefore = new Date(next.getTime() - DAY);
+  return dayBefore > start ? dayBefore : start;
 }
 
 /** Power-Platform-ID des Environments (in der CoE-Tabelle „Environment Name“ bzw. Primärschlüssel). */
@@ -98,7 +108,7 @@ function assessment(rec: string): { text: string; tone: 'danger' | 'warning' | '
 }
 
 function listOf(r: IRecord, field: string): string[] {
-  return String(r[field] || '').split(',').map(x => x.trim()).filter(x => !!x);
+  return splitList(String(r[field] || ''));
 }
 
 /** Alle Inhalte der Mail (einmal bestimmt, dann als Text und als HTML gesetzt). */
@@ -294,7 +304,7 @@ export function buildDevEnvMail(r: IRecord, s: INotifySettings, today: Date = ne
 
 /** mailto-Link (Outlook trennt Empfänger standardmäßig mit Semikolon). */
 export function mailtoUrl(to: string[], cc: string[], subject: string, body: string): string {
-  // Adressen sind geprüft (nur Buchstaben, Ziffern, @ . - _ +) und bleiben im Link lesbar
+  // Adressen sind geprüft (nur Buchstaben, Ziffern, @ . - _ + ') und bleiben im Link lesbar
   const params: string[] = [];
   if (cc.length) {
     params.push(`cc=${cc.join(';')}`);
@@ -330,6 +340,8 @@ export function emlDraft(d: { to: string[]; cc: string[]; subject: string; body:
     // Lange Empfängerlisten auf mehrere Zeilen falten (Kopfzeilen höchstens 998 Zeichen)
     `To: ${d.to.join(',\r\n ')}`,
     d.cc.length ? `Cc: ${d.cc.join(',\r\n ')}` : '',
+    // Antworten an das CC-Postfach (Team)
+    d.cc.length ? `Reply-To: ${d.cc.join(',\r\n ')}` : '',
     `Subject: =?UTF-8?B?${utf8Base64(d.subject)}?=`,
     'X-Unsent: 1',
     'MIME-Version: 1.0',

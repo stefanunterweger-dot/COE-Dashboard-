@@ -93,6 +93,23 @@ export interface IActionItem extends IActionRequest {
   requestedBy: string;
 }
 
+const GUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * ID einer Solution im Environment (Tabelle solutions). Das CoE vergibt für admin_solution eine eigene,
+ * zufällige ID; die echte Solution-ID steht in admin_solutionenvtguid bzw. hinten in
+ * admin_solutionenvtobjectguidstring („<Environment-ID>_<Solution-ID>“). Leer, wenn nicht erfasst.
+ */
+export function envSolutionId(r: IRecord): string {
+  const direct = String(r.admin_solutionenvtguid || '').trim();
+  if (GUID_RE.test(direct)) {
+    return direct;
+  }
+  const obj = String(r.admin_solutionenvtobjectguidstring || '').trim();
+  const tail = obj.slice(obj.lastIndexOf('_') + 1);
+  return GUID_RE.test(tail) ? tail : '';
+}
+
 /** Ressource einer Tabellenzeile (Apps/Flows aus dem CoE). */
 export function resourceOf(logicalName: string, r: IRecord): { type: ResourceType; id: string; coeId: string; name: string; env: string } | undefined {
   if (logicalName === 'admin_app') {
@@ -107,8 +124,8 @@ export function resourceOf(logicalName: string, r: IRecord): { type: ResourceTyp
   }
   if (logicalName === 'admin_solution') {
     const coeId = String(r.admin_solutionid || '');
-    const obj = String(r.admin_solutionenvtobjectguidstring || '');
-    const id = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(obj) ? obj : coeId;
+    // ID der Solution im Environment (nicht die CoE-ID – die vergibt das CoE zufällig)
+    const id = envSolutionId(r);
     // Environment = Dataverse-URL des Environments (wird beim Öffnen nachgeladen: __envurl)
     return { type: 'solution', id, coeId, name: displayValue(r, 'admin_solutiondisplayname') || displayValue(r, 'admin_name'), env: String(r.__envurl || '') };
   }
@@ -191,6 +208,9 @@ export function solutionDeleteBlocked(r: IRecord): string {
   if (!r.__envurl) {
     return 'Für das Environment der Solution ist im CoE keine Dataverse-URL erfasst.';
   }
+  if (!envSolutionId(r)) {
+    return 'Die ID der Solution im Environment ist im CoE nicht erfasst (Spalte „Solution Envt Guid“) – Löschen deshalb gesperrt.';
+  }
   return '';
 }
 
@@ -207,6 +227,11 @@ export function actionsFor(type: ResourceType, r: IRecord, deleteRequiresStop: b
     ];
   }
   const del = deleteBlocked(type, r, deleteRequiresStop) || undefined;
+  if (type === 'app' && rawValue(r, 'admin_powerappstype') === '597910001') {
+    // Modellgesteuerte App: im CoE ohne Power-Apps-App-ID – Quarantäne, Besitzer und Freigaben gibt es dafür nicht
+    const why = 'Modellgesteuerte App – Zugriff über Sicherheitsrollen im Environment, Änderungen über die Solution.';
+    return (['quarantine', 'setowner', 'addviewer', 'removeuser', 'delete'] as ActionCode[]).map(code => ({ code, disabled: why }));
+  }
   if (type === 'app') {
     return [
       { code: isQuarantined(r) ? 'unquarantine' : 'quarantine' },

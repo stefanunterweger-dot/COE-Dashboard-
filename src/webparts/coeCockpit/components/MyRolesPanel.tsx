@@ -21,7 +21,8 @@ export interface IMyRolesPanelProps {
   themeVars: React.CSSProperties;
   onDismiss: () => void;
   /** nach Aktivieren/Deaktivieren: Rollenstatus (Token) neu prüfen lassen */
-  onChanged: () => void;
+  /** Rolle aktiviert bzw. beendet (Rollen-Vorlagen-ID) */
+  onChanged: (kind: 'activate' | 'deactivate', roleDefinitionId: string) => void;
 }
 
 const errText = (e: unknown): string => (e instanceof Error ? e.message : String(e));
@@ -77,7 +78,7 @@ export const MyRolesPanel: React.FC<IMyRolesPanelProps> = props => {
           : `„${r.name}“ ist für ${hoursText(minutes)} aktiviert. Bis die Rolle in der Anmeldung steht, dauert es oft 1–2 Minuten – das Cockpit prüft automatisch nach.`
       });
       setForm('');
-      props.onChanged();
+      props.onChanged('activate', r.roleDefinitionId);
       load();
     } catch (e) {
       setNotice({ type: MessageBarType.error, key: r.key, text: errText(e) });
@@ -94,7 +95,7 @@ export const MyRolesPanel: React.FC<IMyRolesPanelProps> = props => {
     try {
       await deactivateRole(props.graphFactory, data.principalId, r);
       setNotice({ type: MessageBarType.success, key: r.key, text: `„${r.name}“ wurde beendet.` });
-      props.onChanged();
+      props.onChanged('deactivate', r.roleDefinitionId);
       load();
     } catch (e) {
       setNotice({ type: MessageBarType.error, key: r.key, text: errText(e) });

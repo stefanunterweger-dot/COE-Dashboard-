@@ -55,8 +55,8 @@ import { PipelinesView } from './PipelinesView';
 import { MESSAGES_KEY } from '../models/messageCenter';
 import { MessageCenterView } from './MessageCenterView';
 import { PowerPlatformApiService, PPAPI_RESOURCE } from '../services/PowerPlatformApiService';
-import { DirectActionService } from '../services/DirectActionService';
-import { checkAdminRole, IRoleStatus } from '../services/RoleCheckService';
+import { DirectActionService, FLOW_RESOURCE, POWERAPPS_RESOURCE } from '../services/DirectActionService';
+import { checkAdminRole, IRoleStatus, refreshTokens, ROLE_GLOBAL_ADMIN, ROLE_PP_ADMIN } from '../services/RoleCheckService';
 import { GROUP_GOVERNANCE } from '../models/defaultTables';
 import { INotifySettings } from '../models/notification';
 import { copyCurrentLink, IViewState, readViewState, writeViewState } from '../utils/deepLink';
@@ -230,9 +230,9 @@ const PAGE_SIZES = [10, 25, 50, 100];
 const DEFAULT_GROUP = 'Inventar';
 /** Felder für die Aktionen je Tabelle (werden für den geöffneten Datensatz direkt nachgeladen). */
 const ACTION_FIELDS: { [logicalName: string]: string[] } = {
-  admin_app: ['admin_appid', 'admin_appenvironmentid', 'admin_issolutionapp', 'admin_appisquarantined', 'admin_quarantineapp', 'admin_appdeleted'],
+  admin_app: ['admin_appid', 'admin_appenvironmentid', 'admin_issolutionapp', 'admin_appisquarantined', 'admin_quarantineapp', 'admin_appdeleted', 'admin_powerappstype'],
   admin_flow: ['admin_flowid', 'admin_flowidstring', 'admin_flowenvironmentid', 'admin_issolutionflow', 'admin_flowstate', 'admin_flowdeleted'],
-  admin_solution: ['admin_solutionid', 'admin_solutionenvtobjectguidstring', 'admin_solutionismanaged', 'admin_solutiondeleted', 'admin_name',
+  admin_solution: ['admin_solutionid', 'admin_solutionenvtobjectguidstring', 'admin_solutionenvtguid', 'admin_solutionismanaged', 'admin_solutiondeleted', 'admin_name',
     'admin_solutiondisplayname', 'admin_solutionpublisher', '_admin_solutionenvironment_value']
 };
 /** Bereich für die Übersicht (Startseite). */
@@ -349,6 +349,8 @@ const CoeCockpit: React.FC<ICoeCockpitProps> = props => {
   const [actionLoading, setActionLoading] = React.useState<boolean>(false);
   const [actionProblem, setActionProblem] = React.useState<string>('');
   const [actionTarget, setActionTarget] = React.useState<IActionTarget | undefined>(undefined);
+  /** Zähler je Öffnen des Aktionsdialogs – neuer key = frischer Dialog (keine alten Freigaben/Antworten) */
+  const [actionSeq, setActionSeq] = React.useState<number>(0);
   const refreshActions = React.useCallback((): void => {
     if (!actionService) {
       return;
@@ -365,13 +367,28 @@ const CoeCockpit: React.FC<ICoeCockpitProps> = props => {
   const [roleStatus, setRoleStatus] = React.useState<IRoleStatus | undefined>(undefined);
   const [roleChecking, setRoleChecking] = React.useState<boolean>(!!props.aadTokenProviderFactory);
   const roleResources = [service ? service.baseUrl : '', 'https://graph.microsoft.com', PPAPI_RESOURCE];
+  const roleStateRef = React.useRef<string>('');
   const checkRole = React.useCallback((fresh: boolean): void => {
-    if (!props.aadTokenProviderFactory) {
+    const factory = props.aadTokenProviderFactory;
+    if (!factory) {
       return;
     }
     setRoleChecking(true);
-    checkAdminRole(props.aadTokenProviderFactory, roleResources, fresh).then(
-      st => { setRoleStatus(st); setRoleChecking(false); },
+    // „Erneut prüfen“ bzw. nach PIM: auch die Tokens der Admin-Schnittstellen erneuern, sonst fehlt ihnen die gerade aktivierte Rolle
+    const refreshed = fresh
+      ? refreshTokens(factory, [POWERAPPS_RESOURCE, FLOW_RESOURCE, PPAPI_RESOURCE, 'https://graph.microsoft.com']).catch(() => undefined)
+      : Promise.resolve();
+    refreshed.then(() => checkAdminRole(factory, roleResources, fresh)).then(
+      st => {
+        const prev = roleStateRef.current;
+        roleStateRef.current = st.state;
+        setRoleStatus(st);
+        setRoleChecking(false);
+        // Rolle wurde aktiv bzw. ist abgelaufen: Ansichten und Zugriffsprüfungen mit den neuen Tokens neu laden
+        if (fresh && prev && prev !== st.state && (prev === 'active' || st.state === 'active')) {
+          setReloadTick(t => t + 1);
+        }
+      },
       (e: Error) => { setRoleStatus({ state: 'unknown', roles: [], checkedAt: new Date(), problem: e.message }); setRoleChecking(false); }
     );
   }, [props.aadTokenProviderFactory, roleResources.join('|')]);
@@ -380,7 +397,13 @@ const CoeCockpit: React.FC<ICoeCockpitProps> = props => {
   const [rolesOpen, setRolesOpen] = React.useState<boolean>(false);
   const recheckTimers = React.useRef<number[]>([]);
   React.useEffect(() => () => { recheckTimers.current.forEach(t => window.clearTimeout(t)); }, []);
-  const rolesChanged = React.useCallback((): void => {
+  const rolesChanged = React.useCallback((kind: 'activate' | 'deactivate', roleDefinitionId: string): void => {
+    // Admin-Rolle beendet: Aktionen sofort sperren (nicht erst nach der nächsten Prüfung)
+    const id = String(roleDefinitionId || '').toLowerCase();
+    if (kind === 'deactivate' && (id === ROLE_PP_ADMIN || id === ROLE_GLOBAL_ADMIN)) {
+      roleStateRef.current = 'unknown';
+      setRoleStatus({ state: 'unknown', roles: [], checkedAt: new Date(), problem: 'Rolle wurde beendet – wird neu geprüft …' });
+    }
     recheckTimers.current.forEach(t => window.clearTimeout(t));
     recheckTimers.current = [20000, 60000, 120000].map(ms => window.setTimeout(() => checkRole(true), ms));
   }, [checkRole]);
@@ -586,7 +609,10 @@ const CoeCockpit: React.FC<ICoeCockpitProps> = props => {
       || (!props.showCopilotCredits && (activeKey === CREDITS_KEY || activeKey === BILLING_KEY))) && tables.length) {
       setActiveKey(props.showOverview ? OVERVIEW_KEY : tables[0].key);
     }
-  }, [tablesSig, props.showDefaultEnvironment, props.showDevEnvironments, props.showOverview, props.showSecurity, props.showCopilotCredits, props.pipelinesHostUrl, defaultSig, !!activeTable]);
+  }, [tablesSig, props.showDefaultEnvironment, props.showDevEnvironments, props.showOverview, props.showSecurity, props.showCopilotCredits, props.pipelinesHostUrl, defaultSig, !!activeTable,
+    // ausgeschaltete Ansichten: der aktive Reiter fällt auf die erste Tabelle zurück
+    props.showActions, props.showPremium2027, props.showUserLicenses, props.showOrphans, props.showLicenseOptimization, props.showStorage,
+    props.showMessageCenter, props.showDlp, props.showPipelineHosts]);
 
   React.useEffect(() => {
     if (activeKey && isDefaultEnvKey(activeKey)) {
@@ -1718,7 +1744,7 @@ const CoeCockpit: React.FC<ICoeCockpitProps> = props => {
           title: actionExtraPending ? 'Daten für die Aktionen werden geladen …' : pending ? 'Für diese Ressource läuft bereits ein Auftrag.'
             : recent ? `Bereits um ${fmtTime(recent.completedAt || recent.created)} ausgeführt (${recent.requestedBy}) – Microsoft setzt die Änderung um, das CoE-Inventar zeigt sie nach dem nächsten Sync.`
               : a.disabled,
-          onClick: () => setActionTarget({ logicalName: panel.table.logicalName, record: rec, code: a.code })
+          onClick: () => { setActionSeq(n => n + 1); setActionTarget({ logicalName: panel.table.logicalName, record: rec, code: a.code }); }
         });
       });
     }
@@ -2116,6 +2142,7 @@ const CoeCockpit: React.FC<ICoeCockpitProps> = props => {
         )}
 
         <ActionDialog
+          key={`action-${actionSeq}`}
           target={actionTarget}
           actions={actionService as ActionService}
           direct={directActions}

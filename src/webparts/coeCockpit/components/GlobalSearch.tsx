@@ -5,7 +5,7 @@ import { Icon } from '@fluentui/react/lib/Icon';
 import styles from './CoeCockpit.module.scss';
 import { IColumnConfig, IRecord, ITableConfig } from '../models/ITableConfig';
 import { DataverseService, IEntityMeta } from '../services/DataverseService';
-import { displayValue } from '../utils/format';
+import { displayValue, odataLikeLiteral } from '../utils/format';
 
 /**
  * Suche über alle Bereiche (Apps, Flows, Environments, Maker, Connectors …) direkt in Dataverse.
@@ -59,7 +59,7 @@ export const GlobalSearch: React.FC<IGlobalSearchProps> = props => {
     }
     const run = ++runRef.current;
     const timer = window.setTimeout(() => {
-      const literal = q.replace(/'/g, "''");
+      const literal = odataLikeLiteral(q);
       setHits(searchTables.map(t => ({ table: t, records: [], status: 'loading' as const })));
       searchTables.forEach(t => {
         const svc = props.serviceFor(t);

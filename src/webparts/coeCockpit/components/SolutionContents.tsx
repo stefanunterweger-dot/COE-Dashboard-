@@ -4,6 +4,7 @@ import styles from './CoeCockpit.module.scss';
 import { IRecord, IRelatedConfig } from '../models/ITableConfig';
 import { DataverseError, DataverseService } from '../services/DataverseService';
 import { displayValue, formatNumber, rawValue } from '../utils/format';
+import { envSolutionId } from '../models/actions';
 
 /**
  * „Inhalt der Solution“ im Detailbereich einer Solution:
@@ -124,8 +125,8 @@ export async function loadSolutionContents(
     // Liste reicht notfalls
   }
   const envId = rawValue(sol, '_admin_solutionenvironment_value');
-  const objectId = String(sol.admin_solutionenvtobjectguidstring || '');
-  const liveSolutionId = GUID.test(objectId) ? objectId : solutionId;
+  // Solution-ID im Environment (die CoE-ID ist eine eigene, zufällige ID)
+  const liveSolutionId = envSolutionId(sol);
   res.envName = displayValue(sol, '_admin_solutionenvironment_value') || String(sol.admin_solutionenvironmentdisplayname || '');
 
   // CoE: Apps und Flows (N:N) – läuft parallel zur Ermittlung des Environments
@@ -155,8 +156,8 @@ export async function loadSolutionContents(
       const env = await coe.getRecord('admin_environment', envId);
       envUrl = String(env.admin_environmentcdsinstanceurl || '');
       res.envName = res.envName || String(env.admin_displayname || '');
-      const pid = String(env.admin_environmentname || sol.admin_solutionenvtguid || '');
-      if (pid) {
+      const pid = String(env.admin_environmentname || '');
+      if (pid && liveSolutionId) {
         res.makerUrl = `https://make.powerapps.com/environments/${encodeURIComponent(pid)}/solutions/${encodeURIComponent(liveSolutionId)}`;
       }
     } catch {
@@ -166,6 +167,10 @@ export async function loadSolutionContents(
   res.envUrl = envUrl;
   if (!envUrl) {
     res.liveProblem = 'Für das Environment der Solution ist im CoE keine Dataverse-URL hinterlegt – Bots, Desktop Flows und Power Pages lassen sich nicht abfragen.';
+    return res;
+  }
+  if (!liveSolutionId) {
+    res.liveProblem = 'Die ID der Solution im Environment ist im CoE nicht erfasst – Bots, Desktop Flows und Power Pages lassen sich nicht abfragen.';
     return res;
   }
 

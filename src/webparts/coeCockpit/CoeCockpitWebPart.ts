@@ -408,6 +408,7 @@ export default class CoeCockpitWebPart extends BaseClientSideWebPart<ICoeCockpit
     this._envOptions = undefined;
     this._envLoadError = undefined;
     this._managedOptions = undefined;
+    this._managedDetected = undefined;
     const service = new DataverseService(this.context.aadHttpClientFactory, url);
     service.getAttributes('admin_environment').then(
       attrs => {
@@ -420,7 +421,15 @@ export default class CoeCockpitWebPart extends BaseClientSideWebPart<ICoeCockpit
         this.context.propertyPane.refresh();
         this.render();
       },
-      () => { this._managedOptions = []; this.context.propertyPane.refresh(); }
+      () => {
+        // (nach einem Fehler beim Laden der Environments ist _envLoadedFor leer – dann trotzdem übernehmen)
+        if (this._envLoadedFor && this._envLoadedFor !== url) {
+          return;
+        }
+        this._managedOptions = [];
+        this.context.propertyPane.refresh();
+        this.render();
+      }
     );
     service.getEnvironments().then(
       envs => {
@@ -446,6 +455,8 @@ export default class CoeCockpitWebPart extends BaseClientSideWebPart<ICoeCockpit
         this._envLoadError = e.message;
         this._envLoadedFor = undefined;
         this.context.propertyPane.refresh();
+        // auch in den „Webpart-Einstellungen“ anzeigen (sonst bleibt dort „wird geladen …“ stehen)
+        this.render();
       }
     );
   }
@@ -563,6 +574,14 @@ export default class CoeCockpitWebPart extends BaseClientSideWebPart<ICoeCockpit
                 }),
                 PropertyPaneLabel('defaultEnvironmentStatus', {
                   text: this._environmentStatusText()
+                }),
+                PropertyPaneTextField('defaultEnvironmentDataverseUrl', {
+                  label: strings.DefaultEnvDataverseLabel,
+                  description: strings.DefaultEnvDataverseDescription,
+                  placeholder: 'https://contoso.crm4.dynamics.com',
+                  onGetErrorMessage: this._validateUrl.bind(this),
+                  deferredValidationTime: 500,
+                  disabled: this.properties.showDefaultEnvironment === false
                 })
               ]
             },

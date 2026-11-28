@@ -78,3 +78,14 @@ export async function checkAdminRole(factory: AadTokenProviderFactory, resources
   }
   return { state: 'unknown', roles: [], checkedAt: new Date(), problem: lastProblem || 'Kein Token verfügbar.' };
 }
+
+/**
+ * Tokens für weitere Ressourcen neu anfordern (ersetzt sie im Zwischenspeicher). Nach dem Aktivieren einer PIM-Rolle tragen
+ * bereits ausgestellte Tokens die Rolle noch nicht – ohne Neuanforderung würden Aktionen bis zu einer Stunde mit „keine Berechtigung“ scheitern.
+ * Fehler werden ignoriert (z. B. Ressource ohne Einwilligung).
+ */
+export async function refreshTokens(factory: AadTokenProviderFactory, resources: string[]): Promise<void> {
+  const provider = await factory.getTokenProvider();
+  await Promise.all(resources.filter((r, i) => !!r && resources.indexOf(r) === i)
+    .map(r => provider.getToken(r, false).then(() => undefined, () => undefined)));
+}

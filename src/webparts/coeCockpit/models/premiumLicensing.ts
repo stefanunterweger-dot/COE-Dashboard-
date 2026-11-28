@@ -329,7 +329,9 @@ export async function loadPremiumImpact(service: DataverseService, graphFactory:
   let usageAvailable = false;
   try {
     const since = new Date(Date.now() - USAGE_DAYS * 86400000).toISOString();
-    const pairs = await service.getGroupedPairs('admin_auditlog', 'admin_userupn', '_admin_applookup_value', `admin_operation eq 'LaunchPowerApp' and admin_creationtime ge ${since}`);
+    // Zeitraum: bei mehr als 50.000 Einträgen wird er aufgeteilt (vollständige Zählung statt Stichprobe)
+    const pairs = await service.getGroupedPairs('admin_auditlog', 'admin_userupn', '_admin_applookup_value', "admin_operation eq 'LaunchPowerApp'",
+      { field: 'admin_creationtime', from: new Date(since), to: new Date(Date.now() + 86400000) });
     usageAvailable = true;
     pairs.forEach(p => {
       const app = apps[p.b];

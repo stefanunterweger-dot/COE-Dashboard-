@@ -63,8 +63,15 @@ function simulateFlow(item: Record<string, unknown>): void {
     item.Status = 'In Arbeit';
     setTimeout(() => {
       const coe = DATABASES[0].tables;
-      const id = String(item.CoeRecordId || '').toLowerCase();
-      const sol = coe.admin_solution.rows.filter(r => String(r.admin_solutionid).toLowerCase() === id)[0];
+      // Wie der echte Flow: Solution im Environment über ResourceId (= Solution-ID im Environment, nicht die CoE-ID)
+      const id = String(item.ResourceId || '').toLowerCase();
+      const sol = coe.admin_solution.rows.filter(r => String(r.admin_solutionenvtguid || '').toLowerCase() === id)[0];
+      if (item.Action === 'soldelete' && !sol) {
+        item.Status = 'Fehler';
+        item.Result = 'Solution im Environment nicht gefunden (404) – Vorschau – simulierter Flow.';
+        item.CompletedAt = new Date().toISOString();
+        return;
+      }
       let result = 'Ausgeführt (Vorschau – simulierter Flow).';
       switch (item.Action) {
         case 'soldelete':

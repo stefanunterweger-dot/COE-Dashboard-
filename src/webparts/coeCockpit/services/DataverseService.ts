@@ -18,10 +18,25 @@ export interface ICountResult {
   atLeast: boolean;
 }
 
+/** Filter plus Zeitraum (von einschließlich, bis ausschließlich). */
+function windowFilter(filter: string | undefined, win: IDateWindow): string {
+  const range = `${win.field} ge ${win.from.toISOString()} and ${win.field} lt ${win.to.toISOString()}`;
+  return filter ? `(${filter}) and ${range}` : range;
+}
+
 function isAggregateLimit(e: unknown): boolean {
   const msg = e instanceof Error ? e.message : String(e);
   return /AggregateQueryRecordLimit|maximum record limit|0x8004E023/i.test(msg);
 }
+
+/** Zeitraum für Aggregat-Abfragen auf großen Tabellen (z. B. Audit-Log): wird bei der Aggregat-Grenze geteilt. */
+export interface IDateWindow {
+  field: string;
+  from: Date;
+  to: Date;
+}
+
+const TRUNCATED_AGGREGATE = 'Zu viele Datensätze für eine vollständige Auswertung (über 50.000 auch nach Aufteilen des Zeitraums) – Ergebnis wäre unvollständig.';
 
 export interface IEntityMeta {
   logicalName: string;
@@ -342,22 +357,33 @@ export class DataverseService {
    * Anzahl je Wertepaar zweier Spalten, z. B. Apps je Environment und Besitzer.
    * Per OData-Aggregation; Rückfall: Datensätze laden und im Browser zählen.
    */
-  public async getGroupedPairs(logicalName: string, fieldA: string, fieldB: string, filter?: string): Promise<{ a: string; b: string; n: number }[]> {
+  public async getGroupedPairs(logicalName: string, fieldA: string, fieldB: string, filter?: string, window?: IDateWindow): Promise<{ a: string; b: string; n: number }[]> {
     const meta = await this.getEntityMeta(logicalName);
-    const apply = `${filter ? `filter(${filter})/` : ''}groupby((${fieldA},${fieldB}),aggregate($count as n))`;
     const norm = (v: unknown): string => String(v === null || v === undefined ? '' : v).toLowerCase();
-    try {
+    const run = async (f: string | undefined): Promise<{ a: string; b: string; n: number }[]> => {
+      const apply = `${f ? `filter(${f})/` : ''}groupby((${fieldA},${fieldB}),aggregate($count as n))`;
       const res = await this._get<{ value: IRecord[] }>(`${meta.entitySetName}?$apply=${encodeURIComponent(apply)}`);
       return res.value.map(r => ({ a: norm(r[fieldA]), b: norm(r[fieldB]), n: Number(r.n || 0) }));
+    };
+    const merge = (x: { a: string; b: string; n: number }[], y: { a: string; b: string; n: number }[]): { a: string; b: string; n: number }[] => {
+      const m: { [key: string]: { a: string; b: string; n: number } } = {};
+      x.concat(y).forEach(p => { const k = `${p.a}|${p.b}`; m[k] = m[k] ? { a: p.a, b: p.b, n: m[k].n + p.n } : { ...p }; });
+      return Object.keys(m).map(k => m[k]);
+    };
+    try {
+      return window ? await this._splitWindow(filter, window, run, merge) : await run(filter);
     } catch (e) {
       if (missingProperty(e)) {
         throw e;
       }
     }
     const rec = await this.getRecords({
-      key: '_pairs', title: logicalName, logicalName, icon: 'Table', filter, strictFilter: true,
+      key: '_pairs', title: logicalName, logicalName, icon: 'Table', filter: window ? windowFilter(filter, window) : filter, strictFilter: true,
       columns: [{ field: fieldA, label: fieldA, type: 'text' }, { field: fieldB, label: fieldB, type: 'text' }]
     }, AGGREGATE_LIMIT);
+    if (window && rec.truncated) {
+      throw new Error(TRUNCATED_AGGREGATE);
+    }
     const counts: { [key: string]: { a: string; b: string; n: number } } = {};
     rec.records.forEach(r => {
       const k = `${norm(r[fieldA])}|${norm(r[fieldB])}`;
@@ -371,32 +397,63 @@ export class DataverseService {
    * Größter Wert (z. B. jüngstes Datum) je Wert einer Spalte, z. B. letzte Aktivität je Environment.
    * Per OData-Aggregation; Rückfall: Datensätze laden und im Browser auswerten.
    */
-  public async getGroupedMax(logicalName: string, groupField: string, filter: string | undefined, maxField: string): Promise<{ [value: string]: string }> {
+  public async getGroupedMax(logicalName: string, groupField: string, filter: string | undefined, maxField: string, window?: IDateWindow): Promise<{ [value: string]: string }> {
     const meta = await this.getEntityMeta(logicalName);
-    const apply = `${filter ? `filter(${filter})/` : ''}groupby((${groupField}),aggregate(${maxField} with max as m))`;
-    const out: { [value: string]: string } = {};
-    const keep = (k: unknown, v: unknown): void => {
+    const keep = (out: { [value: string]: string }, k: unknown, v: unknown): void => {
       const key = String(k === null || k === undefined ? '' : k).toLowerCase();
       const val = v === null || v === undefined ? '' : String(v);
       if (val && (!out[key] || val > out[key])) {
         out[key] = val;
       }
     };
-    try {
+    const run = async (f: string | undefined): Promise<{ [value: string]: string }> => {
+      const apply = `${f ? `filter(${f})/` : ''}groupby((${groupField}),aggregate(${maxField} with max as m))`;
       const res = await this._get<{ value: IRecord[] }>(`${meta.entitySetName}?$apply=${encodeURIComponent(apply)}`);
-      res.value.forEach(r => keep(r[groupField], r.m));
-      return out;
+      const part: { [value: string]: string } = {};
+      res.value.forEach(r => keep(part, r[groupField], r.m));
+      return part;
+    };
+    const merge = (x: { [value: string]: string }, y: { [value: string]: string }): { [value: string]: string } => {
+      const m: { [value: string]: string } = { ...x };
+      Object.keys(y).forEach(k => keep(m, k, y[k]));
+      return m;
+    };
+    try {
+      return window ? await this._splitWindow(filter, window, run, merge) : await run(filter);
     } catch (e) {
       if (missingProperty(e)) {
         throw e;
       }
     }
     const rec = await this.getRecords({
-      key: '_max', title: logicalName, logicalName, icon: 'Table', filter, strictFilter: true,
+      key: '_max', title: logicalName, logicalName, icon: 'Table', filter: window ? windowFilter(filter, window) : filter, strictFilter: true,
       columns: [{ field: groupField, label: groupField, type: 'text' }, { field: maxField, label: maxField, type: 'date' }]
     }, AGGREGATE_LIMIT);
-    rec.records.forEach(r => keep(r[groupField], r[maxField]));
+    if (window && rec.truncated) {
+      throw new Error(TRUNCATED_AGGREGATE);
+    }
+    const out: { [value: string]: string } = {};
+    rec.records.forEach(r => keep(out, r[groupField], r[maxField]));
     return out;
+  }
+
+  /**
+   * Aggregat über einen Zeitraum. Meldet Dataverse die Aggregat-Grenze (über 50.000 Datensätze), wird der Zeitraum
+   * halbiert und die Teilergebnisse werden zusammengeführt – so bleibt die Auswertung vollständig.
+   */
+  private async _splitWindow<T>(filter: string | undefined, win: IDateWindow, run: (f: string) => Promise<T>,
+    merge: (a: T, b: T) => T, depth: number = 0): Promise<T> {
+    try {
+      return await run(windowFilter(filter, win));
+    } catch (e) {
+      if (!isAggregateLimit(e) || depth >= 12 || win.to.getTime() - win.from.getTime() < 2 * 3600000) {
+        throw e;
+      }
+      const mid = new Date(Math.floor((win.from.getTime() + win.to.getTime()) / 2));
+      const a = await this._splitWindow(filter, { field: win.field, from: win.from, to: mid }, run, merge, depth + 1);
+      const b = await this._splitWindow(filter, { field: win.field, from: mid, to: win.to }, run, merge, depth + 1);
+      return merge(a, b);
+    }
   }
 
   /**

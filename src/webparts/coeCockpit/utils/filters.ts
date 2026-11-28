@@ -1,5 +1,5 @@
 import { IColumnConfig, IRecord } from '../models/ITableConfig';
-import { displayValue, formatNumber, toDate } from './format';
+import { displayValue, formatNumber, splitList, toDate } from './format';
 
 export type DatePreset = 'today' | 'last7' | 'last30' | 'last90' | 'thisYear' | 'older90' | 'older365' | 'empty' | 'notEmpty';
 
@@ -64,9 +64,9 @@ function matchesDate(value: unknown, preset: DatePreset): boolean {
   }
 }
 
-/** Einzelwerte einer Listen-Spalte („A, B, C“ → [A, B, C]). */
+/** Einzelwerte einer Listen-Spalte („A; B; C“ bzw. „A, B, C“ → [A, B, C]). */
 export function listItems(text: string): string[] {
-  return text ? text.split(', ').map(s => s.trim()).filter(s => !!s) : [];
+  return splitList(text);
 }
 
 export function matchesFilter(record: IRecord, column: IColumnConfig, filter: IColumnFilter): boolean {

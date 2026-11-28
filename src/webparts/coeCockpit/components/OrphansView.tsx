@@ -54,6 +54,8 @@ export const OrphansView: React.FC<IOrphansViewProps> = props => {
   const [done, setDone] = React.useState<{ [key: string]: IRunResult }>({});
   const [limit, setLimit] = React.useState<number>(PAGE);
   const [dialog, setDialog] = React.useState<boolean>(false);
+  /** Beim Öffnen festgehaltener Durchlauf (die Auswahl schrumpft während der Bearbeitung) */
+  const [batch, setBatch] = React.useState<{ items: IOrphan[]; total: number }>({ items: [], total: 0 });
 
   const load = (): void => {
     setLoading(true);
@@ -226,7 +228,7 @@ export const OrphansView: React.FC<IOrphansViewProps> = props => {
                     text={`Neuen Besitzer zuweisen (${formatNumber(selectedItems.length)})`}
                     iconProps={{ iconName: 'Contact' }}
                     disabled={!selectedItems.length || !props.actions}
-                    onClick={() => setDialog(true)}
+                    onClick={() => { setBatch({ items: selectedItems.slice(0, MAX_RUN), total: selectedItems.length }); setDialog(true); }}
                   />
                 </>
               )}
@@ -256,8 +258,8 @@ export const OrphansView: React.FC<IOrphansViewProps> = props => {
       )}
       {dialog && props.actions && (
         <ReassignDialog
-          items={selectedItems.slice(0, MAX_RUN)}
-          total={selectedItems.length}
+          items={batch.items}
+          total={batch.total}
           dataverse={props.service}
           actions={props.actions}
           direct={props.direct}
@@ -266,8 +268,8 @@ export const OrphansView: React.FC<IOrphansViewProps> = props => {
           onClose={changed => {
             setDialog(false);
             if (changed) {
-              // nur die bearbeiteten Einträge abwählen – die übrigen (über dem Limit je Durchlauf) bleiben ausgewählt
-              const processed = selectedItems.slice(0, MAX_RUN).map(i => i.key);
+              // nur erfolgreich zugewiesene Einträge abwählen – fehlgeschlagene, abgebrochene und die über dem Limit bleiben ausgewählt
+              const processed = batch.items.filter(i => !!done[i.key] && done[i.key].ok).map(i => i.key);
               setSelected(prev => { const n = { ...prev }; processed.forEach(k => { delete n[k]; }); return n; });
               props.onActionsChanged();
             }

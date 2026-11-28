@@ -28,7 +28,8 @@ export interface IOrphan {
 
 const APP_TABLE: ITableConfig = {
   key: '_orphan_apps', title: 'Verwaiste Apps', logicalName: 'admin_app', icon: 'AppIconDefault', strictFilter: true,
-  filter: "statecode eq 0 and admin_appdeleted ne true and cr5d5_appisorphaned eq 'Yes'",
+  // ohne modellgesteuerte Apps (597910001): deren CoE-ID ist keine Power-Apps-App-ID, Besitzerwechsel über die Admin-API geht nicht
+  filter: "statecode eq 0 and admin_appdeleted ne true and cr5d5_appisorphaned eq 'Yes' and (admin_powerappstype eq null or admin_powerappstype ne 597910001)",
   columns: [
     { field: 'admin_displayname', label: 'App', type: 'title' },
     { field: '_admin_appowner_value', label: 'Besitzer', type: 'person' },

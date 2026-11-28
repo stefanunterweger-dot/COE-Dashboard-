@@ -73,7 +73,9 @@ export class MailService {
         subject: mail.subject,
         body: { contentType: 'HTML', content: `<html><head><meta charset="utf-8"></head><body>${mail.html}</body></html>` },
         toRecipients: mail.to.map(address => ({ emailAddress: { address } })),
-        ccRecipients: mail.cc.map(address => ({ emailAddress: { address } }))
+        ccRecipients: mail.cc.map(address => ({ emailAddress: { address } })),
+        // Antworten an das CC-Postfach (Team), nicht nur an die Person, die gerade sendet
+        replyTo: mail.cc.map(address => ({ emailAddress: { address } }))
       },
       saveToSentItems: true
     };
@@ -92,8 +94,13 @@ export class MailService {
     if (/AADSTS65001|consent|AADSTS500011|AADSTS50105|ErrorAccessDenied|Access is denied|Authorization_RequestDenied/i.test(message) || status === 401 || status === 403) {
       return new MailError(message, 'notApproved', status);
     }
-    if (status === 429 || status === 503 || status === 504) {
+    // Nur echte Drosselung erneut versuchen. Bei 503 ohne „Retry-After“ und 504 hat Exchange die Mail oft schon angenommen –
+    // ein automatischer Neuversuch würde sie doppelt zustellen (Microsoft Graph versucht ohnehin selbst schon erneut).
+    if (status === 429 || (status === 503 && !!retryAfterMs)) {
       return new MailError(message, 'throttled', status, retryAfterMs);
+    }
+    if (status === 503 || status === 504) {
+      return new MailError(`${message} – Zeitüberschreitung bei Exchange: Die Mail wurde möglicherweise trotzdem gesendet. Bitte zuerst unter „Gesendete Elemente“ nachsehen, bevor sie erneut gesendet wird.`, 'failed', status);
     }
     return new MailError(message, 'failed', status);
   }

@@ -400,7 +400,7 @@ const ROLE_TEMPLATES: { [role: string]: string } = {
 const securityRoles = Array.from({ length: 420 }, () => {
   const env = environments[int(0, environments.length - 1)]; const u = pick(humans); const viaGroup = chance(0.3);
   const role = pick(['System Administrator', 'System Customizer', 'Environment Maker', 'Basic User', 'Power Platform Admin SR']);
-  return { ...COMMON(), admin_environmentsecurityrolepermissionid: guid(), admin_name: u.admin_displayname, admin_securityrolename: role, admin_securityroletemplateid: ROLE_TEMPLATES[role], _admin_environment_value: env.admin_environmentid, admin_assignedvia: viaGroup ? 'Team' : 'Direkt', admin_groupname: viaGroup ? pick(ppPrincipals).admin_displayname : null, admin_businessunitname: `org-${String(env.admin_displayname).toLowerCase().replace(/[^a-z]/g, '').slice(0, 10)}`, admin_usertype: u.admin_userisguest ? 597910001 : 597910000, admin_useridentityprovider: 'Entra ID' };
+  return { ...COMMON(), admin_environmentsecurityrolepermissionid: guid(), admin_name: u.admin_displayname, admin_userid: u.admin_makerid, admin_securityrolename: role, admin_securityroletemplateid: ROLE_TEMPLATES[role], _admin_environment_value: env.admin_environmentid, admin_assignedvia: viaGroup ? 'Team' : 'Direkt', admin_groupname: viaGroup ? pick(ppPrincipals).admin_displayname : null, admin_businessunitname: `org-${String(env.admin_displayname).toLowerCase().replace(/[^a-z]/g, '').slice(0, 10)}`, admin_usertype: u.admin_userisguest ? 597910001 : 597910000, admin_useridentityprovider: 'Entra ID' };
 });
 // Jedes Environment: SYSTEM und ein App-Benutzer als System Administrator (werden im Cockpit ausgeblendet)
 environments.forEach(env => {
@@ -560,6 +560,10 @@ apps.forEach(a => {
 flows.forEach(f => { f.admin_flowsharedguestuser = chance(0.015); f.admin_issolutionflow = chance(0.3); });
 connectors.forEach(c => {
   c.admin_customconnectorhost = c.admin_iscustomapi ? (c.admin_displayname === 'Contoso Lager-API' ? 'lager.intern.contoso.com' : 'api.contoso.com') : null;
+  // Custom Connectors: Ersteller, Environment und Änderungsdatum wie im CoE (admin_Maker, admin_EnvironmentCustomConnector, admin_ConnectorModified)
+  (c as Record<string, unknown>)._admin_maker_value = c.admin_iscustomapi ? humans[3 % humans.length].admin_makerid : null;
+  (c as Record<string, unknown>)._admin_environmentcustomconnector_value = c.admin_iscustomapi ? environments[1].admin_environmentid : null;
+  (c as Record<string, unknown>).admin_connectormodified = c.admin_iscustomapi ? '2026-09-14T08:30:00Z' : null;
   c.admin_customconnectorhostishttp = c.admin_displayname === 'Contoso Lager-API';
 });
 
@@ -741,7 +745,8 @@ export const DATABASES: IDatabase[] = [
       A('admin_displayname', 'String', 'Connector Display Name'), A('admin_name', 'String', 'Name'), A('admin_tier', 'String', 'Tier'),
       A('admin_publisher', 'String', 'Publisher'), A('admin_iscustomapi', 'Boolean', 'Is Custom API'), A('admin_connectordeleted', 'Boolean', 'Connector Deleted'),
       A('admin_numapps', 'Integer', 'Number of Apps'), A('admin_numflows', 'Integer', 'Number of Flows'),
-      A('admin_customconnectorhost', 'String', 'Custom Connector Host'), A('admin_customconnectorhostishttp', 'Boolean', 'Custom Connector Host is HTTP')
+      A('admin_customconnectorhost', 'String', 'Custom Connector Host'), A('admin_customconnectorhostishttp', 'Boolean', 'Custom Connector Host is HTTP'),
+      MAKER_LK('admin_maker', 'Maker'), ENV_LK('admin_environmentcustomconnector'), A('admin_connectormodified', 'DateTime', 'Connector Modified')
     ], connectorRows),
     table('admin_connectionreference', 'admin_connectionreferences', 'Connection Reference', 'admin_connectionreferenceid', 'admin_name', [
       A('admin_name', 'String', 'Name'), LK('admin_app', 'App', 'admin_app'), LK('admin_flow', 'Flow', 'admin_flow'), LK('admin_connector', 'Connector', 'admin_connector'),
@@ -800,7 +805,7 @@ export const DATABASES: IDatabase[] = [
       LK('admin_flow', 'Flow', 'admin_flow'), ENV_LK('admin_environment'), A('admin_resourcetype', 'String', 'Resource Type'), A('admin_rolename', 'String', 'Role Name')
     ], userRoles),
     table('admin_environmentsecurityrolepermission', 'admin_environmentsecurityrolepermissions', 'Security Role Permission', 'admin_environmentsecurityrolepermissionid', 'admin_name', [
-      A('admin_name', 'String', 'User Name'), A('admin_securityrolename', 'String', 'Security Role Name'), A('admin_securityroletemplateid', 'String', 'Security Role Template ID'), ENV_LK('admin_environment'),
+      A('admin_name', 'String', 'User Name'), A('admin_userid', 'String', 'User ID'), A('admin_securityrolename', 'String', 'Security Role Name'), A('admin_securityroletemplateid', 'String', 'Security Role Template ID'), ENV_LK('admin_environment'),
       A('admin_assignedvia', 'String', 'Assigned Via'), A('admin_groupname', 'String', 'Group Name'), A('admin_businessunitname', 'String', 'Business Unit Name'),
       A('admin_usertype', 'Picklist', 'User Type', undefined, { 597910000: 'Member', 597910001: 'Guest', 597910002: 'App User', 597910003: 'Unknown', 597910004: 'Microsoft Account' }),
       A('admin_useridentityprovider', 'String', 'User Identity Provider')
@@ -902,8 +907,10 @@ export const DATABASES: IDatabase[] = [
 
   coeSolutions.forEach((sol, i) => {
     const env = envById[String(sol._admin_solutionenvironment_value)];
-    sol.admin_solutionenvtobjectguidstring = sol.admin_solutionid;
-    sol.admin_solutionenvtguid = env ? env.admin_environmentname : null;
+    // Wie im echten CoE: eigene, zufällige CoE-ID; die Solution-ID im Environment steht in admin_solutionenvtguid
+    const envSolId = g2();
+    sol.admin_solutionenvtguid = envSolId;
+    sol.admin_solutionenvtobjectguidstring = `${String(sol._admin_solutionenvironment_value)}_${envSolId}`;
     const host = env && env.admin_environmentcdsinstanceurl ? String(env.admin_environmentcdsinstanceurl).replace(/^https:\/\//, '').replace(/\/$/, '') : '';
     const managed = !!sol.admin_solutionismanaged;
     const ea = appsByEnv[String(sol._admin_solutionenvironment_value)] || [];
@@ -921,7 +928,7 @@ export const DATABASES: IDatabase[] = [
     }
     const d = envDb(host);
     const comp = (type: number, objectid: unknown): void => {
-      d.tables.solutioncomponent.rows.push({ solutioncomponentid: g2(), _solutionid_value: sol.admin_solutionid, componenttype: type, objectid });
+      d.tables.solutioncomponent.rows.push({ solutioncomponentid: g2(), _solutionid_value: envSolId, componenttype: type, objectid });
     };
     solApps.forEach(a => {
       d.tables.canvasapp.rows.push({ canvasappid: a.admin_appid, displayname: a.admin_displayname, name: `cr5d5_app_${String(a.admin_appid).slice(0, 5)}` });

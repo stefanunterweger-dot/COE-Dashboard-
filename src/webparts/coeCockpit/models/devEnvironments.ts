@@ -1,7 +1,7 @@
 import { IRecord, ITableConfig } from './ITableConfig';
 import { getDefaultTables } from './defaultTables';
 import { DataverseService, environmentType, IAttributeMeta, IRecordResult } from '../services/DataverseService';
-import { displayValue, isMailAddress, rawValue } from '../utils/format';
+import { displayValue, isMailAddress, LIST_SEP, rawValue } from '../utils/format';
 
 /**
  * Reiter „Betroffen ab 15.12.“: nicht verwaltete (unmanaged) Developer-Environments.
@@ -175,7 +175,10 @@ async function lastActivityPerEnvironment(service: DataverseService, envIds: str
   const sources: [string, string, string, string][] = [
     ['admin_app', '_admin_appenvironment_value', 'admin_appdeleted', 'admin_applastlaunchedon'],
     ['admin_app', '_admin_appenvironment_value', 'admin_appdeleted', 'admin_appmodifiedon'],
-    ['admin_flow', '_admin_flowenvironment_value', 'admin_flowdeleted', 'admin_flowmodifiedon']
+    ['admin_flow', '_admin_flowenvironment_value', 'admin_flowdeleted', 'admin_flowmodifiedon'],
+    ['admin_pva', '_admin_pvaenvironment_value', 'admin_pvadeleted', 'admin_pvalastlaunchedon'],
+    ['admin_pva', '_admin_pvaenvironment_value', 'admin_pvadeleted', 'admin_pvamodifiedon'],
+    ['admin_rpa', '_admin_desktopflowenvironment_value', 'admin_rpadeleted', 'admin_rpamodifiedon']
   ];
   for (let i = 0; i < envIds.length; i += BATCH) {
     const ids = envIds.slice(i, i + BATCH);
@@ -215,21 +218,44 @@ export function isServiceAccount(name: string): boolean {
   return /^#/.test(n) || /^system$/i.test(n);
 }
 
-async function makersPerEnvironment(service: DataverseService, envIds: string[]): Promise<{ [envId: string]: { name: string; email: string; count: number }[] }> {
+interface IMakerResult {
+  makers: { [envId: string]: { name: string; email: string; count: number }[] };
+  /** Anzahl Bots und Desktop Flows je Environment */
+  others: { [envId: string]: number };
+}
+
+async function makersPerEnvironment(service: DataverseService, envIds: string[], creators: { [envId: string]: string }, warnings: string[]): Promise<IMakerResult> {
   const perEnv: { [envId: string]: { [makerId: string]: number } } = {};
+  const others: { [envId: string]: number } = {};
+  const failed: string[] = [];
   for (let i = 0; i < envIds.length; i += BATCH) {
     const ids = envIds.slice(i, i + BATCH);
     const results = await Promise.all(MAKER_SOURCES.map(src => service
       .getGroupedPairs(src.table, src.envField, src.ownerField, `(${src.baseFilter}) and (${ids.map(id => `${src.envField} eq ${id}`).join(' or ')})`)
-      .catch(() => [] as { a: string; b: string; n: number }[])));
-    results.forEach(pairs => pairs.forEach(p => {
-      if (!p.a || !p.b) {
+      .catch((e: Error) => { failed.push(`${src.table}: ${e.message}`); return [] as { a: string; b: string; n: number }[]; })));
+    results.forEach((pairs, k) => pairs.forEach(p => {
+      if (!p.a) {
         return;
       }
-      perEnv[p.a] = perEnv[p.a] || {};
-      perEnv[p.a][p.b] = (perEnv[p.a][p.b] || 0) + p.n;
+      const env = p.a.toLowerCase();
+      if (MAKER_SOURCES[k].table === 'admin_pva' || MAKER_SOURCES[k].table === 'admin_rpa') {
+        others[env] = (others[env] || 0) + p.n;
+      }
+      if (!p.b) {
+        return;
+      }
+      perEnv[env] = perEnv[env] || {};
+      perEnv[env][p.b.toLowerCase()] = (perEnv[env][p.b.toLowerCase()] || 0) + p.n;
     }));
   }
+  // Wer das Environment erstellt hat, gehört immer dazu (auch ohne eigene Apps oder Flows)
+  Object.keys(creators).forEach(env => {
+    const c = creators[env];
+    if (c) {
+      perEnv[env] = perEnv[env] || {};
+      perEnv[env][c] = (perEnv[env][c] || 0) + 1;
+    }
+  });
   // Namen der Maker nachladen
   const makerIds: string[] = [];
   Object.keys(perEnv).forEach(e => Object.keys(perEnv[e]).forEach(m => { if (makerIds.indexOf(m) < 0) { makerIds.push(m); } }));
@@ -245,7 +271,7 @@ async function makersPerEnvironment(service: DataverseService, envIds: string[])
         { field: 'admin_useremail', label: 'E-Mail', type: 'text' },
         { field: 'admin_userprincipalname', label: 'UPN', type: 'text' }
       ]
-    }, part.length).catch(() => undefined);
+    }, part.length).catch((e: Error) => { failed.push(`Maker: ${e.message}`); return undefined; });
     (res ? res.records : []).forEach(r => {
       const id = String(r.admin_makerid || '').toLowerCase();
       names[id] = displayValue(r, 'admin_displayname');
@@ -259,7 +285,10 @@ async function makersPerEnvironment(service: DataverseService, envIds: string[])
       .filter(m => !!m.name && !isServiceAccount(m.name))
       .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name, 'de'));
   });
-  return out;
+  if (failed.length) {
+    warnings.push(`Maker konnten nicht vollständig ermittelt werden – einzelne Environments zeigen deshalb zu wenige Maker (${failed.slice(0, 2).join('; ')}). Bitte „Aktualisieren“.`);
+  }
+  return { makers: out, others };
 }
 
 /** Rollenvorlage „System Administrator“ (in allen Dataverse-Umgebungen gleich). */
@@ -323,7 +352,9 @@ export async function loadAffectedEnvironments(service: DataverseService, manage
   // Typ-Spalte: „Environment Sku“ (aktuell) bzw. „Environment Type“ (ältere CoE-Versionen)
   const typeFields = ['admin_environmentsku', 'admin_environmenttype'].filter(f => attrs.length === 0 || attrs.some(a => a.logicalName === f));
 
-  const extra = [managedAttr, stateAttr].filter(a => !!a).map(a => ({ field: a!.selectName, label: a!.displayName, type: 'text' as const }));
+  const extra = [managedAttr, stateAttr].filter(a => !!a).map(a => ({ field: a!.selectName, label: a!.displayName, type: 'text' as const }))
+    // Ersteller des Environments (CoE-Lookup „Maker“) – wird ebenfalls angeschrieben
+    .concat([{ field: '_admin_maker_value', label: 'Erstellt von', type: 'text' as const }]);
   const query: ITableConfig = {
     key: '_devenv', title: 'Environments', logicalName: ENV_TABLE, icon: 'Globe',
     filter: 'admin_environmentdeleted ne true',
@@ -351,12 +382,23 @@ export async function loadAffectedEnvironments(service: DataverseService, manage
       warnings.push(`Anzahl Flows konnte nicht ermittelt werden: ${e.message}`);
       return undefined;
     }),
-    lastActivityPerEnvironment(service, ids).catch(() => ({} as { [envId: string]: string }))
+    lastActivityPerEnvironment(service, ids).catch((e: Error) => {
+      warnings.push(`Letzte Aktivität konnte nicht ermittelt werden – die Empfehlung „Inaktiv“ ist deshalb nicht verlässlich: ${e.message}`);
+      return {} as { [envId: string]: string };
+    })
   ]);
-  const [makers, admins] = await Promise.all([
-    makersPerEnvironment(service, ids).catch((e: Error) => {
+  const creators: { [envId: string]: string } = {};
+  affected.forEach(r => {
+    const env = String(r[res.meta.primaryId] || '').toLowerCase();
+    const maker = String(r._admin_maker_value || '').toLowerCase();
+    if (env && maker) {
+      creators[env] = maker;
+    }
+  });
+  const [makerResult, admins] = await Promise.all([
+    makersPerEnvironment(service, ids, creators, warnings).catch((e: Error) => {
       warnings.push(`Maker konnten nicht ermittelt werden: ${e.message}`);
-      return {} as { [envId: string]: { name: string; email: string; count: number }[] };
+      return { makers: {}, others: {} } as IMakerResult;
     }),
     sysAdminsPerEnvironment(service, ids).catch((e: Error) => {
       warnings.push(`System-Administratoren konnten nicht ermittelt werden: ${e.message}`);
@@ -369,6 +411,7 @@ export async function loadAffectedEnvironments(service: DataverseService, manage
   }
   const inactiveBefore = new Date(Date.now() - INACTIVE_DAYS * 86400000).toISOString();
 
+  const makers = makerResult.makers;
   const records = affected.map(r => {
     const id = String(r[res.meta.primaryId] || '').toLowerCase();
     const managed = managedAttr ? managedValue(r, managedAttr.selectName) : undefined;
@@ -378,18 +421,18 @@ export async function loadAffectedEnvironments(service: DataverseService, manage
     const last = activity[id] || '';
     const recommendation = state === 'Deaktiviert'
       ? RECOMMENDATION.disabled
-      : appCount === 0 && flowCount === 0
+      : appCount === 0 && flowCount === 0 && !makerResult.others[id]
         ? RECOMMENDATION.empty
         : !last || last < inactiveBefore ? RECOMMENDATION.inactive : RECOMMENDATION.inUse;
     return {
       ...r,
       [DEV_FIELDS.recommendation]: recommendation,
       [DEV_FIELDS.lastActivity]: last || null,
-      [DEV_FIELDS.makers]: (makers[id] || []).map(m => m.name).join(', '),
+      [DEV_FIELDS.makers]: (makers[id] || []).map(m => m.name).join(LIST_SEP),
       [DEV_FIELDS.makerCount]: (makers[id] || []).length,
       [DEV_FIELDS.makerEmails]: (makers[id] || []).map(m => m.email).filter(x => !!x).join(', '),
-      [DEV_FIELDS.makersNoMail]: (makers[id] || []).filter(m => !m.email).map(m => m.name).join(', '),
-      [DEV_FIELDS.admins]: admins ? (admins[id] || []).join(', ') : '',
+      [DEV_FIELDS.makersNoMail]: (makers[id] || []).filter(m => !m.email).map(m => m.name).join(LIST_SEP),
+      [DEV_FIELDS.admins]: admins ? (admins[id] || []).join(LIST_SEP) : '',
       [DEV_FIELDS.state]: state,
       [DEV_FIELDS.managed]: managed === undefined ? 'Unbekannt' : managed ? 'Ja' : 'Nein',
       [DEV_FIELDS.apps]: appCount,

@@ -179,7 +179,8 @@ function parseFilter(t: ITableDef, s: string): Pred {
       const field = expect('id').v;
       attrFor(t, field);
       expect('comma');
-      const val = String(literal()).toLowerCase();
+      // Platzhalter-Schutz wie in Dataverse: „[x]“ steht für das Zeichen x
+      const val = String(literal()).toLowerCase().replace(/\[(.)\]/g, '$1');
       expect('rp');
       return r => {
         const v = String(r[field] === null || r[field] === undefined ? '' : r[field]).toLowerCase();

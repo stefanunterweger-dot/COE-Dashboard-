@@ -17,7 +17,7 @@ import { DataverseService } from '../services/DataverseService';
 import { DirectActionError, DirectActionService, runsDirect } from '../services/DirectActionService';
 import { PIM_URL, PPAPI_RESOURCE } from '../services/PowerPlatformApiService';
 import { checkAdminRole, RoleState } from '../services/RoleCheckService';
-import { displayValue, isMailAddress } from '../utils/format';
+import { displayValue, isMailAddress, odataLikeLiteral } from '../utils/format';
 
 /**
  * Dialog für eine Cockpit-Aktion: Zusammenfassung, Pflicht-Begründung, bei Besitzer/Freigaben die
@@ -103,7 +103,7 @@ export const ActionDialog: React.FC<IActionDialogProps> = props => {
       setSuggestions([]);
       return;
     }
-    const lit = q.replace(/'/g, "''");
+    const lit = odataLikeLiteral(q);
     const timer = window.setTimeout(() => {
       props.dataverse!.getRecords({
         key: '_principals', title: 'Power Platform User', logicalName: 'admin_powerplatformuser', icon: 'People', strictFilter: true,

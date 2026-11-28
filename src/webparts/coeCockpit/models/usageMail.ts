@@ -30,7 +30,7 @@ export const USAGE_TYPES: { [logicalName: string]: { label: string; owner: strin
   admin_app: { label: 'App', owner: ['_admin_appowner_value'], last: ['admin_applastlaunchedon', 'admin_appmodifiedon'] },
   admin_flow: { label: 'Flow', owner: ['_admin_derivedowner_value', '_admin_flowcreator_value'], last: ['admin_flowlastrunon', 'admin_flowmodifiedon'] },
   admin_environment: { label: 'Environment', owner: ['_admin_maker_value'], last: ['admin_environmentlastactivityon', 'admin_environmentcreatedon'] },
-  admin_connector: { label: 'Connector', owner: ['_admin_connectorcreatedby_value', '_admin_connectorcreator_value'], last: ['admin_connectormodifiedon'] },
+  admin_connector: { label: 'Connector', owner: ['_admin_maker_value'], last: ['admin_connectormodified', 'admin_connectorcreateddatetime'] },
   admin_pva: { label: 'Bot', owner: ['_admin_pvaowner_value'], last: ['admin_pvalastlaunchedon', 'admin_pvamodifiedon'] },
   admin_rpa: { label: 'Desktop Flow', owner: ['_admin_rpaowner_value', '_admin_rpacreator_value'], last: ['admin_rpamodifiedon'] },
   admin_portal: { label: 'Power Pages-Site', owner: ['_admin_portalowner_value', '_admin_portalcreatedby_value'], last: ['admin_portalmodifiedon'] },
@@ -58,7 +58,8 @@ export function environmentName(logicalName: string, r: IRecord): string {
   if (logicalName === 'admin_environment') {
     return displayValue(r, 'admin_displayname');
   }
-  const key = Object.keys(r).filter(k => /^_admin_[a-z]*environment_value$/.test(k) && !!r[k])[0];
+  // z. B. _admin_appenvironment_value, bei Custom Connectors _admin_environmentcustomconnector_value
+  const key = Object.keys(r).filter(k => /^_admin_[a-z]*environment[a-z]*_value$/.test(k) && !!r[k])[0];
   return key ? displayValue(r, key) : '';
 }
 

@@ -237,6 +237,29 @@ export function hostOf(url: string): string {
  * Einfache Prüfung einer E-Mail-Adresse. Erlaubt nur Zeichen, die in einem mailto-Link nicht maskiert
  * werden müssen (Gäste-UPNs mit „#EXT#“ sind keine Postfächer und fallen damit heraus).
  */
+/**
+ * Trennzeichen für Listen-Spalten mit Personennamen (Maker, System-Administratoren). Nicht „, “ –
+ * Namen wie „Müller, Thomas“ würden sonst als zwei Personen gelesen.
+ */
+export const LIST_SEP = '; ';
+
+/** Einzelwerte einer Listen-Spalte: mit „; “ getrennt (Namen), sonst mit „, “ (z. B. E-Mail-Adressen, ältere Werte). */
+export function splitList(text: string): string[] {
+  if (!text) {
+    return [];
+  }
+  return (text.indexOf(';') >= 0 ? text.split(';') : text.split(', ')).map(s => s.trim()).filter(s => !!s);
+}
+
+/**
+ * Suchbegriff für contains()/startswith() in Dataverse: Hochkomma verdoppeln und die Platzhalter [ % _ in eckige
+ * Klammern setzen (Dataverse wertet sie sonst wie SQL-LIKE aus, z. B. „[DEV] App“ fände die App nicht).
+ */
+export function odataLikeLiteral(s: string): string {
+  return s.replace(/'/g, "''").replace(/[[%_]/g, c => `[${c}]`);
+}
+
 export function isMailAddress(x: string): boolean {
-  return /^[A-Za-z0-9._+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$/.test(x);
+  // auch Apostroph (z. B. o'connor@contoso.com) – in Exchange zulässig
+  return /^[A-Za-z0-9._+'-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$/.test(x);
 }

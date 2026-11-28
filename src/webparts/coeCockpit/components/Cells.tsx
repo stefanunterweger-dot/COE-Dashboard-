@@ -2,7 +2,7 @@ import * as React from 'react';
 import { Icon } from '@fluentui/react/lib/Icon';
 import styles from './CoeCockpit.module.scss';
 import { IColumnConfig, IRecord, Tone } from '../models/ITableConfig';
-import { displayValue, formatDate, hashColor, hostOf, initials, relativeTime, toDate } from '../utils/format';
+import { displayValue, formatDate, hashColor, hostOf, initials, LIST_SEP, relativeTime, splitList, toDate } from '../utils/format';
 
 export function toneClass(tone: Tone | undefined): string {
   switch (tone) {
@@ -121,17 +121,17 @@ export const CellValue: React.FC<ICellValueProps> = ({ record, column, expanded 
     case 'number':
       return text ? <span className={styles.numeric}>{text}</span> : <EmptyValue />;
     case 'list': {
-      const items = text ? text.split(', ').filter(s => !!s) : [];
+      const items = splitList(text);
       if (!items.length) {
         return <EmptyValue />;
       }
       if (expanded) {
-        return <span>{items.join(', ')}</span>;
+        return <span>{items.join(LIST_SEP)}</span>;
       }
       const shown = items.slice(0, 2);
       return (
         <span className={styles.listCell} title={items.join('\n')}>
-          <span className={styles.ellipsis}>{shown.join(', ')}</span>
+          <span className={styles.ellipsis}>{shown.join(LIST_SEP)}</span>
           {items.length > shown.length && <span className={styles.listMore}>+{items.length - shown.length}</span>}
         </span>
       );
