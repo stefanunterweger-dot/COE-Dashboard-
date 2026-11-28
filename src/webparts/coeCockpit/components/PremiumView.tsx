@@ -258,7 +258,7 @@ export const PremiumView: React.FC<IPremiumViewProps> = props => {
     { key: 'env', label: 'Environment', sort: a => a.envName, render: a => <span className={styles.ccName}>{a.envName}</span> },
     { key: 'owner', label: 'Besitzer', sort: a => a.owner, render: a => a.owner || '–' },
     { key: 'users', label: 'Berechtigte', numeric: true, sort: a => a.users.length, render: a => (a.tenantShared ? <span title="Für alle in der Organisation freigegeben">{formatNumber(a.users.length)} + Organisation</span> : formatNumber(a.users.length)) },
-    { key: 'unlicensed', label: 'Ohne Premium', numeric: true, sort: a => a.unlicensed, render: a => <b>{formatNumber(a.unlicensed)}</b> },
+    { key: 'unlicensed', label: 'Ohne Premium', numeric: true, sort: a => a.unlicensed, render: a => (data.licenseState === 'ok' ? <b>{formatNumber(a.unlicensed)}</b> : <span className={styles.muted} title="Lizenzen nicht geprüft">–</span>) },
     { key: 'launches', label: `Starts (${USAGE_DAYS} T.)`, numeric: true, sort: a => a.launches, render: a => (data.usageAvailable ? formatNumber(a.launches) : '–') }
   ];
 
@@ -282,7 +282,7 @@ export const PremiumView: React.FC<IPremiumViewProps> = props => {
             icon="Rocket" tone={pipelineTargets.length ? styles.ovToneSerious : styles.ovToneInfo} value={pipeState === 'ready' ? formatNumber(pipelineTargets.length) : '–'}
             onClick={pipeState === 'ready' ? () => { setMode('envs'); setOnlyPipelineEnvs(true); } : undefined} active={mode === 'envs' && onlyPipelineEnvs} />
         )}
-        <Tile label="Ohne Premium-Lizenz" hint={`in ${formatNumber(envsWithImpact.length)} Environment(s) – wären ab Februar 2027 gesperrt`} icon="Blocked2" tone={blocked.length ? styles.ovToneCritical : styles.ovToneInfo} value={data.licenseState === 'ok' ? formatNumber(blocked.length) : '–'} onClick={() => { setMode('users'); setFilter('blocked'); }} active={mode === 'users' && filter === 'blocked'} />
+        <Tile label="Ohne Premium-Lizenz" hint={data.licenseState === 'ok' ? `in ${formatNumber(envsWithImpact.length)} Environment(s) – wären ab Februar 2027 gesperrt` : 'Lizenzen nicht geprüft'} icon="Blocked2" tone={blocked.length ? styles.ovToneCritical : styles.ovToneInfo} value={data.licenseState === 'ok' ? formatNumber(blocked.length) : '–'} onClick={() => { setMode('users'); setFilter('blocked'); }} active={mode === 'users' && filter === 'blocked'} />
       </div>
       <section className={styles.ovCard}>
         <div className={styles.toolbar}>

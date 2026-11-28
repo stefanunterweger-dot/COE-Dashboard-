@@ -765,11 +765,12 @@ export const DATABASES: IDatabase[] = [
     table('admin_pva', 'admin_pvas', 'PVA', 'admin_pvaid', 'admin_name', [
       A('admin_name', 'String', 'Name'), MAKER_LK('admin_pvaowner', 'Bot Owner'), ENV_LK('admin_pvaenvironment'), A('admin_pvastate', 'String', 'State'),
       A('admin_pvanumberlaunches', 'Integer', 'Conversations (Last Month)'), A('admin_pvalastlaunchedon', 'DateTime', 'Last Launched On'),
-      A('admin_bottemplate', 'String', 'Bot Template'), A('admin_pvadeleted', 'Boolean', 'Deleted')
+      A('admin_bottemplate', 'String', 'Bot Template'), A('admin_pvadeleted', 'Boolean', 'Deleted'), A('admin_pvamodifiedon', 'DateTime', 'Modified On')
     ], bots),
     table('admin_rpa', 'admin_rpas', 'RPA', 'admin_rpaid', 'admin_name', [
       A('admin_name', 'String', 'Name'), A('admin_displayname', 'String', 'Display Name'), MAKER_LK('admin_rpaowner', 'Owner'),
-      ENV_LK('admin_desktopflowenvironment'), A('admin_rpastate', 'String', 'State'), A('admin_rpamodifiedon', 'DateTime', 'Modified On')
+      ENV_LK('admin_desktopflowenvironment'), A('admin_rpastate', 'String', 'State'), A('admin_rpamodifiedon', 'DateTime', 'Modified On'),
+      A('admin_rpadeleted', 'Boolean', 'Deleted')
     ], rpas),
     table('admin_portal', 'admin_portals', 'Power Pages Site', 'admin_portalid', 'admin_portaldisplayname', [
       A('admin_portaldisplayname', 'String', 'Display Name'), MAKER_LK('admin_portalowner', 'Owner'), ENV_LK('admin_portalenvironment'),

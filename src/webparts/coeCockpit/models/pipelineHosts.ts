@@ -173,7 +173,8 @@ export async function scanHosts(factory: AadHttpClientFactory, envs: ICoeEnv[], 
   const worker = async (): Promise<void> => {
     for (let e = queue.shift(); e && alive(); e = queue.shift()) {
       try {
-        const svc = new DataverseService(factory, e.url);
+        // nur eine Wiederholung: gesperrte oder schlafende Environments sollen die Suche nicht minutenlang aufhalten
+        const svc = new DataverseService(factory, e.url, 1);
         const rows = await svc.query('deploymentenvironments', ['deploymentenvironmentid'], undefined, 1);
         if (rows.length) {
           found.push({ url: e.url.replace(/\/+$/, ''), name: e.displayName, coeId: e.coeId, configured: false });

@@ -414,6 +414,7 @@ export async function loadPremiumImpact(service: DataverseService, graphFactory:
     const targets = list.filter(u => !!(u.id || u.upn));
     let done = 0;
     let unchecked = 0;
+    let rejected = 0;
     await pool(chunks(targets, GRAPH_BATCH), 3, async part => {
       if (licenseState !== 'ok') {
         return;
@@ -444,9 +445,12 @@ export async function loadPremiumImpact(service: DataverseService, graphFactory:
             } else if (r.status === 403 || r.status === 401) {
               licenseState = 'forbidden';
               licenseProblem = (r.body && r.body.error && r.body.error.message) || 'Zugriff verweigert';
-            } else {
+            } else if (r.status === 429 || r.status >= 500) {
+              // nur Drosselung und Serverfehler wiederholen – andere Fehler bleiben „nicht geprüft“ (ohne Wiederholung)
               retry.push(u);
               wait = Math.max(wait, retryAfterMs(r.headers, attempt));
+            } else {
+              rejected++;
             }
           });
           send.forEach((u, i) => { if (!answered[String(i)]) { retry.push(u); } });
@@ -470,6 +474,9 @@ export async function loadPremiumImpact(service: DataverseService, graphFactory:
       done += part.length;
       progress(`Lizenzen werden geprüft … ${done} von ${targets.length}`);
     });
+    if (rejected) {
+      warnings.push(`${rejected} Personen nicht geprüft (Microsoft Graph hat die Abfrage abgelehnt) – „Ohne Premium“ ist deshalb zu niedrig.`);
+    }
     if (unchecked) {
       warnings.push(`${unchecked} Personen nicht geprüft (Microsoft Graph hat nicht geantwortet bzw. gedrosselt) – „Ohne Premium“ ist deshalb zu niedrig. Bitte später „Aktualisieren“.`);
     }

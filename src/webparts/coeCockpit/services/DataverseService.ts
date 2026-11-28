@@ -40,15 +40,13 @@ const TRUNCATED_AGGREGATE = 'Zu viele Datensätze für eine vollständige Auswer
 const TRUNCATED_ROWS = 'Zu viele Datensätze für eine vollständige Auswertung (über 50.000) – Ergebnis wäre unvollständig.';
 
 /**
- * Auf das Laden der Datensätze ausweichen nur, wenn Dataverse die Aggregation ablehnt (nicht unterstützt bzw.
- * Aggregat-Grenze) – nicht bei Drosselung (429), Serverfehlern, fehlenden Rechten oder Netzwerkfehlern:
- * dort würde das Laden von bis zu 50.000 Zeilen die Last nur erhöhen.
+ * Auf das Laden der Datensätze ausweichen nur, wenn Dataverse die Aggregation ablehnt (nicht unterstützt) –
+ * nicht bei Drosselung (429), Serverfehlern, fehlenden Rechten oder Netzwerkfehlern: dort würde das Laden von
+ * bis zu 50.000 Zeilen die Last nur erhöhen. Auch nicht bei der Aggregat-Grenze: dann passen mehr als 50.000
+ * Datensätze, das Laden wäre immer abgeschnitten (die Aufrufer melden das sofort).
  */
 function canFallBack(e: unknown): boolean {
-  if (isAggregateLimit(e)) {
-    return true;
-  }
-  if (!(e instanceof DataverseError) || missingProperty(e)) {
+  if (isAggregateLimit(e) || !(e instanceof DataverseError) || missingProperty(e)) {
     return false;
   }
   return e.status >= 400 && e.status < 500 && [401, 403, 404, 408, 429].indexOf(e.status) < 0;
@@ -221,7 +219,8 @@ export class DataverseService {
   private _countMode: CountMode | undefined;
   private _tables: Promise<ITableInfo[]> | undefined;
 
-  constructor(factory: AadHttpClientFactory, environmentUrl: string) {
+  /** maxRetries: Wiederholungen bei 429/5xx (weniger z. B. bei der Suche über viele Environments). */
+  constructor(factory: AadHttpClientFactory, environmentUrl: string, private _maxRetries: number = MAX_RETRIES) {
     this._factory = factory;
     this.baseUrl = environmentUrl.trim().replace(/\/+$/, '');
   }
@@ -407,8 +406,9 @@ export class DataverseService {
     try {
       const page = await this._get<IODataPage>(q, 1);
       const n = typeof page['@odata.count'] === 'number' ? page['@odata.count'] : page.value.length;
-      if (!this._countMode && firstError !== undefined) {
-        this._countMode = 'odata'; // Aggregation wird nicht unterstützt
+      // Aggregation wird nicht unterstützt – nur merken, wenn Dataverse sie wirklich ablehnt (nicht bei Drosselung/Serverfehlern)
+      if (!this._countMode && firstError !== undefined && canFallBack(firstError)) {
+        this._countMode = 'odata';
       }
       return { value: n, atLeast: n >= ODATA_COUNT_LIMIT };
     } catch (e) {
@@ -436,6 +436,9 @@ export class DataverseService {
     try {
       return window ? await this._splitWindow(filter, window, run, merge) : await run(filter);
     } catch (e) {
+      if (isAggregateLimit(e)) {
+        throw new Error(window ? TRUNCATED_AGGREGATE : TRUNCATED_ROWS);
+      }
       if (!canFallBack(e)) {
         throw e;
       }
@@ -484,6 +487,9 @@ export class DataverseService {
     try {
       return window ? await this._splitWindow(filter, window, run, merge) : await run(filter);
     } catch (e) {
+      if (isAggregateLimit(e)) {
+        throw new Error(window ? TRUNCATED_AGGREGATE : TRUNCATED_ROWS);
+      }
       if (!canFallBack(e)) {
         throw e;
       }
@@ -542,7 +548,8 @@ export class DataverseService {
       return out;
     } catch (e) {
       if (aggregateOnly || !canFallBack(e)) {
-        throw e; // aggregateOnly: bei großen Tabellen (z. B. Audit-Log) nicht auf Laden aller Datensätze ausweichen
+        // aggregateOnly: bei großen Tabellen (z. B. Audit-Log) nicht auf Laden aller Datensätze ausweichen
+        throw isAggregateLimit(e) && !aggregateOnly ? new Error(TRUNCATED_ROWS) : e;
       }
     }
     const table: ITableConfig = {
@@ -768,7 +775,7 @@ export class DataverseService {
           ? await client.get(url, AadHttpClient.configurations.v1, options)
           : await client.fetch(url, AadHttpClient.configurations.v1, { ...options, method });
         const retry = res.status === 429 || (method !== 'POST' && RETRY_IDEMPOTENT.indexOf(res.status) >= 0);
-        if (!retry || attempt >= MAX_RETRIES) {
+        if (!retry || attempt >= this._maxRetries) {
           return await handle(res);
         }
         wait = retryDelay(res, attempt);

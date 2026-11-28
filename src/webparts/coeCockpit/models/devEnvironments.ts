@@ -436,10 +436,6 @@ export async function loadAffectedEnvironments(service: DataverseService, manage
       return { values: {} as { [envId: string]: string }, incomplete: all, errors: [e.message] };
     })
   ]);
-  const incompleteCount = ids.filter(id => activity.incomplete[id.toLowerCase()]).length;
-  if (incompleteCount) {
-    warnings.push(`Letzte Aktivität konnte für ${incompleteCount} Environment(s) nicht vollständig ermittelt werden – dort steht die Empfehlung „${RECOMMENDATION.unknown}“ statt „Inaktiv“ (${activity.errors.join('; ')}). Bitte „Aktualisieren“.`);
-  }
   const creators: { [envId: string]: string } = {};
   affected.forEach(r => {
     const env = String(r[res.meta.primaryId] || '').toLowerCase();
@@ -499,5 +495,11 @@ export async function loadAffectedEnvironments(service: DataverseService, manage
       [DEV_FIELDS.flows]: flowCount
     } as IRecord;
   });
+  // nur die Environments zählen, bei denen die fehlende Aktivität wirklich die Empfehlung bestimmt
+  const unknownCount = records.filter(r => r[DEV_FIELDS.recommendation] === RECOMMENDATION.unknown).length;
+  if (unknownCount) {
+    const why = activity.errors.length ? ` (${activity.errors.join('; ')})` : '';
+    warnings.push(`Aktivität bzw. Inhalt konnte für ${unknownCount} Environment(s) nicht vollständig ermittelt werden – dort steht die Empfehlung „${RECOMMENDATION.unknown}“ statt „Inaktiv“ bzw. „Leer“${why}. Bitte „Aktualisieren“.`);
+  }
   return { records, meta: res.meta, warnings, truncated: res.truncated };
 }
