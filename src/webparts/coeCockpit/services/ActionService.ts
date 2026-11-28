@@ -272,7 +272,18 @@ export class ActionService {
    */
   public async list(top: number = 500): Promise<IActionItem[] | undefined> {
     const res = await this._get<{ value: IListItem[] }>(`${this._list}/items?$select=${SELECT}&$orderby=ID desc&$top=${top}`);
-    return res ? (res.value || []).map(toItem) : undefined;
+    if (!res) {
+      return undefined;
+    }
+    const items = res.value || [];
+    // Offene Aufträge zusätzlich gezielt lesen – nach einem großen Sammellauf lägen sie sonst außerhalb der neuesten Einträge
+    // und die Sperre gegen Doppelaufträge griffe nicht (Status ist indiziert; Fehler hier = nur die neuesten Einträge).
+    const open = await this._get<{ value: IListItem[] }>(`${this._list}/items?$select=${SELECT}&$filter=${encodeURIComponent("(Status eq 'Angefordert') or (Status eq 'In Arbeit')")}&$orderby=ID desc&$top=500`)
+      .catch(() => undefined);
+    const seen: { [id: number]: boolean } = {};
+    items.forEach(i => { seen[i.Id] = true; });
+    ((open && open.value) || []).forEach(i => { if (!seen[i.Id]) { seen[i.Id] = true; items.push(i); } });
+    return items.map(toItem);
   }
 
   private async _message(res: { status: number; text(): Promise<string> }): Promise<string> {

@@ -204,8 +204,11 @@ function Confirm-List($Def) {
     if ($list.EnableVersioning) { Add-Result $title 'Versionsverlauf' 'OK' }
     elseif ($CheckOnly) { Add-Result $title 'Versionsverlauf' 'FEHLT' 'Änderungen an Einträgen wären nicht nachvollziehbar' }
     else {
-      Set-PnPList -Identity $title -EnableVersioning $true | Out-Null
-      Add-Result $title 'Versionsverlauf' 'KORRIGIERT' 'eingeschaltet'
+      # Fehler hier darf die weitere Prüfung (Ansichten, Berechtigungen) nicht abbrechen
+      try {
+        Set-PnPList -Identity $title -EnableVersioning $true | Out-Null
+        Add-Result $title 'Versionsverlauf' 'KORRIGIERT' 'eingeschaltet'
+      } catch { Add-Result $title 'Versionsverlauf' 'FEHLER' $_.Exception.Message }
     }
   }
   return $list
@@ -269,8 +272,11 @@ function Confirm-Indexes($Def) {
     if (-not $field) { Add-Result $title "Index $n" 'FEHLT' 'Spalte fehlt'; continue }
     if ($field.Indexed) { Add-Result $title "Index $n" 'OK'; continue }
     if ($CheckOnly) { Add-Result $title "Index $n" 'FEHLT' 'nötig ab 5.000 Einträgen'; continue }
-    Set-PnPField -List $title -Identity $n -Values @{ Indexed = $true } | Out-Null
-    Add-Result $title "Index $n" 'ANGELEGT'
+    # Fehler hier darf die weitere Prüfung (Ansichten, Berechtigungen) nicht abbrechen
+    try {
+      Set-PnPField -List $title -Identity $n -Values @{ Indexed = $true } | Out-Null
+      Add-Result $title "Index $n" 'ANGELEGT'
+    } catch { Add-Result $title "Index $n" 'FEHLER' $_.Exception.Message }
   }
 }
 
